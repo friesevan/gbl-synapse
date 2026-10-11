@@ -19,8 +19,8 @@ Eligibility, checked in this order for each battle (the first failing rule is th
      or form confidence >= .98). Partial teams are counted in the report, never written.
   5. The battle boundary is sound: no "more than three opponent species" flag, and the lead is
      known: no "recording starts mid-battle" flag unless a reviewer confirmed the lead.
-  6. Every member maps into the trainer's pool. Shadow form only when a reviewer said Shadow or the
-     classifier is >= .98 sure; otherwise the base form. In-battle forms (Gulping Cramorant, Hangry
+  6. Every member maps into the trainer's pool. Shadow form only when a reviewer said Shadow, the model
+     resolved it (held-out gate; observed.model_answers), or the classifier is >= .98 sure; otherwise the base form. In-battle forms (Gulping Cramorant, Hangry
      Morpeko, Blade Aegislash, Busted Mimikyu, Zen Darmanitan) map to their pool form. A confirmed
      Shadow whose Shadow form is not in the pool falls back to the base form (reported). Megas and
      anything else outside the pool are reported as unmapped and the team is dropped.

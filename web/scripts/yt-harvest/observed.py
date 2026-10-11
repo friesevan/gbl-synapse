@@ -30,6 +30,31 @@ def stamp(path):
         return (str(path), None, None)
 
 
+MODEL_KINDS = {'shadow': 'shadow', 'fast': 'fastMove', 'form': 'form'}
+
+
+def model_answers(feedback):
+    """Model-resolved Shadow / fast-move / form answers (they passed the held-out resolution gate in
+    learning-loop.cjs). Question ids encode where they apply: <source>:<recording>:<battle>:<side>:
+    <key>:<kind>; questions about the creator's own Pokemon are asked once for every battle. Free-LLM
+    resolutions are excluded. Human answers are applied after these, so they always win."""
+    out = []
+    for qid, r in (feedback.get('resolutions') or {}).items():
+        if not isinstance(r, dict) or r.get('source') == 'freellm' or r.get('value') is None:
+            continue
+        parts = str(qid).split(':')
+        if len(parts) < 6 or parts[-1] not in MODEL_KINDS:
+            continue
+        try:
+            battle = int(parts[-4])
+        except ValueError:
+            continue
+        side = parts[-3]
+        out.append({'qid': qid, 'kind': MODEL_KINDS[parts[-1]], 'side': side, 'key': parts[-2], 'battle': battle,
+                    'allBattles': side == 'my', 'recording': parts[1], 'value': r['value'], 'source': 'model'})
+    return out
+
+
 def human(answer):
     return (isinstance(answer, dict) and answer.get('value') is not None
             and answer.get('source') != 'model' and not answer.get('modelResolved'))
@@ -126,6 +151,8 @@ class ObservedCatalog:
         merged_answers = {**labels.get('verified', {}), **feedback.get('answers', {})}
         answers = [a for a in merged_answers.values()
                    if self._video(a) == vid and human(a) and (a.get('allBattles') or a.get('battle') == index)]
+        modelled = [a for a in model_answers(feedback)
+                    if self._video(a) == vid and (a['allBattles'] or a['battle'] == index)]
         result = b.get('result') or source_b.get('result') or 'Unknown'
         result_source = b.get('resultSource') or source_b.get('resultSource') or 'Unresolved'
         ending = None
@@ -157,7 +184,7 @@ class ObservedCatalog:
         for side in ('my', 'opponent'):
             members = b.get(side) or []
             details = source_b.get(side + 'Detail') or []
-            teams[side] = [self._member(m, details[j] if j < len(details) else {}, side, answers, b)
+            teams[side] = [self._member(m, details[j] if j < len(details) else {}, side, modelled + answers, b)
                            for j, m in enumerate(members)]
         upload = date(video.get('uploadDate'))
         battle_date = date(b.get('battleDate') or raw.get('battleDate') or video.get('recordedDate'))
@@ -242,7 +269,8 @@ class ObservedCatalog:
                 fast = {'id': a['value'], 'p': 1}
             else:
                 continue
-            reviewed.append(kind)
+            if a.get('source') != 'model':
+                reviewed.append(kind)
         form_p = form.get('p', 1 if m.get('id') else None)
         uncertain = not identity or shadow is None or (form_p is not None and form_p < .98)
         charged = ((battle.get('evidence') or {}).get(side) or {}).get(key, {}).get('charged', [])

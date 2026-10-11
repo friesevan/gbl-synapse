@@ -137,3 +137,16 @@ class ObservedTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ModelAnswerTests(unittest.TestCase):
+    def test_model_resolutions_parse_and_skip_free_llm(self):
+        import observed
+        fb = {"resolutions": {
+            "claude-test:v1.mp4:3:opponent:corviknight:fast": {"value": "SAND_ATTACK", "source": "model"},
+            "claude-test:v1.mp4:0:my:azumarill:shadow": {"value": False, "source": "model"},
+            "youtube-harvest:v1.mp4:footage": {"value": "none", "source": "freellm"}}}
+        got = sorted(observed.model_answers(fb), key=lambda a: a["kind"])
+        self.assertEqual([(a["kind"], a["side"], a["key"], a["battle"], a["allBattles"]) for a in got],
+                         [("fastMove", "opponent", "corviknight", 3, False), ("shadow", "my", "azumarill", 0, True)])
+        self.assertTrue(all(not observed.human(a) for a in got))
