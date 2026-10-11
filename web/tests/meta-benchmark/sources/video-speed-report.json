@@ -88,5 +88,6 @@
     "hardware": {
       "observed": "Sandbox trial fell back after VideoToolbox initialization failure; no measured hardware acceleration claim."
     }
-  }
+  },
+  "versionNote": "Measurements precede concurrent HP classifier commit a70c9ae. Merge preserves its wider Hp.BAND; remeasure sustained throughput with the latest classifier on an idle machine."
 }

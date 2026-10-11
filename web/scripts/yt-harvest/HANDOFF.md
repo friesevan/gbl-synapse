@@ -191,6 +191,34 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
   - worker-count benchmark on an idle machine (`tests/meta-benchmark/bench-workers.cjs`);
   - Japanese-UI videos give 0 battles (extractor);
   - a nameplate species-check question;
-  - re-measuring HP bars on low-resolution YouTube crops (bars found in only about 24% of frames, which
-    limits both the fast-move and Shadow evidence);
+  - HP bars on low-resolution YouTube crops: detector fixed (next section); 28 videos still to re-extract;
   - the Shadow classifier flips two forms (Hisuian Typhlosion, Palkia Origin); see the README note.
+
+## Status 2026-10-11 ~14:00 (HP-bar detection)
+- `hp.js` findBars now uses hue-based fill/trail classes, tolerant row linking and an outline check on
+  every bar. The search band is 300–1450 (was 450–1350). Fills are sub-pixel and hit steps allow for
+  jitter. Details and numbers: `includes/meta/README.md`, *HP bars on YouTube footage*. Aura boxes follow
+  the chosen bars, so aura readings change too.
+- On 223 nameplate-visible YouTube and phone frames, valid bars found: 85 → 139 (yours), 62 → 131
+  (opponent). The old detector's 86 false bars (no outline) are gone.
+- Re-extracted and installed: the 9 labelled videos available locally (6 in `youtube-cc/`, plus `10min`,
+  `hour` and `hour-gl`). Backups are in the work dir's `results-backup-hpbars-2026-10-11/`.
+  Held out by video:
+  - Shadow: 157 → 161/208 (AUC 0.823 → 0.846);
+  - fast moves: 161 → 160/197 (log-loss 0.428 → 0.425);
+  - forms: unchanged at 23/31.
+- **Left to do.** YouTube refused every download today ("confirm you're not a bot"; the harvester hit the
+  same at 09:38, 11:28 and 11:58).
+  1. Once downloads work, put the other 28 labelled videos in
+     `~/Desktop/Projects/PoGo Recorder/src/relabel-cache/<id>.mp4`. The coordinator owns that folder; the
+     Shadow agent shares it.
+  2. Run `node web/tests/meta-benchmark/reextract-labelled.cjs "<that folder>"`. It reuses each saved crop,
+     ranges, league and game data. It installs only results whose battle structure is unchanged and backs
+     up the originals in `results-backup-hpbars/`.
+  3. Rerun `movefit-eval.cjs`, `shadow-dataset.cjs` and `shadow-cv.cjs`.
+  4. Refit `movefit-fit.cjs`: its damage noise was fitted on the old hits.
+
+  The harvester uses the new detector once it restarts.
+- No "Is the HP bar here?" Validate question was added. The outline score separates bars from look-alikes
+  cleanly (real ≥ 0.9, others < 0.1), and a visual check found no false bars, so labelled ground truth
+  wasn't needed.

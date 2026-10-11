@@ -4,39 +4,66 @@
 (function(root){
 'use strict';
 const REF_W=886,FILL_W=246;
-// Pixel classes inside a bar: 1 = HP fill, which is one of three colours (teal above half HP, yellow,
-// red when low); 2 = the orange damage trail.
-const FILLS=[[30,254,194],[255,253,120],[239,102,106]];
-// Fast reject first: every fill colour has green > 184 or red > 169 within the 70 tolerance, and the
-// trail needs red > 200, so most scenery pixels are rejected after two comparisons.
-function cls(d,i){const r=d[i],g=d[i+1];if(g<=183&&r<=169)return 0;const b=d[i+2];if(r>200&&g>115&&g<195&&b<50)return 2;for(const f of FILLS)if(Math.abs(r-f[0])+Math.abs(g-f[1])+Math.abs(b-f[2])<70)return 1;return 0;}
-// HP bars are found from their fill: a solid rectangle 9–18 rows tall whose left and right edges are
-// straight. (The white outline is thin and semi-transparent, and bars bob with flying Pokémon.)
+// Detector settings (2026-10-11, tuned on YouTube crops and the owner's recordings; README "HP bars on
+// YouTube footage"). Fill and trail are hue windows, not RGB distances: YouTube re-encodes shift the
+// teal fill from (30,254,194) to about (0,228,172), which the old distance-70 test rejected.
+const BAR={vMin:.7,sMin:.38,teal:[148,186],yellow:[47,72],red:[344,12],trail:[20,46],trailS:.6,
+ minRun:6,gapPx:3,linkX:2,spanX:4,hMin:9,hMax:18,lineC:15,frameMin:.5,sides:{my:[30,80],opponent:[230,600]}};
+// Rows (reference px) searched for bars. Bars sit above the Pokémon, so large ones (Primal Kyogre,
+// Necrozma) and short 16:9 screens put them as high as y ≈ 370; the old 450–1350 band cut those off.
+const BAND=[300,1450];
+// Pixel classes inside a bar: 1 = HP fill (teal above half HP, yellow, red when low); 2 = the orange
+// damage trail. Dark or grey pixels are rejected before any hue arithmetic.
+function cls(d,i,P=BAR){const r=d[i],g=d[i+1],b=d[i+2],mx=r>g?(r>b?r:b):(g>b?g:b);if(mx<P.vMin*255)return 0;const mn=r<g?(r<b?r:b):(g<b?g:b),c=mx-mn;if(c<P.sMin*mx)return 0;
+ let h=mx===r?((g-b)/c+6)%6:mx===g?(b-r)/c+2:(r-g)/c+4;h*=60;
+ if(h>=P.teal[0]&&h<=P.teal[1]||h>=P.yellow[0]&&h<=P.yellow[1]||h>=P.red[0]||h<=P.red[1])return 1;return h>=P.trail[0]&&h<P.trail[1]&&c>=P.trailS*mx?2:0;}
+// HP bars are found from their fill: a solid rectangle 9–18 rows tall whose left edge is straight. Each
+// candidate must then show the bar's outline (white for the opponent, light blue for you, thin and
+// semi-transparent): a bright line a few rows above or below the fill along most of the bar. Scenery,
+// grass and attack effects make many fill-coloured blobs; on 223 YouTube and phone frames 94% of the
+// blobs at the bars' x positions had no outline (score < 0.1), while real bars score ≥ 0.9.
 // img: {data RGBA, width, height}; yOffset: frame y of row 0. Returns bars left to right with
-// fill and trail as fractions of the full bar width.
-function findBars(img,yOffset=0){const s=img.width/REF_W,w=img.width,h=img.height,d=img.data,rows=[],minRun=6*s,maxRun=FILL_W*s*1.04;
+// fill and trail as fractions of the full bar width, and `frame`, the outline score.
+function findBars(img,yOffset=0,P=BAR){const s=img.width/REF_W,w=img.width,h=img.height,d=img.data,rows=[],minRun=P.minRun*s,maxRun=FILL_W*s*1.04,gapMax=P.gapPx*s;
  // Speed: bars are at least 9 rows tall, so a coarse pass over every 3rd row (every 2nd pixel) finds
- // the rows worth scanning; only rows within 3 of a coarse hit are scanned in full. Same output as a
- // full scan, ~6–10× less work on typical frames.
- const want=new Uint8Array(h);for(let y=0;y<h;y+=3){let run=0,hit=false;for(let x=0;x<w;x+=2){if(cls(d,(y*w+x)*4)){if(++run*2>=minRun){hit=true;break;}}else run=0;}if(hit)for(let k=Math.max(0,y-3);k<=Math.min(h-1,y+3);k++)want[k]=1;}
- for(let y=0;y<h;y++){if(!want[y])continue;let x=0;while(x<w){const c=cls(d,(y*w+x)*4);if(!c){x++;continue;}const x0=x;let fillEnd=x0,end=x0;
-   while(x<w){const k=cls(d,(y*w+x)*4);if(!k)break;if(k===1&&end===fillEnd)fillEnd=x+1;end=x+1;x++;}
+ // the rows worth scanning; only rows within 3 of a coarse hit are scanned in full.
+ const want=new Uint8Array(h);for(let y=0;y<h;y+=3){let run=0,hit=false;for(let x=0;x<w;x+=2){if(cls(d,(y*w+x)*4,P)){if(++run*2>=minRun){hit=true;break;}}else run=0;}if(hit)for(let k=Math.max(0,y-3);k<=Math.min(h-1,y+3);k++)want[k]=1;}
+ for(let y=0;y<h;y++){if(!want[y])continue;let x=0;while(x<w){const c=cls(d,(y*w+x)*4,P);if(!c){x++;continue;}const x0=x;let fillEnd=x0,end=x0,gap=0;
+   // A few unclassified pixels (compression ringing between fill and trail) don't end a run.
+   while(x<w){const k=cls(d,(y*w+x)*4,P);if(!k){if(++gap>gapMax)break;x++;continue;}gap=0;if(k===1&&end===fillEnd)fillEnd=x+1;end=x+1;x++;}
    if(end-x0>=minRun&&end-x0<=maxRun)rows.push({y,x0,fillEnd,end});}}
- const blobs=[];for(const r of rows){const b=blobs.find(b=>b.last===r.y-1&&Math.abs(b.x0-r.x0)<=2*s&&Math.abs(b.ends.at(-1)-r.end)<=3*s);if(b){b.last=r.y;b.ends.push(r.end);b.fills.push(r.fillEnd);}else blobs.push({x0:r.x0,first:r.y,last:r.y,ends:[r.end],fills:[r.fillEnd]});}
- const med=a=>[...a].sort((p,q)=>p-q)[a.length>>1];
- return blobs.filter(b=>{const bh=b.last-b.first+1;return bh>=9*s&&bh<=18*s;}).map(b=>{const end=med(b.ends),fe=med(b.fills);return {x0:b.x0,y0:b.first+yOffset,x1:b.x0+Math.round(FILL_W*s),y1:b.last+yOffset,fill:(fe-b.x0)/(FILL_W*s),trail:(end-fe)/(FILL_W*s)};}).sort((a,b)=>a.x0-b.x0);}
+ // Rows join a blob when the left edge moves ≤ 2 px from the previous row and stays within 4 px overall
+ // (blurred edges wobble), and the fill or the trail end lines up.
+ const blobs=[];for(const r of rows){const b=blobs.find(b=>b.last===r.y-1&&Math.abs(b.lastX0-r.x0)<=P.linkX*s&&Math.max(b.maxX0,r.x0)-Math.min(b.minX0,r.x0)<=P.spanX*s&&(Math.abs(b.ends.at(-1)-r.end)<=3*s||Math.abs(b.fills.at(-1)-r.fillEnd)<=3*s));
+  if(b){b.last=r.y;b.lastX0=r.x0;b.minX0=Math.min(b.minX0,r.x0);b.maxX0=Math.max(b.maxX0,r.x0);b.x0s.push(r.x0);b.ends.push(r.end);b.fills.push(r.fillEnd);}
+  else blobs.push({first:r.y,last:r.y,lastX0:r.x0,minX0:r.x0,maxX0:r.x0,x0s:[r.x0],ends:[r.end],fills:[r.fillEnd]});}
+ // Fill and trail ends: trimmed mean over rows (middle half) gives sub-pixel steps on small hits.
+ const med=a=>[...a].sort((p,q)=>p-q)[a.length>>1],mid=a=>{const s=[...a].sort((p,q)=>p-q),k=a.length>>2,m=s.slice(k,a.length-k);return m.reduce((p,q)=>p+q,0)/m.length;},near=x=>Object.values(P.sides).some(([lo,hi])=>x>=(lo-5)*s&&x<=(hi+5)*s),out=[];
+ for(const b of blobs){const bh=b.last-b.first+1;if(bh<P.hMin*s||bh>P.hMax*s)continue;const x0=med(b.x0s);if(!near(x0))continue;
+  const frame=outline(img,x0,b.first,b.last,s,P);if(frame<P.frameMin)continue;const end=mid(b.ends),fe=mid(b.fills);
+  out.push({x0,y0:b.first+yOffset,x1:x0+Math.round(FILL_W*s),y1:b.last+yOffset,fill:(fe-x0)/(FILL_W*s),trail:(end-fe)/(FILL_W*s),frame:+frame.toFixed(2)});}
+ return out.sort((a,b)=>a.x0-b.x0);}
+// Outline score of a fill blob: the best share of columns along the bar where one row 2–10 px above
+// (or below) the fill is brighter (max channel) than the rows 3 px above and below it by ≥ lineC.
+function outline(img,x0,y0,y1,s,P=BAR){const w=img.width,h=img.height,d=img.data,o=Math.max(2,Math.round(3*s)),V=(x,y)=>{const i=(y*w+x)*4,r=d[i],g=d[i+1],b=d[i+2];return r>g?(r>b?r:b):(g>b?g:b);};
+ const band=(lo,hi)=>{let best=0;for(let y=Math.max(o,Math.round(lo));y<=Math.min(h-1-o,Math.round(hi));y++){let n=0,k=0;for(let x=Math.round(x0+4*s);x<Math.min(w,x0+240*s);x+=2){k++;const v=V(x,y);if(v-V(x,y-o)>=P.lineC&&v-V(x,y+o)>=P.lineC)n++;}if(k&&n/k>best)best=n/k;}return best;};
+ const top=band(y0-10*s,y0-2*s);return top>=P.frameMin?top:Math.max(top,band(y1+2*s,y1+10*s));}
 // Kept for callers that measure a known bar: the values come from findBars.
 const measureBar=(img,bar)=>({fill:bar.fill,trail:bar.trail});
 // Your bar starts near the left edge (x ≈ 50 of 886); the opponent's starts mid-screen (x ≈ 300–500).
-// Bench tiles and buttons carry small bars elsewhere and are ignored.
-function assignBars(bars,width){const s=width/REF_W,pick=list=>list.sort((a,b)=>(b.y1-b.y0)-(a.y1-a.y0)||b.fill-a.fill)[0]||null;
- return {my:pick(bars.filter(b=>b.x0>=30*s&&b.x0<=80*s)),opponent:pick(bars.filter(b=>b.x0>=230*s&&b.x0<=600*s))};}
+// Bench tiles and buttons carry small bars elsewhere and are ignored. The clearest outline wins.
+function assignBars(bars,width){const s=width/REF_W,pick=list=>list.sort((a,b)=>(b.frame??0)-(a.frame??0)||(b.y1-b.y0)-(a.y1-a.y0)||b.fill-a.fill)[0]||null,[m,o]=[BAR.sides.my,BAR.sides.opponent];
+ return {my:pick(bars.filter(b=>b.x0>=m[0]*s&&b.x0<=m[1]*s)),opponent:pick(bars.filter(b=>b.x0>=o[0]*s&&b.x0<=o[1]*s))};}
 // series: [{t, fill, trail}] for one side (null when the bar is hidden; bars often vanish for a frame
 // as a hit lands). HP never rises during a matchup, so the bar is read as a descending staircase:
 // upward readings (attack glow sweeping over the bar) are ignored, and a step down counts once two
 // consecutive readings confirm it. A hit's size is the difference between plateau levels.
 const median=a=>{const s=[...a].sort((x,y)=>x-y);return s[s.length>>1];};
-function hits(series,{minDrop=.015,maxHit=.35,confirmWithin=.6,chargedGap=1.2}={}){const valid=series.filter(Boolean);if(valid.length<3)return [];
+const HIT_NOISE_K=3;
+function hits(series,{minDrop=.015,maxHit=.35,confirmWithin=.6,chargedGap=1.2,noiseK=HIT_NOISE_K}={}){const valid=series.filter(Boolean);if(valid.length<3)return [];
+ // Heavily compressed footage makes the fill end flicker by 1–3% between frames, which the fixed 1.5%
+ // step would read as hits. The step must also clear noiseK × this series' own median frame-to-frame jitter.
+ if(noiseK){const d=[];for(let i=1;i<valid.length;i++){const x=Math.abs(valid[i].fill-valid[i-1].fill);if(valid[i].t-valid[i-1].t<=.15&&x<.03)d.push(x);}if(d.length>=5)minDrop=Math.max(minDrop,noiseK*median(d));}
  const out=[];let level=median(valid.slice(0,3).map(v=>v.fill)),pending=[],lastTrail=median(valid.slice(0,3).map(v=>v.trail)),prevT=valid[0].t,gapBefore=0;
  for(const s of valid){const gap=s.t-prevT;prevT=s.t;
   // A drop starts a new candidate step; stale candidates (no confirming reading in time) are dropped
@@ -100,5 +127,5 @@ function track(frames,width){const s=width/REF_W,out={my:[],opponent:[]};
   if(!xs.size){out[side]=frames.map(()=>null);continue;}const best=[...xs].sort((a,b)=>b[1]-a[1])[0][0]*3*s;let lastY=null;
   out[side]=frames.map(f=>{const c=f.bars.filter(b=>Math.abs(b.x0-best)<=4*s).sort((a,b)=>(lastY===null?0:Math.abs(a.y0-lastY)-Math.abs(b.y0-lastY))||(b.y1-b.y0)-(a.y1-a.y0));const b=c[0];if(!b)return null;lastY=b.y0;return {t:f.t,fill:b.fill,trail:b.trail};});}
  return out;}
-const api={hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
+const api={BAR,BAND,cls,outline,hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
 })(typeof window==='undefined'?globalThis:window);
