@@ -37,6 +37,12 @@ The prior owner authorization permits non-CC footage for private analysis; permi
   All labels from the held-out video and untraceable legacy aggregates are excluded from calibration.
   The new-label-only model must agree with the live model. Audit questions stay open until a person answers.
   These gates express conservative confidence, not certainty.
+- **Shadow** (2026-10-11) uses the learned Shadow classifier instead (`includes/meta/shadow-model.js`,
+  README "Shadow classifier"). Out of fold by video it was right 74.5% of the time (old posterior 62.5%), with
+  log-loss 0.513 (old 0.653). "Not Shadow" auto-resolves when held-out calls at that confidence were ≥ 95% right
+  over ≥ 25 calls from ≥ 5 videos (now p ≤ ~0.12: 27/28). "Shadow" never auto-resolves yet. A dry run on the live
+  queue resolves 15 of 135 open Shadow questions. These take effect on the first refit after `git pull`;
+  restart the app so `feedback.py` also passes the archived labels.
 - Two deterministic confident-call spot checks per video feed calibration; `AUDIT=0` explicitly disables them.
 - League/cup and outcome feedback creates per-battle labels. Video-wide league labels update the registry
   and extraction CP cap. “No footage” informs relevance; “battles are shown” requests reprocessing with a
