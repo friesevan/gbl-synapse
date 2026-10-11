@@ -1,0 +1,1248 @@
+{
+ "schema": "meta-benchmark-labels-v1",
+ "recording": "hour.mp4",
+ "source": "Desktop/Projects/PoGo Recorder/src (not copied)",
+ "width": 886,
+ "height": 1920,
+ "codec": "HEVC",
+ "durationS": 4020.1,
+ "league": "Little Cup (inferred)",
+ "leagueEvidence": "not shown on screen; inferred from opponent species",
+ "verification": "Battle boundaries from HUD faint/shield resets; results from YOU WIN / GOOD EFFORT screens or final Poké Ball count, with every uncertain one checked by eye; every species label checked against its nameplate image. Forms (regional) and Shadow status are NOT yet verified. Reveal times are keyframe-resolution (~1 s).",
+ "battles": [
+  {
+   "n": 1,
+   "start": 31.932,
+   "end": 142.303,
+   "result": "Win",
+   "resultEvidence": "final Poké Ball count",
+   "my": [
+    "Scrafty",
+    "Corviknight"
+   ],
+   "opp": [
+    "Skrelp",
+    "Purrloin",
+    "Swablu"
+   ],
+   "oppLead": "Skrelp",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 31.932,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 31.932,
+     "side": "opp",
+     "species": "Skrelp"
+    },
+    {
+     "t": 32.93,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 63.797,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 68.79,
+     "side": "opp",
+     "species": "Swablu"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:purrloin:fast": {
+     "value": "SUCKER_PUNCH",
+     "answeredAt": "2026-10-10T15:40:19.484Z"
+    },
+    "opponent:purrloin:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:40:23.966Z"
+    }
+   }
+  },
+  {
+   "n": 2,
+   "start": 188.115,
+   "end": 332.042,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Ferroseed",
+    "Corviknight"
+   ],
+   "opp": [
+    "Purrloin",
+    "Toxapex",
+    "Steelix"
+   ],
+   "oppLead": "Purrloin",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 188.115,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 188.115,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 207.037,
+     "side": "opp",
+     "species": "Toxapex"
+    },
+    {
+     "t": 235.825,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 238.82,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 310.192,
+     "side": "my",
+     "species": "Corviknight"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": ""
+  },
+  {
+   "n": 3,
+   "start": 428.743,
+   "end": 569.1,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Ferroseed",
+    "Corviknight"
+   ],
+   "opp": [
+    "Swinub",
+    "Inkay",
+    "Cottonee"
+   ],
+   "oppLead": "Swinub",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 428.743,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 428.743,
+     "side": "opp",
+     "species": "Swinub"
+    },
+    {
+     "t": 431.74,
+     "side": "opp",
+     "species": "Inkay"
+    },
+    {
+     "t": 464.557,
+     "side": "opp",
+     "species": "Cottonee"
+    },
+    {
+     "t": 467.553,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 551.193,
+     "side": "my",
+     "species": "Corviknight"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:inkay:fast": {
+     "value": "PSYWAVE",
+     "answeredAt": "2026-10-10T15:40:29.283Z"
+    },
+    "opponent:swinub:fast": {
+     "value": "POWDER_SNOW",
+     "answeredAt": "2026-10-10T15:40:32.051Z"
+    },
+    "opponent:swinub:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:40:34.617Z"
+    }
+   }
+  },
+  {
+   "n": 4,
+   "start": 619.908,
+   "end": 650.793,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Corviknight"
+   ],
+   "opp": [
+    "Zigzagoon",
+    "Ducklett"
+   ],
+   "oppLead": "Zigzagoon",
+   "oppFainted": 0,
+   "myFainted": 0,
+   "reveals": [
+    {
+     "t": 619.908,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 619.908,
+     "side": "opp",
+     "species": "Zigzagoon"
+    },
+    {
+     "t": 623.902,
+     "side": "opp",
+     "species": "Ducklett"
+    },
+    {
+     "t": 648.797,
+     "side": "my",
+     "species": "Corviknight"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "Opponent left early (black screen, then YOU WIN with opponent Pokémon unfainted). Opponent team incomplete.",
+   "verified": {
+    "opponent:ducklett:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:41:00.516Z"
+    },
+    "opponent:zigzagoon:form": {
+     "value": "zigzagoon_galarian",
+     "answeredAt": "2026-10-10T15:40:57.949Z"
+    },
+    "opponent:zigzagoon:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:41:02.665Z"
+    }
+   }
+  },
+  {
+   "n": 5,
+   "start": 682.628,
+   "end": 804.027,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Corviknight",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Forretress",
+    "Inkay",
+    "Scrafty"
+   ],
+   "oppLead": "Forretress",
+   "oppFainted": 1,
+   "myFainted": 2,
+   "reveals": [
+    {
+     "t": 682.628,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 682.628,
+     "side": "opp",
+     "species": "Forretress"
+    },
+    {
+     "t": 685.623,
+     "side": "opp",
+     "species": "Inkay"
+    },
+    {
+     "t": 725.43,
+     "side": "opp",
+     "species": "Scrafty"
+    },
+    {
+     "t": 733.418,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 766.302,
+     "side": "my",
+     "species": "Ferroseed"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:forretress:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:41:10.332Z"
+    },
+    "opponent:inkay:fast": {
+     "value": "PSYWAVE",
+     "answeredAt": "2026-10-10T15:41:05.615Z"
+    }
+   }
+  },
+  {
+   "n": 6,
+   "start": 863.802,
+   "end": 1057.41,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Ferroseed",
+    "Corviknight"
+   ],
+   "opp": [
+    "Inkay",
+    "Skorupi",
+    "Diggersby"
+   ],
+   "oppLead": "Inkay",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 863.802,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 863.802,
+     "side": "opp",
+     "species": "Inkay"
+    },
+    {
+     "t": 883.672,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 883.672,
+     "side": "opp",
+     "species": "Skorupi"
+    },
+    {
+     "t": 937.357,
+     "side": "opp",
+     "species": "Diggersby"
+    },
+    {
+     "t": 1024.643,
+     "side": "my",
+     "species": "Corviknight"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:diggersby:fast": {
+     "value": "QUICK_ATTACK",
+     "answeredAt": "2026-10-10T15:41:59.313Z"
+    },
+    "opponent:inkay:fast": {
+     "value": "PSYWAVE",
+     "answeredAt": "2026-10-10T15:42:21.096Z"
+    }
+   }
+  },
+  {
+   "n": 7,
+   "start": 1103.193,
+   "end": 1251.303,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Corviknight",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Skorupi",
+    "Purrloin",
+    "Ducklett"
+   ],
+   "oppLead": "Skorupi",
+   "oppFainted": 3,
+   "myFainted": 2,
+   "reveals": [
+    {
+     "t": 1103.193,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 1103.193,
+     "side": "opp",
+     "species": "Skorupi"
+    },
+    {
+     "t": 1104.192,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 1110.183,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 1168.797,
+     "side": "opp",
+     "species": "Ducklett"
+    },
+    {
+     "t": 1194.605,
+     "side": "my",
+     "species": "Ferroseed"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:skorupi:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:42:26.294Z"
+    }
+   }
+  },
+  {
+   "n": 8,
+   "start": 1295.137,
+   "end": 1456.222,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Scrafty",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Skorupi",
+    "Dunsparce",
+    "Golett"
+   ],
+   "oppLead": "Skorupi",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 1295.137,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 1295.137,
+     "side": "opp",
+     "species": "Skorupi"
+    },
+    {
+     "t": 1311.063,
+     "side": "opp",
+     "species": "Dunsparce"
+    },
+    {
+     "t": 1337.855,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 1362.717,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 1362.717,
+     "side": "opp",
+     "species": "Golett"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:golett:fast": {
+     "value": "MUD_SLAP",
+     "answeredAt": "2026-10-10T15:42:29.379Z"
+    },
+    "opponent:golett:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:42:37.178Z"
+    }
+   }
+  },
+  {
+   "n": 9,
+   "start": 1519.058,
+   "end": 1653.5,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Corviknight",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Purrloin",
+    "Steelix",
+    "Ferroseed"
+   ],
+   "oppLead": "Purrloin",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 1519.058,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 1519.058,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 1521.057,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 1534.968,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 1587.803,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 1588.802,
+     "side": "opp",
+     "species": "Ferroseed"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:ferroseed:fast": {
+     "value": "TACKLE",
+     "answeredAt": "2026-10-10T15:42:51.777Z"
+    },
+    "opponent:ferroseed:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:42:54.410Z"
+    }
+   }
+  },
+  {
+   "n": 10,
+   "start": 1715.272,
+   "end": 1820.86,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Corviknight"
+   ],
+   "opp": [
+    "Purrloin",
+    "Steelix",
+    "Litleo"
+   ],
+   "oppLead": "Purrloin",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 1715.272,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 1715.272,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 1720.265,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 1732.213,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 1802.987,
+     "side": "opp",
+     "species": "Litleo"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:steelix:fast": {
+     "value": "DRAGON_TAIL",
+     "answeredAt": "2026-10-10T15:43:18.079Z"
+    },
+    "opponent:steelix:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:43:27.243Z"
+    }
+   }
+  },
+  {
+   "n": 11,
+   "start": 1904.532,
+   "end": 2040.903,
+   "result": "Win",
+   "resultEvidence": "final Poké Ball count",
+   "my": [
+    "Scrafty",
+    "Ferroseed",
+    "Corviknight"
+   ],
+   "opp": [
+    "Purrloin",
+    "Skorupi",
+    "Wigglytuff"
+   ],
+   "oppLead": "Purrloin",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 1904.532,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 1904.532,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 1909.525,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 1909.525,
+     "side": "opp",
+     "species": "Skorupi"
+    },
+    {
+     "t": 1972.23,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2035.912,
+     "side": "opp",
+     "species": "Wigglytuff"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": ""
+  },
+  {
+   "n": 12,
+   "start": 2091.723,
+   "end": 2260.937,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Ferroseed",
+    "Scrafty"
+   ],
+   "opp": [
+    "Spinarak",
+    "Chinchou",
+    "Inkay"
+   ],
+   "oppLead": "Spinarak",
+   "oppFainted": 1,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 2091.723,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2091.723,
+     "side": "opp",
+     "species": "Spinarak"
+    },
+    {
+     "t": 2096.715,
+     "side": "opp",
+     "species": "Chinchou"
+    },
+    {
+     "t": 2148.422,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 2168.375,
+     "side": "opp",
+     "species": "Inkay"
+    },
+    {
+     "t": 2179.343,
+     "side": "my",
+     "species": "Scrafty"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:inkay:fast": {
+     "value": "PSYWAVE",
+     "answeredAt": "2026-10-10T15:43:30.758Z"
+    }
+   }
+  },
+  {
+   "n": 13,
+   "start": 2373.742,
+   "end": 2395.625,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty"
+   ],
+   "opp": [
+    "Purrloin",
+    "Swinub"
+   ],
+   "oppLead": "Purrloin",
+   "oppFainted": 1,
+   "myFainted": 0,
+   "reveals": [
+    {
+     "t": 2373.742,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 2373.742,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 2376.737,
+     "side": "opp",
+     "species": "Swinub"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "Opponent left early (22 s battle). Opponent team incomplete.",
+   "verified": {
+    "opponent:purrloin:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:43:36.392Z"
+    }
+   }
+  },
+  {
+   "n": 14,
+   "start": 2437.413,
+   "end": 2570.852,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Ferroseed",
+    "Corviknight"
+   ],
+   "opp": [
+    "Steelix",
+    "Skorupi",
+    "Bibarel"
+   ],
+   "oppLead": "Steelix",
+   "oppFainted": 1,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 2437.413,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 2437.413,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 2455.353,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 2455.353,
+     "side": "opp",
+     "species": "Skorupi"
+    },
+    {
+     "t": 2546.953,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2549.933,
+     "side": "opp",
+     "species": "Bibarel"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:bibarel:fast": {
+     "value": "ROLLOUT",
+     "answeredAt": "2026-10-10T15:43:39.775Z"
+    },
+    "opponent:bibarel:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:43:48.158Z"
+    },
+    "opponent:skorupi:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:43:50.407Z"
+    },
+    "opponent:steelix:fast": {
+     "value": "DRAGON_TAIL",
+     "answeredAt": "2026-10-10T15:43:45.141Z"
+    }
+   }
+  },
+  {
+   "n": 15,
+   "start": 2707.568,
+   "end": 2872.848,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Scrafty",
+    "Corviknight",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Purrloin",
+    "Skrelp",
+    "Skorupi"
+   ],
+   "oppLead": "Purrloin",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 2707.568,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 2707.568,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 2708.567,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2709.565,
+     "side": "opp",
+     "species": "Skrelp"
+    },
+    {
+     "t": 2746.393,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 2792.208,
+     "side": "opp",
+     "species": "Skorupi"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:purrloin:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:44:21.608Z"
+    },
+    "opponent:skorupi:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:44:24.224Z"
+    }
+   }
+  },
+  {
+   "n": 16,
+   "start": 2951.697,
+   "end": 3086.942,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Ferroseed",
+    "Scrafty"
+   ],
+   "opp": [
+    "Wigglytuff",
+    "Steelix",
+    "Purrloin"
+   ],
+   "oppLead": "Wigglytuff",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 2951.697,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2951.697,
+     "side": "opp",
+     "species": "Wigglytuff"
+    },
+    {
+     "t": 2957.687,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 3010.358,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 3042.093,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 3042.093,
+     "side": "opp",
+     "species": "Purrloin"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:purrloin:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:45:38.921Z"
+    },
+    "opponent:steelix:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:45:42.669Z"
+    }
+   }
+  },
+  {
+   "n": 17,
+   "start": 3180.73,
+   "end": 3315.847,
+   "result": "Win",
+   "resultEvidence": "final Poké Ball count",
+   "my": [
+    "Scrafty",
+    "Corviknight",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Steelix",
+    "Purrloin",
+    "Skorupi"
+   ],
+   "oppLead": "Steelix",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 3180.73,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 3180.73,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 3220.55,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3223.53,
+     "side": "opp",
+     "species": "Purrloin"
+    },
+    {
+     "t": 3275.08,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 3276.078,
+     "side": "opp",
+     "species": "Skorupi"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:skorupi:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:45:52.652Z"
+    },
+    "opponent:steelix:fast": {
+     "value": "DRAGON_TAIL",
+     "answeredAt": "2026-10-10T15:45:48.687Z"
+    }
+   }
+  },
+  {
+   "n": 18,
+   "start": 3387.653,
+   "end": 3549.883,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Scrafty",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Skorupi",
+    "Ducklett",
+    "Cottonee"
+   ],
+   "oppLead": "Skorupi",
+   "oppFainted": 0,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 3387.653,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3387.653,
+     "side": "opp",
+     "species": "Skorupi"
+    },
+    {
+     "t": 3391.647,
+     "side": "opp",
+     "species": "Ducklett"
+    },
+    {
+     "t": 3440.422,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 3453.35,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 3508.082,
+     "side": "opp",
+     "species": "Cottonee"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:skorupi:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:45:56.137Z"
+    }
+   }
+  },
+  {
+   "n": 19,
+   "start": 3674.647,
+   "end": 3814.947,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Scrafty",
+    "Ferroseed"
+   ],
+   "opp": [
+    "Skorupi",
+    "Ducklett",
+    "Wigglytuff"
+   ],
+   "oppLead": "Skorupi",
+   "oppFainted": 1,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 3674.647,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3674.647,
+     "side": "opp",
+     "species": "Skorupi"
+    },
+    {
+     "t": 3690.555,
+     "side": "opp",
+     "species": "Ducklett"
+    },
+    {
+     "t": 3716.483,
+     "side": "my",
+     "species": "Scrafty"
+    },
+    {
+     "t": 3747.352,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 3747.352,
+     "side": "opp",
+     "species": "Wigglytuff"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:skorupi:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:45:59.537Z"
+    }
+   }
+  },
+  {
+   "n": 20,
+   "start": 3858.848,
+   "end": 4020.003,
+   "result": "Loss",
+   "resultEvidence": "final Poké Ball count",
+   "my": [
+    "Corviknight",
+    "Ferroseed",
+    "Scrafty"
+   ],
+   "opp": [
+    "Cottonee",
+    "Onix",
+    "Steelix"
+   ],
+   "oppLead": "Cottonee",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 3858.848,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3858.848,
+     "side": "opp",
+     "species": "Cottonee"
+    },
+    {
+     "t": 3869.832,
+     "side": "opp",
+     "species": "Onix"
+    },
+    {
+     "t": 3920.487,
+     "side": "my",
+     "species": "Ferroseed"
+    },
+    {
+     "t": 3928.473,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 3961.292,
+     "side": "my",
+     "species": "Scrafty"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:steelix:fast": {
+     "value": "DRAGON_TAIL",
+     "answeredAt": "2026-10-10T15:46:03.953Z"
+    },
+    "opponent:steelix:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:46:08.470Z"
+    }
+   }
+  }
+ ]
+}

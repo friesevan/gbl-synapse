@@ -1,0 +1,192 @@
+{
+ "schema": "meta-benchmark-labels-v1",
+ "recording": "2xvzDbWx-RE.mp4",
+ "source": "YouTube 2xvzDbWx-RE · PokeDeeGO · CC BY (Desktop/Projects/PoGo Recorder/src/youtube-cc, not copied)",
+ "width": 1920,
+ "height": 1080,
+ "screenBox": [
+  648,
+  0,
+  1260,
+  1080
+ ],
+ "codec": "H.264 (YouTube, keyframe every 6 s)",
+ "durationS": 1122,
+ "league": "Great League",
+ "leagueEvidence": "party-select screens",
+ "verification": "Labelled by Claude from HUD contact sheets every 5 s and 1 fps strips around each battle end (2026-10-10). Results from YOU WIN / GOOD EFFORT screens; forfeit from the Surrender and exit? dialog. Species from nameplates; forms and Shadow status not verified. Battle 5: the third Pokémon on your side was not seen. Start/end are ±5 s.",
+ "battles": [
+  {
+   "n": 1,
+   "start": 70,
+   "end": 236,
+   "result": "Win",
+   "resultEvidence": "result screen 4:00",
+   "my": [
+    "Blastoise",
+    "Clodsire",
+    "Guzzlord"
+   ],
+   "opp": [
+    "Wigglytuff",
+    "Marowak",
+    "Feraligatr"
+   ],
+   "oppLead": "Wigglytuff",
+   "verified": {
+    "my:blastoise:fast": {
+     "value": "ROLLOUT",
+     "answeredAt": "2026-10-10T21:03:22.011Z"
+    },
+    "my:blastoise:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:04:01.229Z"
+    },
+    "my:guzzlord:fast": {
+     "value": "DRAGON_TAIL",
+     "answeredAt": "2026-10-10T21:03:26.528Z"
+    },
+    "opponent:feraligatr:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:03:57.162Z"
+    },
+    "opponent:feraligatr:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T21:04:04.729Z"
+    },
+    "opponent:marowak:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:04:09.597Z"
+    }
+   }
+  },
+  {
+   "n": 2,
+   "start": 285,
+   "end": 501,
+   "result": "Win",
+   "resultEvidence": "result screen 8:23",
+   "my": [
+    "Blastoise",
+    "Guzzlord",
+    "Clodsire"
+   ],
+   "opp": [
+    "Pidgeot",
+    "Cradily",
+    "Magcargo"
+   ],
+   "oppLead": "Pidgeot",
+   "verified": {
+    "opponent:cradily:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:04:25.181Z"
+    },
+    "opponent:magcargo:fast": {
+     "value": "INCINERATE",
+     "answeredAt": "2026-10-10T21:04:13.946Z"
+    },
+    "opponent:pidgeot:fast": {
+     "value": "GUST",
+     "answeredAt": "2026-10-10T21:04:19.363Z"
+    },
+    "opponent:pidgeot:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T21:04:28.230Z"
+    }
+   }
+  },
+  {
+   "n": 3,
+   "start": 535,
+   "end": 707,
+   "result": "Win",
+   "resultEvidence": "result screen 11:51",
+   "my": [
+    "Blastoise",
+    "Guzzlord",
+    "Clodsire"
+   ],
+   "opp": [
+    "Blastoise",
+    "Kommo-o",
+    "Malamar"
+   ],
+   "oppLead": "Blastoise",
+   "verified": {
+    "opponent:blastoise:fast": {
+     "value": "ROLLOUT",
+     "answeredAt": "2026-10-10T21:04:30.830Z"
+    },
+    "opponent:kommoo:fast": {
+     "value": "DRAGON_TAIL",
+     "answeredAt": "2026-10-10T21:04:34.397Z"
+    }
+   }
+  },
+  {
+   "n": 4,
+   "start": 740,
+   "end": 941,
+   "result": "Loss",
+   "resultEvidence": "result screen 15:46",
+   "my": [
+    "Blastoise",
+    "Clodsire",
+    "Guzzlord"
+   ],
+   "opp": [
+    "Annihilape",
+    "Dewgong",
+    "Drapion"
+   ],
+   "oppLead": "Annihilape",
+   "verified": {
+    "opponent:dewgong:fast": {
+     "value": "ICE_SHARD",
+     "answeredAt": "2026-10-10T21:04:42.413Z"
+    },
+    "opponent:drapion:fast": {
+     "value": "POISON_STING",
+     "answeredAt": "2026-10-10T21:04:46.613Z"
+    },
+    "opponent:drapion:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T21:04:49.130Z"
+    }
+   }
+  },
+  {
+   "n": 5,
+   "start": 970,
+   "end": 1073,
+   "result": "Loss",
+   "ending": "you-forfeit",
+   "resultEvidence": "Surrender and exit? at 17:53, GOOD EFFORT 17:58",
+   "my": [
+    "Clodsire",
+    "Guzzlord"
+   ],
+   "opp": [
+    "Charjabug",
+    "Furret",
+    "Wigglytuff"
+   ],
+   "oppLead": "Charjabug",
+   "verified": {
+    "opponent:charjabug:fast": {
+     "value": "VOLT_SWITCH",
+     "answeredAt": "2026-10-10T21:05:00.864Z"
+    },
+    "opponent:furret:fast": {
+     "value": "SUCKER_PUNCH",
+     "answeredAt": "2026-10-10T21:05:03.897Z"
+    },
+    "opponent:wigglytuff:fast": {
+     "value": "CHARM",
+     "answeredAt": "2026-10-10T21:05:06.414Z"
+    }
+   }
+  }
+ ]
+}

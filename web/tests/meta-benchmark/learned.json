@@ -1,0 +1,363 @@
+{
+ "moves": {
+  "sableye": {
+   "SHADOW_CLAW": 2
+  },
+  "gourgeist_super": {
+   "INCINERATE": 1
+  },
+  "wigglytuff": {
+   "CHARM": 2
+  },
+  "cradily": {
+   "BULLET_SEED": 4
+  },
+  "typhlosion": {
+   "INCINERATE": 1
+  },
+  "hydreigon": {
+   "DRAGON_BREATH": 1
+  },
+  "quagsire": {
+   "MUD_SHOT": 2
+  },
+  "cramorant": {
+   "PECK": 1
+  },
+  "blastoise": {
+   "ROLLOUT": 3
+  },
+  "guzzlord": {
+   "DRAGON_TAIL": 1
+  },
+  "feraligatr": {
+   "SHADOW_CLAW": 6
+  },
+  "magcargo": {
+   "INCINERATE": 1
+  },
+  "pidgeot": {
+   "GUST": 1
+  },
+  "kommo_o": {
+   "DRAGON_TAIL": 3
+  },
+  "dewgong": {
+   "ICE_SHARD": 1
+  },
+  "drapion": {
+   "POISON_STING": 2
+  },
+  "charjabug": {
+   "VOLT_SWITCH": 1
+  },
+  "furret": {
+   "SUCKER_PUNCH": 1
+  },
+  "araquanid": {
+   "BUG_BITE": 1
+  },
+  "mandibuzz": {
+   "AIR_SLASH": 7
+  },
+  "morpeko_full_belly": {
+   "THUNDER_SHOCK": 5
+  },
+  "annihilape": {
+   "LOW_KICK": 1
+  },
+  "jellicent": {
+   "HEX": 1
+  },
+  "gallade": {
+   "CHARM": 1
+  },
+  "gastrodon": {
+   "MUD_SLAP": 4
+  },
+  "chesnaught": {
+   "VINE_WHIP": 1
+  },
+  "whiscash": {
+   "MUD_SHOT": 1
+  },
+  "zamazenta_crowned_shield": {
+   "ICE_FANG": 1
+  },
+  "necrozma_dusk_mane": {
+   "SHADOW_CLAW": 1
+  },
+  "dialga": {
+   "DRAGON_BREATH": 1
+  },
+  "zacian_crowned_sword": {
+   "METAL_CLAW": 1
+  },
+  "kyurem_white": {
+   "DRAGON_BREATH": 1
+  },
+  "dialga_origin": {
+   "DRAGON_BREATH": 1
+  },
+  "sandslash_alolan": {
+   "SHADOW_CLAW": 2
+  },
+  "cobalion": {
+   "DOUBLE_KICK": 1
+  },
+  "steelix": {
+   "THUNDER_FANG": 2,
+   "DRAGON_TAIL": 4
+  },
+  "weezing": {
+   "FAIRY_WIND": 1
+  },
+  "tentacruel": {
+   "ACID": 1
+  },
+  "gengar": {
+   "SHADOW_CLAW": 1
+  },
+  "swampert": {
+   "MUD_SHOT": 1
+  },
+  "primeape": {
+   "KARATE_CHOP": 2
+  },
+  "skeledirge": {
+   "INCINERATE": 2
+  },
+  "diggersby": {
+   "QUICK_ATTACK": 2
+  },
+  "toxapex": {
+   "POISON_JAB": 1
+  },
+  "stunfisk": {
+   "THUNDER_SHOCK": 1
+  },
+  "talonflame": {
+   "INCINERATE": 1
+  },
+  "purrloin": {
+   "SUCKER_PUNCH": 1
+  },
+  "inkay": {
+   "PSYWAVE": 4
+  },
+  "bibarel": {
+   "ROLLOUT": 1
+  },
+  "swinub": {
+   "POWDER_SNOW": 1
+  },
+  "golett": {
+   "MUD_SLAP": 1
+  },
+  "ferroseed": {
+   "TACKLE": 1
+  },
+  "florges": {
+   "FAIRY_WIND": 3
+  },
+  "ampharos": {
+   "VOLT_SWITCH": 1
+  },
+  "togekiss": {
+   "PECK": 1
+  },
+  "tyranitar": {
+   "DRAGON_BREATH": 1
+  },
+  "golurk": {
+   "MUD_SLAP": 2
+  },
+  "mamoswine": {
+   "POWDER_SNOW": 1
+  },
+  "empoleon": {
+   "METAL_SOUND": 1
+  },
+  "ninetales_alolan": {
+   "POWDER_SNOW": 1
+  },
+  "dragonite": {
+   "DRAGON_BREATH": 1
+  },
+  "magnezone": {
+   "VOLT_SWITCH": 1
+  },
+  "regidrago": {
+   "DRAGON_BREATH": 1
+  },
+  "miltank": {
+   "ROLLOUT": 1
+  }
+ },
+ "shadow": {
+  "claydol": {
+   "yes": 0,
+   "no": 1
+  },
+  "*": {
+   "yes": 22,
+   "no": 52
+  },
+  "sableye": {
+   "yes": 0,
+   "no": 2
+  },
+  "ninetales": {
+   "yes": 1,
+   "no": 0
+  },
+  "blastoise": {
+   "yes": 0,
+   "no": 3
+  },
+  "feraligatr": {
+   "yes": 4,
+   "no": 2
+  },
+  "marowak": {
+   "yes": 0,
+   "no": 1
+  },
+  "cradily": {
+   "yes": 0,
+   "no": 3
+  },
+  "pidgeot": {
+   "yes": 1,
+   "no": 0
+  },
+  "drapion": {
+   "yes": 2,
+   "no": 1
+  },
+  "walrein": {
+   "yes": 0,
+   "no": 2
+  },
+  "whiscash": {
+   "yes": 0,
+   "no": 1
+  },
+  "zekrom": {
+   "yes": 0,
+   "no": 1
+  },
+  "grumpig": {
+   "yes": 0,
+   "no": 1
+  },
+  "sandslash_alolan": {
+   "yes": 1,
+   "no": 1
+  },
+  "drifblim": {
+   "yes": 0,
+   "no": 1
+  },
+  "poliwrath": {
+   "yes": 0,
+   "no": 1
+  },
+  "gengar": {
+   "yes": 0,
+   "no": 1
+  },
+  "swampert": {
+   "yes": 2,
+   "no": 1
+  },
+  "annihilape": {
+   "yes": 0,
+   "no": 1
+  },
+  "steelix": {
+   "yes": 6,
+   "no": 1
+  },
+  "weezing_galarian": {
+   "yes": 1,
+   "no": 2
+  },
+  "primeape": {
+   "yes": 1,
+   "no": 1
+  },
+  "serperior": {
+   "yes": 0,
+   "no": 2
+  },
+  "diggersby": {
+   "yes": 0,
+   "no": 1
+  },
+  "lapras": {
+   "yes": 0,
+   "no": 1
+  },
+  "purrloin": {
+   "yes": 0,
+   "no": 4
+  },
+  "bibarel": {
+   "yes": 0,
+   "no": 1
+  },
+  "skorupi": {
+   "yes": 1,
+   "no": 5
+  },
+  "swinub": {
+   "yes": 0,
+   "no": 1
+  },
+  "ducklett": {
+   "yes": 0,
+   "no": 1
+  },
+  "zigzagoon": {
+   "yes": 0,
+   "no": 1
+  },
+  "forretress": {
+   "yes": 0,
+   "no": 1
+  },
+  "golett": {
+   "yes": 1,
+   "no": 0
+  },
+  "ferroseed": {
+   "yes": 0,
+   "no": 1
+  },
+  "ampharos": {
+   "yes": 0,
+   "no": 1
+  },
+  "tyranitar": {
+   "yes": 0,
+   "no": 1
+  },
+  "skuntank": {
+   "yes": 1,
+   "no": 0
+  },
+  "golurk": {
+   "yes": 0,
+   "no": 1
+  },
+  "mamoswine": {
+   "yes": 0,
+   "no": 1
+  },
+  "ninetales_alolan": {
+   "yes": 0,
+   "no": 1
+  }
+ }
+}

@@ -1,0 +1,50 @@
+{
+ "_about": "Free-tier chat endpoints (OpenAI-compatible), from github.com/mnfst/awesome-free-llm-apis (data.json, 2026-10-05). Order = preference. trains: whether the provider may train on / log free-tier prompts (true, false, unknown). Only providers with trains=false receive data marked private. Keys come from the named env var (or ~/.config/freellm/env); keyless providers have key_env null. Model ids drift: run `freellm.py models` after adding keys and fix them here.",
+ "providers": [
+  {
+   "name": "groq",
+   "base": "https://api.groq.com/openai/v1",
+   "key_env": "GROQ_API_KEY",
+   "trains": false,
+   "text": "openai/gpt-oss-120b",
+   "vision": null,
+   "limits": "30 RPM, 1,000 RPD"
+  },
+  {
+   "name": "gemini",
+   "base": "https://generativelanguage.googleapis.com/v1beta/openai",
+   "key_env": "GEMINI_API_KEY",
+   "trains": true,
+   "text": "gemini-3.5-flash",
+   "vision": "gemini-3.5-flash",
+   "limits": "15 RPM, 1,500 RPD (free-tier prompts may be used by Google outside the EEA/UK/CH)"
+  },
+  {
+   "name": "mistral",
+   "base": "https://api.mistral.ai/v1",
+   "key_env": "MISTRAL_API_KEY",
+   "trains": true,
+   "text": "mistral-small-latest",
+   "vision": "mistral-small-latest",
+   "limits": "~1 RPS; trains unless you opt out in the console (then set trains=false)"
+  },
+  {
+   "name": "openrouter",
+   "base": "https://openrouter.ai/api/v1",
+   "key_env": "OPENROUTER_API_KEY",
+   "trains": true,
+   "text": "nvidia/nemotron-3-super-120b-a12b:free",
+   "vision": "google/gemma-4-31b-it:free",
+   "limits": "20 RPM, 50 RPD per model"
+  },
+  {
+   "name": "ovh",
+   "base": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+   "key_env": null,
+   "trains": "unknown",
+   "text": "gpt-oss-120b",
+   "vision": "Qwen3.5-397B-A17B",
+   "limits": "2 RPM per IP per model, anonymous"
+  }
+ ]
+}

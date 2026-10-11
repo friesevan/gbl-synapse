@@ -1,0 +1,41 @@
+{
+ "schema": "meta-benchmark-species-v1",
+ "recording": "FLJKUTh5ru8.mp4",
+ "source": "YouTube FLJKUTh5ru8 · AMaizad97 · CC BY (not copied)",
+ "width": 1920,
+ "height": 1080,
+ "screenBox": [
+  718,
+  0,
+  1202,
+  1080
+ ],
+ "league": "Great League cup (per title)",
+ "layout": "edited highlights: cuts within and between battles",
+ "verification": "Opponent species seen in HUD contact sheets every 5 s (Claude, 2026-10-10). A lower bound: a Pokémon on screen for under ~5 s can be missing. Battle boundaries and results are not labelled because of the edits. Jellicent, Spiritomb added 2026-10-10 after the pipeline found them; checked on the nameplate by Claude.",
+ "my": [
+  "Mandibuzz",
+  "Morpeko",
+  "Araquanid"
+ ],
+ "oppSpecies": [
+  "Annihilape",
+  "Azumarill",
+  "Gastrodon",
+  "Sableye",
+  "Lanturn",
+  "Gallade",
+  "Brionne",
+  "Mandibuzz",
+  "Morpeko",
+  "Araquanid",
+  "Walrein",
+  "Toxapex",
+  "Quagsire",
+  "Chesnaught",
+  "Pelipper",
+  "Whiscash",
+  "Jellicent",
+  "Spiritomb"
+ ]
+}

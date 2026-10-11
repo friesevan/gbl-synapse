@@ -1,0 +1,18 @@
+# Recordings never go in the repo (they stay on your device)
+*.mp4
+*.mov
+*.m4v
+*.mkv
+recorder/src/*
+!recorder/src/references/
+recorder/src/references/*.png
+# Local outputs and caches
+web/training/runs/
+**/results/
+**/__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+# Keys live in ~/.config/freellm/env, never here
+.env
+*.env

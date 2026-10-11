@@ -1,0 +1,1242 @@
+{
+ "schema": "meta-benchmark-labels-v1",
+ "recording": "hour-gl.mp4",
+ "source": "Desktop/Projects/PoGo Recorder/src (not copied)",
+ "width": 886,
+ "height": 1920,
+ "codec": "HEVC",
+ "durationS": 3781.2,
+ "league": "Great League",
+ "leagueEvidence": "party-select screen at 27:32",
+ "verification": "Battle boundaries from HUD faint/shield resets; results from YOU WIN / GOOD EFFORT screens or final Poké Ball count, with every uncertain one checked by eye; every species label checked against its nameplate image. Forms (regional) and Shadow status are NOT yet verified. Reveal times are keyframe-resolution (~1 s).",
+ "battles": [
+  {
+   "n": 1,
+   "start": 20.005,
+   "end": 87.827,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Azumarill",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Mandibuzz",
+    "Dewgong",
+    "Swampert"
+   ],
+   "oppLead": "Mandibuzz",
+   "oppFainted": 1,
+   "myFainted": 0,
+   "reveals": [
+    {
+     "t": 20.005,
+     "side": "my",
+     "species": "Azumarill"
+    },
+    {
+     "t": 20.005,
+     "side": "opp",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 23.002,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 23.002,
+     "side": "opp",
+     "species": "Dewgong"
+    },
+    {
+     "t": 83.832,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 83.832,
+     "side": "opp",
+     "species": "Swampert"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:mandibuzz:fast": {
+     "value": "AIR_SLASH",
+     "answeredAt": "2026-10-10T15:11:16.725Z"
+    },
+    "opponent:swampert:fast": {
+     "value": "MUD_SHOT",
+     "answeredAt": "2026-10-10T15:11:37.741Z"
+    },
+    "opponent:swampert:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:11:56.308Z"
+    }
+   }
+  },
+  {
+   "n": 2,
+   "start": 139.637,
+   "end": 296.763,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Azumarill",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Stunfisk",
+    "Dewgong",
+    "Talonflame"
+   ],
+   "oppLead": "Stunfisk",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 139.637,
+     "side": "my",
+     "species": "Azumarill"
+    },
+    {
+     "t": 139.637,
+     "side": "opp",
+     "species": "Stunfisk"
+    },
+    {
+     "t": 203.392,
+     "side": "opp",
+     "species": "Dewgong"
+    },
+    {
+     "t": 230.233,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 255.043,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 270.953,
+     "side": "opp",
+     "species": "Talonflame"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:stunfisk:fast": {
+     "value": "THUNDER_SHOCK",
+     "answeredAt": "2026-10-10T15:16:23.563Z"
+    },
+    "opponent:talonflame:fast": {
+     "value": "INCINERATE",
+     "answeredAt": "2026-10-10T15:12:18.540Z"
+    }
+   }
+  },
+  {
+   "n": 3,
+   "start": 331.577,
+   "end": 512.573,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Azumarill",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Morpeko",
+    "Swampert",
+    "Dewgong"
+   ],
+   "oppLead": "Morpeko",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 331.577,
+     "side": "my",
+     "species": "Azumarill"
+    },
+    {
+     "t": 331.577,
+     "side": "opp",
+     "species": "Morpeko"
+    },
+    {
+     "t": 337.567,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 354.507,
+     "side": "opp",
+     "species": "Swampert"
+    },
+    {
+     "t": 375.442,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 390.335,
+     "side": "opp",
+     "species": "Dewgong"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:swampert:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:12:29.956Z"
+    }
+   }
+  },
+  {
+   "n": 4,
+   "start": 544.407,
+   "end": 723.235,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Azumarill",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Weezing",
+    "Cradily"
+   ],
+   "oppLead": "Weezing",
+   "oppFainted": 1,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 544.407,
+     "side": "my",
+     "species": "Azumarill"
+    },
+    {
+     "t": 544.407,
+     "side": "opp",
+     "species": "Weezing"
+    },
+    {
+     "t": 560.363,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 579.267,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 582.245,
+     "side": "opp",
+     "species": "Cradily"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:cradily:fast": {
+     "value": "BULLET_SEED",
+     "answeredAt": "2026-10-10T15:17:13.960Z"
+    }
+   }
+  },
+  {
+   "n": 5,
+   "start": 756.253,
+   "end": 899.53,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Registeel",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Cradily",
+    "Grumpig",
+    "Mandibuzz"
+   ],
+   "oppLead": "Cradily",
+   "oppFainted": 2,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 756.253,
+     "side": "my",
+     "species": "Registeel"
+    },
+    {
+     "t": 756.253,
+     "side": "opp",
+     "species": "Cradily"
+    },
+    {
+     "t": 790.102,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 790.102,
+     "side": "opp",
+     "species": "Grumpig"
+    },
+    {
+     "t": 821.94,
+     "side": "opp",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 860.768,
+     "side": "my",
+     "species": "Electivire"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:mandibuzz:fast": {
+     "value": "AIR_SLASH",
+     "answeredAt": "2026-10-10T15:17:47.926Z"
+    }
+   }
+  },
+  {
+   "n": 6,
+   "start": 932.452,
+   "end": 1065.712,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Registeel",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Weezing",
+    "Lapras",
+    "Malamar"
+   ],
+   "oppLead": "Weezing",
+   "oppFainted": 2,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 932.452,
+     "side": "my",
+     "species": "Registeel"
+    },
+    {
+     "t": 932.452,
+     "side": "opp",
+     "species": "Weezing"
+    },
+    {
+     "t": 934.45,
+     "side": "opp",
+     "species": "Lapras"
+    },
+    {
+     "t": 987.14,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 1024.87,
+     "side": "opp",
+     "species": "Malamar"
+    },
+    {
+     "t": 1058.722,
+     "side": "my",
+     "species": "Corsola"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:lapras:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:30:12.027Z"
+    },
+    "opponent:weezing:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:31:28.324Z"
+    }
+   }
+  },
+  {
+   "n": 7,
+   "start": 1126.685,
+   "end": 1260.945,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Registeel",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Malamar",
+    "Skeledirge",
+    "Cradily"
+   ],
+   "oppLead": "Malamar",
+   "oppFainted": 1,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 1126.685,
+     "side": "my",
+     "species": "Registeel"
+    },
+    {
+     "t": 1126.685,
+     "side": "opp",
+     "species": "Malamar"
+    },
+    {
+     "t": 1167.455,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 1168.453,
+     "side": "opp",
+     "species": "Skeledirge"
+    },
+    {
+     "t": 1229.078,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 1231.075,
+     "side": "opp",
+     "species": "Cradily"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:cradily:fast": {
+     "value": "BULLET_SEED",
+     "answeredAt": "2026-10-10T15:31:33.807Z"
+    },
+    "opponent:cradily:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:31:41.024Z"
+    },
+    "opponent:skeledirge:fast": {
+     "value": "INCINERATE",
+     "answeredAt": "2026-10-10T15:31:36.273Z"
+    }
+   }
+  },
+  {
+   "n": 8,
+   "start": 1301.965,
+   "end": 1502.66,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Registeel",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Grumpig",
+    "Mandibuzz",
+    "Steelix"
+   ],
+   "oppLead": "Grumpig",
+   "oppFainted": 1,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 1301.965,
+     "side": "my",
+     "species": "Registeel"
+    },
+    {
+     "t": 1301.965,
+     "side": "opp",
+     "species": "Grumpig"
+    },
+    {
+     "t": 1307.955,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 1321.868,
+     "side": "opp",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 1390.648,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 1443.885,
+     "side": "opp",
+     "species": "Steelix"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:mandibuzz:fast": {
+     "value": "AIR_SLASH",
+     "answeredAt": "2026-10-10T15:31:45.956Z"
+    },
+    "opponent:steelix:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:31:49.089Z"
+    }
+   }
+  },
+  {
+   "n": 9,
+   "start": 1530.668,
+   "end": 1656.143,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Registeel",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Clodsire",
+    "Feraligatr",
+    "Azumarill"
+   ],
+   "oppLead": "Clodsire",
+   "oppFainted": 1,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 1530.668,
+     "side": "my",
+     "species": "Registeel"
+    },
+    {
+     "t": 1530.668,
+     "side": "opp",
+     "species": "Clodsire"
+    },
+    {
+     "t": 1531.683,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 1536.677,
+     "side": "opp",
+     "species": "Feraligatr"
+    },
+    {
+     "t": 1592.458,
+     "side": "opp",
+     "species": "Azumarill"
+    },
+    {
+     "t": 1628.255,
+     "side": "my",
+     "species": "Electivire"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": ""
+  },
+  {
+   "n": 10,
+   "start": 1683.983,
+   "end": 1854.115,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Registeel",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Mandibuzz",
+    "Morpeko",
+    "Feraligatr"
+   ],
+   "oppLead": "Mandibuzz",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 1683.983,
+     "side": "my",
+     "species": "Registeel"
+    },
+    {
+     "t": 1683.983,
+     "side": "opp",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 1760.682,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 1773.577,
+     "side": "opp",
+     "species": "Morpeko"
+    },
+    {
+     "t": 1813.33,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 1819.32,
+     "side": "opp",
+     "species": "Feraligatr"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:morpeko:fast": {
+     "value": "THUNDER_SHOCK",
+     "answeredAt": "2026-10-10T15:31:54.857Z"
+    }
+   }
+  },
+  {
+   "n": 11,
+   "start": 1944.428,
+   "end": 2086.728,
+   "result": "Loss",
+   "resultEvidence": "final Poké Ball count",
+   "my": [
+    "Registeel",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Steelix",
+    "Drifblim",
+    "Annihilape"
+   ],
+   "oppLead": "Steelix",
+   "oppFainted": 1,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 1944.428,
+     "side": "my",
+     "species": "Registeel"
+    },
+    {
+     "t": 1944.428,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 1962.283,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 1962.283,
+     "side": "opp",
+     "species": "Drifblim"
+    },
+    {
+     "t": 2028,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 2028,
+     "side": "opp",
+     "species": "Annihilape"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:annihilape:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:32:23.771Z"
+    },
+    "opponent:steelix:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:32:27.838Z"
+    }
+   }
+  },
+  {
+   "n": 12,
+   "start": 2216.517,
+   "end": 2394.57,
+   "result": "Win",
+   "resultEvidence": "final Poké Ball count",
+   "my": [
+    "Corviknight",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Weezing",
+    "Quagsire",
+    "Steelix"
+   ],
+   "oppLead": "Weezing",
+   "oppFainted": 3,
+   "myFainted": 2,
+   "reveals": [
+    {
+     "t": 2216.517,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2216.517,
+     "side": "opp",
+     "species": "Weezing"
+    },
+    {
+     "t": 2219.528,
+     "side": "opp",
+     "species": "Quagsire"
+    },
+    {
+     "t": 2272.248,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 2291.22,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 2353.787,
+     "side": "my",
+     "species": "Electivire"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:steelix:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:32:31.505Z"
+    },
+    "opponent:weezing:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:32:38.787Z"
+    }
+   }
+  },
+  {
+   "n": 13,
+   "start": 2426.453,
+   "end": 2560.767,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Primeape",
+    "Blastoise",
+    "Skeledirge"
+   ],
+   "oppLead": "Primeape",
+   "oppFainted": 3,
+   "myFainted": 2,
+   "reveals": [
+    {
+     "t": 2426.453,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2426.453,
+     "side": "opp",
+     "species": "Primeape"
+    },
+    {
+     "t": 2442.377,
+     "side": "opp",
+     "species": "Blastoise"
+    },
+    {
+     "t": 2443.375,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 2516.903,
+     "side": "opp",
+     "species": "Skeledirge"
+    },
+    {
+     "t": 2523.892,
+     "side": "my",
+     "species": "Corsola"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:blastoise:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:33:25.719Z"
+    },
+    "opponent:primeape:fast": {
+     "value": "KARATE_CHOP",
+     "answeredAt": "2026-10-10T15:33:17.202Z"
+    },
+    "opponent:primeape:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:33:29.069Z"
+    },
+    "opponent:skeledirge:fast": {
+     "value": "INCINERATE",
+     "answeredAt": "2026-10-10T15:33:20.352Z"
+    }
+   }
+  },
+  {
+   "n": 14,
+   "start": 2593.717,
+   "end": 2752.78,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Sableye",
+    "Cradily",
+    "Lapras"
+   ],
+   "oppLead": "Sableye",
+   "oppFainted": 3,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 2593.717,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2593.717,
+     "side": "opp",
+     "species": "Sableye"
+    },
+    {
+     "t": 2635.372,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 2642.362,
+     "side": "opp",
+     "species": "Cradily"
+    },
+    {
+     "t": 2668.205,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 2672.2,
+     "side": "opp",
+     "species": "Lapras"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:cradily:fast": {
+     "value": "BULLET_SEED",
+     "answeredAt": "2026-10-10T15:33:32.552Z"
+    },
+    "opponent:cradily:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:33:41.368Z"
+    },
+    "opponent:sableye:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T15:33:37.202Z"
+    }
+   }
+  },
+  {
+   "n": 15,
+   "start": 2783.767,
+   "end": 2989.638,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Gastrodon",
+    "Mandibuzz",
+    "Serperior"
+   ],
+   "oppLead": "Gastrodon",
+   "oppFainted": 1,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 2783.767,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 2783.767,
+     "side": "opp",
+     "species": "Gastrodon"
+    },
+    {
+     "t": 2851.368,
+     "side": "opp",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 2880.257,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 2884.252,
+     "side": "opp",
+     "species": "Serperior"
+    },
+    {
+     "t": 2921.112,
+     "side": "my",
+     "species": "Corsola"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:gastrodon:fast": {
+     "value": "MUD_SLAP",
+     "answeredAt": "2026-10-10T15:33:45.820Z"
+    },
+    "opponent:serperior:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:33:49.468Z"
+    }
+   }
+  },
+  {
+   "n": 16,
+   "start": 3017.63,
+   "end": 3208.788,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Toxapex",
+    "Malamar",
+    "Diggersby"
+   ],
+   "oppLead": "Toxapex",
+   "oppFainted": 1,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 3017.63,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3017.63,
+     "side": "opp",
+     "species": "Toxapex"
+    },
+    {
+     "t": 3047.5,
+     "side": "opp",
+     "species": "Malamar"
+    },
+    {
+     "t": 3087.29,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 3101.235,
+     "side": "opp",
+     "species": "Diggersby"
+    },
+    {
+     "t": 3152.987,
+     "side": "my",
+     "species": "Corsola"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:diggersby:fast": {
+     "value": "QUICK_ATTACK",
+     "answeredAt": "2026-10-10T15:33:53.368Z"
+    },
+    "opponent:diggersby:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:34:02.050Z"
+    },
+    "opponent:toxapex:fast": {
+     "value": "POISON_JAB",
+     "answeredAt": "2026-10-10T15:33:59.651Z"
+    }
+   }
+  },
+  {
+   "n": 17,
+   "start": 3249.912,
+   "end": 3428.018,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Corsola",
+    "Electivire"
+   ],
+   "opp": [
+    "Drapion",
+    "Steelix",
+    "Charjabug"
+   ],
+   "oppLead": "Drapion",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 3249.912,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3249.912,
+     "side": "opp",
+     "species": "Drapion"
+    },
+    {
+     "t": 3319.527,
+     "side": "opp",
+     "species": "Steelix"
+    },
+    {
+     "t": 3323.522,
+     "side": "my",
+     "species": "Corsola"
+    },
+    {
+     "t": 3379.273,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 3381.272,
+     "side": "opp",
+     "species": "Charjabug"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:drapion:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:34:06.334Z"
+    }
+   }
+  },
+  {
+   "n": 18,
+   "start": 3464.963,
+   "end": 3625.075,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Corviknight",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Drapion",
+    "Swampert",
+    "Serperior"
+   ],
+   "oppLead": "Drapion",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 3464.963,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3464.963,
+     "side": "opp",
+     "species": "Drapion"
+    },
+    {
+     "t": 3516.672,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 3520.665,
+     "side": "opp",
+     "species": "Swampert"
+    },
+    {
+     "t": 3561.368,
+     "side": "opp",
+     "species": "Serperior"
+    },
+    {
+     "t": 3580.29,
+     "side": "my",
+     "species": "Corsola"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:serperior:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T15:34:08.483Z"
+    },
+    "opponent:swampert:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:34:11.684Z"
+    }
+   }
+  },
+  {
+   "n": 19,
+   "start": 3671.972,
+   "end": 3776.33,
+   "result": "Loss",
+   "resultEvidence": "reviewer: left the app (counts as forfeiting)",
+   "my": [
+    "Corviknight",
+    "Electivire",
+    "Corsola"
+   ],
+   "opp": [
+    "Primeape",
+    "Drapion",
+    "Morpeko"
+   ],
+   "oppLead": "Primeape",
+   "oppFainted": 0,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 3671.972,
+     "side": "my",
+     "species": "Corviknight"
+    },
+    {
+     "t": 3671.972,
+     "side": "opp",
+     "species": "Primeape"
+    },
+    {
+     "t": 3699.747,
+     "side": "my",
+     "species": "Electivire"
+    },
+    {
+     "t": 3699.747,
+     "side": "opp",
+     "species": "Drapion"
+    },
+    {
+     "t": 3749.403,
+     "side": "opp",
+     "species": "Morpeko"
+    },
+    {
+     "t": 3753.398,
+     "side": "my",
+     "species": "Corsola"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "Recording ends mid-battle because the player left the app; counts as a loss by forfeit.",
+   "ending": "you-forfeit",
+   "verified": {
+    "result": {
+     "value": "Loss:you-forfeit",
+     "answeredAt": "2026-10-10T18:00:00.000Z"
+    },
+    "opponent:primeape:fast": {
+     "value": "KARATE_CHOP",
+     "answeredAt": "2026-10-10T15:34:16.133Z"
+    },
+    "opponent:primeape:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T15:39:30.904Z"
+    }
+   }
+  }
+ ]
+}

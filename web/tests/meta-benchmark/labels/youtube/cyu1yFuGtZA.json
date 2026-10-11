@@ -1,0 +1,225 @@
+{
+ "schema": "meta-benchmark-labels-v1",
+ "recording": "cyu1yFuGtZA.mp4",
+ "source": "YouTube cyu1yFuGtZA · PokeDeeGO · CC BY (Desktop/Projects/PoGo Recorder/src/youtube-cc, not copied)",
+ "width": 1920,
+ "height": 1080,
+ "screenBox": [
+  650,
+  0,
+  1264,
+  1080
+ ],
+ "codec": "H.264 (YouTube, keyframe every 6 s)",
+ "durationS": 1110,
+ "league": "Ultra League",
+ "leagueEvidence": "party-select screens",
+ "verification": "Labelled by Claude from HUD contact sheets every 5 s and 1–2 fps strips around each battle end (2026-10-10). Results from YOU WIN / GOOD EFFORT screens or three fainted opponent Poké Balls. Species from nameplates; forms and Shadow status not verified. Start/end are ±5 s.",
+ "battles": [
+  {
+   "n": 1,
+   "start": 50,
+   "end": 250,
+   "result": "Win",
+   "resultEvidence": "three fainted opponent Poké Balls at 4:10",
+   "my": [
+    "Sandslash",
+    "Grumpig",
+    "Golisopod"
+   ],
+   "opp": [
+    "Drifblim",
+    "Cobalion",
+    "Steelix"
+   ],
+   "oppLead": "Drifblim",
+   "verified": {
+    "my:grumpig:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:05:24.681Z"
+    },
+    "my:sandslash:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:05:19.481Z"
+    },
+    "my:sandslash:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T21:05:35.565Z"
+    },
+    "opponent:cobalion:fast": {
+     "value": "DOUBLE_KICK",
+     "answeredAt": "2026-10-10T21:01:42.258Z"
+    },
+    "opponent:drifblim:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:05:41.548Z"
+    },
+    "opponent:steelix:fast": {
+     "value": "THUNDER_FANG",
+     "answeredAt": "2026-10-10T21:00:39.656Z"
+    }
+   }
+  },
+  {
+   "n": 2,
+   "start": 300,
+   "end": 470,
+   "result": "Win",
+   "resultEvidence": "three fainted opponent Poké Balls at 7:50",
+   "my": [
+    "Grumpig",
+    "Sandslash",
+    "Golisopod"
+   ],
+   "opp": [
+    "Virizion",
+    "Weezing",
+    "Feraligatr"
+   ],
+   "oppLead": "Virizion",
+   "verified": {
+    "opponent:feraligatr:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:05:45.215Z"
+    },
+    "opponent:feraligatr:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T21:06:00.966Z"
+    },
+    "opponent:weezing:fast": {
+     "value": "FAIRY_WIND",
+     "answeredAt": "2026-10-10T21:05:51.165Z"
+    },
+    "opponent:weezing:form": {
+     "value": "weezing_galarian",
+     "answeredAt": "2026-10-10T21:05:57.549Z"
+    }
+   }
+  },
+  {
+   "n": 3,
+   "start": 505,
+   "end": 684,
+   "result": "Loss",
+   "resultEvidence": "result screen 11:27; a Surrender and exit? dialog was on screen for under a second just before the end, and it is not known whether it was confirmed (asked in Validate)",
+   "my": [
+    "Grumpig",
+    "Sandslash",
+    "Golisopod"
+   ],
+   "opp": [
+    "Poliwrath",
+    "Mandibuzz",
+    "Sandslash"
+   ],
+   "oppLead": "Poliwrath",
+   "ending": "you-forfeit",
+   "verified": {
+    "ending": {
+     "value": "Loss:you-forfeit",
+     "answeredAt": "2026-10-10T21:06:32.967Z"
+    },
+    "opponent:mandibuzz:fast": {
+     "value": "AIR_SLASH",
+     "answeredAt": "2026-10-10T21:06:03.766Z"
+    },
+    "opponent:poliwrath:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:06:36.333Z"
+    },
+    "opponent:sandslash:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:06:13.283Z"
+    },
+    "opponent:sandslash:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:06:40.733Z"
+    }
+   }
+  },
+  {
+   "n": 4,
+   "start": 725,
+   "end": 835,
+   "result": "Win",
+   "resultEvidence": "result screen 13:59",
+   "my": [
+    "Sandslash",
+    "Grumpig",
+    "Golisopod"
+   ],
+   "opp": [
+    "Zygarde",
+    "Feraligatr",
+    "Tentacruel"
+   ],
+   "oppLead": "Zygarde",
+   "verified": {
+    "opponent:feraligatr:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:06:44.584Z"
+    },
+    "opponent:feraligatr:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:07:08.034Z"
+    },
+    "opponent:tentacruel:fast": {
+     "value": "ACID",
+     "answeredAt": "2026-10-10T21:06:56.601Z"
+    },
+    "opponent:zygarde:form": {
+     "value": "zygarde_complete",
+     "answeredAt": "2026-10-10T21:07:02.518Z"
+    }
+   }
+  },
+  {
+   "n": 5,
+   "start": 880,
+   "end": 1062,
+   "result": "Win",
+   "resultEvidence": "result screen 17:46",
+   "my": [
+    "Sandslash",
+    "Grumpig",
+    "Golisopod"
+   ],
+   "opp": [
+    "Gengar",
+    "Blastoise",
+    "Feraligatr"
+   ],
+   "oppLead": "Gengar",
+   "verified": {
+    "lead": {
+     "value": "gengar",
+     "answeredAt": "2026-10-10T21:07:55.336Z"
+    },
+    "opponent:blastoise:fast": {
+     "value": "ROLLOUT",
+     "answeredAt": "2026-10-10T21:07:10.734Z"
+    },
+    "opponent:blastoise:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:08:03.869Z"
+    },
+    "opponent:feraligatr:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:07:34.635Z"
+    },
+    "opponent:feraligatr:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:08:07.703Z"
+    },
+    "opponent:gengar:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:07:50.902Z"
+    },
+    "opponent:gengar:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:08:14.603Z"
+    }
+   }
+  }
+ ]
+}

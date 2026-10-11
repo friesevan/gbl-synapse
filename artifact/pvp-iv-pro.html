@@ -1,0 +1,243 @@
+<title>Pokemon GO Analysis</title>
+<style>
+  .data-source { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin: 0 0 1rem; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--muted); font-size: .875rem; font-variant-numeric: tabular-nums; }
+  .data-source-text { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
+  .data-source-dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--muted); flex: none; }
+  .data-source[data-state="live"] .data-source-dot { background: var(--accent); }
+  .data-source button { font-size: .8125rem; padding: .25rem .6rem; }
+</style>
+  <link rel="stylesheet" href="includes/familyRanks.css">
+<script src="includes/artifact-shim.js"></script>
+  <script defer src="includes/pokeListObj.js"></script>
+  <script defer src="includes/calculate.js"></script>
+  <script defer src="includes/familyRanksCore.js"></script>
+  <script defer src="includes/familyRanks.js"></script>
+  <script defer src="includes/analysis/core.js"></script>
+  <script defer src="includes/analysis/data.js"></script>
+  <script defer src="includes/analysis/ui.js"></script>
+  <script defer src="includes/pro/core.js"></script>
+  <script defer src="includes/pro/saved.js"></script>
+  <script defer src="includes/pro/search.js?v=team-comparison-1"></script>
+  <script defer src="includes/pro/detail.js"></script>
+  <script defer src="includes/pro/ui.js"></script>
+  <script defer src="includes/pro/team-comparison-core.js"></script>
+  <script defer src="includes/pro/team-comparison.js"></script>
+  <script defer src="includes/pro/team-browser.js?v=team-comparison-1"></script>
+  <script defer src="includes/pro/neural.js"></script>
+  <link rel="stylesheet" href="includes/pro/neural.css">
+  <link rel="stylesheet" href="includes/meta/meta.css">
+  <script defer src="includes/meta/core.js"></script>
+  <script defer src="includes/meta/screen.js"></script>
+  <script defer src="includes/meta/mp4index.js"></script>
+  <script defer src="includes/meta/combat.js"></script>
+  <script defer src="includes/meta/hp.js"></script>
+  <script defer src="includes/meta/aura.js"></script>
+  <script defer src="includes/meta/questions.js"></script>
+  <script defer src="includes/meta/timeline.js"></script>
+  <script defer src="includes/meta/validation.js"></script>
+  <script defer src="includes/meta/ui.js"></script>
+<main>
+  <header class="site-header">
+    <h1 id="appTitle">PvP IV Pro</h1>
+    <p class="subtitle"><a id="appSubtitle" href="https://pvpivs.com/" target="_blank" rel="noopener">Modification of PvP IVs</a></p>
+    <p class="intro" id="appIntro">Compare your Pokémon. Plan your best evolutions.</p>
+  </header>
+  <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Tools">
+    <button id="ivTab" type="button" role="tab" aria-selected="true" aria-controls="ivPanel">PvPIV Pro</button>
+    <button id="analysisTab" type="button" role="tab" aria-selected="false" aria-controls="analysisPanel" tabindex="-1">PvPoke Analysis</button>
+    <button id="proTab" type="button" role="tab" aria-selected="false" aria-controls="proPanel" tabindex="-1">PvPoke Pro</button>
+    <button id="metaTab" type="button" role="tab" aria-selected="false" aria-controls="metaPanel" tabindex="-1">Meta Extractor</button>
+  </nav>
+  <section id="ivPanel" role="tabpanel" aria-labelledby="ivTab">
+  <form id="comparisonForm">
+    <div class="inputs">
+      <label class="pokemon">Base Pokémon<input id="pokemon" list="pokemonNames" placeholder="e.g. Eevee" autocomplete="off" required><datalist id="pokemonNames"></datalist></label>
+    </div>
+    <fieldset id="ivEntries"><legend>IV entries</legend>
+      <div id="ivRows"></div>
+      <button type="button" id="addIVRow" class="secondary">+ Add IV entry</button>
+    </fieldset>
+    <p class="hint">Choose one base Pokémon, then enter each Pokémon’s Attack, Defense, and Stamina IVs in a separate row. All entries use the same evolution family. Optional current CP shows the inferred level immediately. Enter the selected base form’s CP without a Best Buddy boost. Blank CP leaves current level unchecked. Impossible or uncertain cup fits are excluded.</p>
+    <div id="inputErrors" role="alert"></div>
+    <fieldset><legend>Leagues</legend><div id="leagues" class="toggles"></div></fieldset>
+    <fieldset><legend>Evolution family</legend><div id="evolutions" class="toggles">Choose a Pokémon to show its family.</div></fieldset>
+    <details open><summary>Individual evolution / league columns</summary>
+      <p class="hint">Check only the combinations you want to compare. Hidden columns do not consume a Pokémon in the recommended plan.</p>
+      <div id="columnPicker" class="table-scroll"></div>
+    </details>
+    <details><summary>Calculation settings</summary><div class="inputs settings">
+      <label>IV floor<input id="floor" type="number" min="0" max="15" value="0" required></label>
+      <label>Minimum level<input id="min" type="number" min="1" max="51" step="0.5" value="1" required></label>
+      <label>Maximum level<input id="max" type="number" min="1" max="51" step="0.5" value="50" required></label>
+    </div><p class="hint">Use level 51 for Best Buddy. The IV floor applies to every comparison.</p></details>
+    <button type="submit">Compare IVs</button>
+  </form>
+  <p id="status" role="status" aria-live="polite">Choose a Pokémon to begin.</p>
+  <section class="saved-search">
+    <details><summary>Save or restore a search</summary>
+      <label for="searchString">Search string</label>
+      <textarea id="searchString" rows="3" spellcheck="false" placeholder="Export a search here, or paste a previously saved PVPIVS1: string."></textarea>
+      <div class="save-actions"><button id="exportSearch" type="button">Export current search</button><button id="copySearch" type="button" class="secondary">Copy string</button><button id="loadSearch" type="button" class="secondary">Load &amp; compare</button></div>
+      <p id="saveStatus" role="status" aria-live="polite"></p>
+      <p class="hint">The string includes the base Pokémon, IV entries and current CP, visible columns, calculation settings and your locked choices. Save it in any text note.</p>
+    </details>
+  </section>
+  <div id="recommendations" aria-live="polite"></div>
+  <div id="results" class="results"></div>
+  <p class="hint"><span class="gradient-key"></span> Red → yellow → green shows IV rank percentile from low to high. <span class="winner-key">★ Best in column</span> has a green border. Dashed blue borders mark recommendations; solid blue borders mark your choices. Click a valid cell to choose it; click again to release it. Duplicate IV spreads count as one Pokémon.</p>
+  <p class="hint">Ratings measure stat product relative to the best IV spread for that Pokémon and league, not strength against other species. CP limits alone do not establish cup eligibility. Family forms and stats come from the repository’s Pokémon data; regional, Mega, and speculative forms retain their labels. Evolution requirements other than Tyrogue’s IV rule are not checked.</p>
+  </section>
+  <section id="analysisPanel" role="tabpanel" aria-labelledby="analysisTab" hidden>
+    <form id="analysisForm">
+      <div class="analysis-heading"><h2>Compare PvPoke snapshots</h2><p class="hint">Choose two branches, cutoff dates and cups. Leave a date blank for the latest commit. Cutoffs include the entire selected UTC day.</p></div>
+      <div class="snapshot-grid">
+        <fieldset class="snapshot-card"><legend>Previous snapshot</legend>
+          <label>Branch<select id="previousBranch"><option value="master">master</option></select></label>
+          <label>Cutoff date<input id="previousDate" type="date"></label>
+          <label>Cup<select id="previousCup"><option value="all">all</option></select></label>
+        </fieldset>
+        <fieldset class="snapshot-card"><legend>Current snapshot</legend>
+          <label>Branch<select id="currentBranch"><option value="master">master</option></select></label>
+          <label>Cutoff date<input id="currentDate" type="date"></label>
+          <label>Cup<select id="currentCup"><option value="all">all</option></select></label>
+        </fieldset>
+      </div>
+      <button type="button" id="analysisDiscover" class="secondary">Refresh branches &amp; cups</button>
+      <fieldset><legend>Leagues to compare</legend><div class="toggles">
+        <label><input type="checkbox" name="analysisLeague" value="1500" checked> Great · 1,500 CP</label>
+        <label><input type="checkbox" name="analysisLeague" value="2500" checked> Ultra · 2,500 CP</label>
+        <label><input type="checkbox" name="analysisLeague" value="10000" checked> Master · Unlimited</label>
+      </div></fieldset>
+      <div class="save-actions"><button type="submit" id="analysisGenerate">Generate comparison</button><button type="button" id="analysisCancel" class="secondary" hidden>Cancel</button></div>
+      <p id="analysisStatus" role="status" aria-live="polite">Results appear here in the app. No spreadsheet software or file downloads needed.</p>
+      <p class="hint">Data loads directly from the public <a href="https://github.com/pvpoke/pvpoke" target="_blank" rel="noopener">PvPoke repository</a>. Only leagues available at both snapshots are compared. Public GitHub API limits may apply.</p>
+    </form>
+    <section id="analysisOutput" hidden>
+      <div id="analysisMetadata" class="snapshot-grid"></div>
+      <div class="analysis-report-card">
+        <div id="analysisLeagueTabs" class="analysis-switches" aria-label="Report league"></div>
+        <div class="analysis-switches" aria-label="Report type"><button id="pokemonReport" type="button" class="secondary" aria-pressed="true">Pokémon</button><button id="typeReport" type="button" class="secondary" aria-pressed="false">Types</button></div>
+        <p id="analysisSummary" class="hint"></p>
+        <div class="analysis-filters"><label>Search report<input id="analysisSearch" type="search" placeholder="Pokémon, type, move or update…"></label><label>Show<select id="analysisRowFilter"><option value="all">All entries</option><option value="changed">Changed entries</option><option value="Compared">Present in both</option><option value="New">New entrants</option><option value="Removed">Removed entries</option></select></label></div>
+        <details id="analysisColumnDetails"><summary>Visible columns</summary><div id="analysisColumns" class="analysis-columns"></div></details>
+        <p class="hint">Scores measure PvPoke performance; higher is better. Rank is the position in the source list. Difference = current score − previous score. Type averages use Pokémon present in both snapshots; dual types count in both groups. XL and level use PvPoke’s default IV spread, not your IV entries.</p>
+        <p class="hint move-legend"><span class="move-buff">Buff</span><span class="move-nerf">Nerf</span><span class="move-rework">Rework</span><strong>Bold: newly recommended move</strong><strong>ALL CAPS: new move in game data</strong></p>
+        <div id="analysisReports" class="table-scroll" tabindex="0" aria-label="Scrollable analysis report"></div>
+        <div class="analysis-pagination"><span id="analysisCount" role="status"></span><button type="button" id="analysisPreviousPage" class="secondary">Previous</button><button type="button" id="analysisNextPage" class="secondary">Next</button></div>
+      </div>
+    </section>
+  </section>
+  <section id="proPanel" role="tabpanel" aria-labelledby="proTab" hidden>
+    <div class="pro-info-bar"><a class="pro-info-link" href="includes/pro/README.html" target="_blank" rel="noopener" title="Read the ranking logic guide in a new tab" aria-label="PvPoke Pro ranking logic README"><span class="pro-info-icon" aria-hidden="true">i</span> How rankings work</a></div>
+    <nav id="proSubTabs" class="analysis-switches" role="tablist" aria-label="PvPoke Pro views"><button id="proRankTab" role="tab" type="button" aria-controls="proRankPanel" aria-selected="true">Rankings</button><button id="proLabTab" role="tab" type="button" aria-controls="proLabPanel" aria-selected="false" tabindex="-1">Moveset Lab</button><button id="proNeuralTab" role="tab" type="button" aria-controls="proNeuralPanel" aria-selected="false" tabindex="-1">Full Team Neural Network</button></nav>
+    <section id="proNeuralPanel" role="tabpanel" aria-labelledby="proNeuralTab" hidden>
+      <div class="nn-heading"><div><p class="nn-eyebrow">GREAT LEAGUE · FULL 3-V-3 SEARCH</p><h2>Full Team Neural Network</h2></div><button id="nnInfo" class="pro-info-button" type="button" aria-label="How the full team neural network works" aria-haspopup="dialog">i</button></div>
+      <div id="nnReport" aria-live="polite">Loading completed search…</div>
+      <dialog id="nnHelp" class="pro-help-dialog" aria-labelledby="nnHelpTitle"><div class="pro-builder-heading"><h2 id="nnHelpTitle">How the team search works</h2><button id="nnClose" class="secondary" type="button">Close</button></div>
+      <p>This model searches for three-Pokémon teams and their movesets. Each label comes from a complete three-on-three battle using PvPoke’s existing Champion strategy on both sides. It learns team strength and counter relationships; it does not learn a new switching or catching strategy.</p>
+      <h3>1. Eligible Pokémon and movesets</h3><p>The pool contains the top 300 Great League entries by positive Default PvPoke weight (rank breaks ties). Forms are separate entries; a team cannot contain two entries with the same Pokédex number. Up to five movesets per entry are retained from exhaustive one-on-one scouting of all legal combinations across five shield/energy scenarios against the 300 recommended opponents. Those simulations use weighted Battle Rating.</p>
+      <h3>2. Full-team training data</h3><p>Opposing teams are sampled without replacement by Pokédex number, proportional to PvPoke Default weights, using recommended movesets. Each fixture is played with the two teams swapping sides. A win earns 1, a draw ½, and a loss 0. Team order is retained, so the lead matters. Opponents are independently sampled teams, rather than observed human lineups.</p>
+      <h3>3. Neural matchup model</h3><p>Twelve bootstrapped neural networks each use 366 team features and a 16-unit tanh hidden layer. Features describe typing, bulk, published scores and weights, move damage, energy, duration, coverage, effects, and team order. Adam fits binary cross-entropy for six epochs on up to 48,000 distinct fixtures per network.</p>
+      <pre>h(T) = tanh(Wx(T) + b)
+s(T) = vᵀh(T) + c
+P(A,B) = sigmoid(s(A) − s(B) + h(A)ᵀKh(B))
+K = −Kᵀ</pre><p>The antisymmetric interaction term can represent cyclic counters. Swapping teams gives complementary predictions. Roughly 20% of candidate team identities are held out from fitting for diagnostics. Ensemble disagreement guides exploration; it is not a calibrated confidence interval.</p>
+      <h3>4. Search and selection</h3><p>Each round scores 12,000 proposed teams: 60% mutations of leaders and 40% fresh random teams. It simulates 24: twelve neural picks, six uncertainty picks, five random picks, and one leader retest. Each plays 64 fresh opponent fixtures on both sides. Neural predictions are averaged over 256 fixed reference opponents.</p><p>A cautious training selection score favors consistent evidence:</p><pre>n = games / 2
+m = (reward / 2 + 4) / (n + 8)
+selection = m − 1.28 × √(m × (1 − m) / (n + 9))</pre><p>This is a selection heuristic, not a formal confidence bound. The graph shows the raw training score of the leader selected by this heuristic, a separate diagnostic that can be optimistic.</p>
+      <h3>5. Independent evaluation</h3><p>Twenty-four leaders enter screening; the top eight then play 512 fresh opponent fixtures on both sides (1,024 battles each). The primary team is chosen by screening before final testing. Four teams per baseline method play the same final opponents. Comparison intervals use a paired opponent-fixture bootstrap and are conditional on these baseline teams. Pilot evaluation evidence was absorbed into training; current screening and test seeds are fresh.</p>
+      <h3>Viewing all saved teams and battles</h3>
+      <p>Team search uses the ranking search syntax. Each AND term may match a different team member: <code>melmetal&amp;cramorant&amp;@counter</code> requires both named Pokémon and a member using Counter. Commas mean OR. A negated term excludes teams containing a match, so <code>!shadow</code> requires no Shadow Pokémon. Move queries inspect the actual team movesets.</p><p>Team Rankings includes all 3,453 evaluated teams, with training scores and sample counts. Twenty-four teams have fresh screening results, eight have final-test results, and twelve baseline teams have comparison-test results. Column headers sort the report; the evidence filter narrows it. Selection score uses the cautious formula above. Pokémon labels show their published Great League rank from the same PvPoke snapshot used for the run. Alternate Moveset compares the selected fast move and unordered charged-move set against the published recommendation.</p><p>Click a team to view its searchable paired Battles list, ordered by saved opponent team Selection rank where available, then average published Pokémon rank. The sort can be reversed. The evidence selector defaults to its freshest available test. Saved fixture scores average two battles with the sides swapped. Timelines were not saved; clicking a fixture reruns both battles in a background worker using the original teams, seed, Champion AI, mechanics and default initialization. The viewer verifies the paired replay score against the stored result and flags any mismatch. It graphs all six Pokémon’s remaining HP, with an Original / Swapped sides selector and battle events. Replay graphs are reconstructions.</p><h3>Comparing teams</h3><p>Select two report checkboxes and click Compare Teams, or compare the selected team with its opponent below a simulated battle. Shared results match the exact opponent order and random seed; the freshest common stage is selected. The report shows paired score differences, an approximate 95% interval, changed outcomes, opponent associations and side-by-side replays. Different training panels are not compared as if they were identical. If shared fixtures are unavailable, run a matched exploratory panel of up to 512 fixtures. Identical alphabetical bench order can isolate moveset changes when the lead and species are the same. Original saved simulator order remains unchanged.</p><p>Lead is a separate column. Bench Pokémon display alphabetically; Min, Max and Average Ranking summarize published Great League species ranks (lower is better). Search <code>lead:melmetal</code>, <code>lead:@counter</code>, or <code>lead:melmetal/@thunder shock</code> to restrict a query to the lead. Comparison replays list the charged attacks actually used and flag changed moves that were never fired. Conditional opponent trends are associations, not causal 1-v-1 conclusions.</p><h3>Reading the graphs</h3><p>Time starts at the unattended run, which resumed pilot evidence. Proposal quality uses a five-round trailing average of actual simulated scores. Held-out MSE measures team-mean prediction error; lower is better, and the comparison predicts one constant mean. Training and held-out diagnostics are not final validation scores. Finalist cards show fresh test outcomes; test scores were measured once at the end.</p>
+      <h3>What the result means</h3><p>The leader was already found in the pilot, and this run confirmed it. These are simulation scores under fixed, full-information AI and a weighted opponent distribution, not human win rates or proof of an optimal team. Restricting each Pokémon to five individually scouted movesets can miss useful team-specific combinations. CPU workers run the battle engine; this run did not use the GPU or Neural Engine.</p>
+      <p><a href="training/team-search/README.md" target="_blank" rel="noopener">Technical README ↗</a></p></dialog>
+    </section>
+    <div class="pro-toolbar">
+      <label>League<select id="proLeague"><option value="500">Little · 500 CP</option><option value="1500" selected>Great · 1,500 CP</option><option value="2500">Ultra · 2,500 CP</option><option value="10000">Master · Unlimited</option></select></label>
+      <label class="pro-rank-control">Rankings<select id="proSource"><option value="published">Great League</option><option value="custom" disabled hidden>Generated custom roster</option></select></label>
+      <label class="pro-rank-control">Category<select id="proCategory"><option value="overall">Overall</option></select></label>
+
+    </div>
+
+    <p class="hint">League rankings use the published open-league data from <a href="https://github.com/pvpoke/pvpoke/tree/f627e89e53c0c7b903fff097df7a0ad0ac95decc" target="_blank" rel="noopener">PvPoke · f627e89</a>, including editor adjustments. Click a Pokémon to view its moves, matchups and battle graph in the sidebar.</p>
+    <div class="pro-builder-actions"><button id="proOpenBuilder" type="button" class="secondary" aria-expanded="false" aria-controls="proBuilder">Create custom rankings</button></div>
+    <section id="proBuilder" class="pro-roster-card" hidden aria-labelledby="proBuilderTitle"><div class="pro-builder-heading"><div><h2 id="proBuilderTitle">Create custom rankings</h2><p class="hint">Choose your roster, set moveset limits, then generate.</p></div><button id="proCloseBuilder" type="button" class="secondary">Close</button></div>
+      <section class="pro-builder-section"><div class="pro-rule-heading"><h3><span class="pro-step">1</span> Pokémon filters</h3><button id="proAddFilter" type="button" class="secondary">+ Add filter</button></div>
+      <p id="proRulesHelp" class="hint">Combine filters to build your roster. Species can explicitly add Pokémon or exclude individual entries. Opponents use their recommended movesets.</p>
+      <div id="proCustomRules"><div id="proFilters"></div></div><p id="proFilterStatus" class="hint" role="status"></p></section>
+      <datalist id="proSpeciesIds"></datalist><datalist id="proMoveIds"></datalist>
+      <section class="pro-builder-section"><div class="pro-section-title"><h3><span class="pro-step">2</span> Movesets per Pokémon</h3><button id="proMovesInfo" type="button" class="pro-info-button" aria-label="How moveset selection works" aria-haspopup="dialog">i</button></div>
+      <div class="pro-choice-row"><label class="pro-choice"><input type="radio" name="proMovesMode" value="recommended" checked><span><strong>Recommended</strong><small>One published moveset per Pokémon</small></span></label><label class="pro-choice"><input type="radio" name="proMovesMode" value="multiple"><span><strong>Multiple</strong><small>Scout the strongest combinations</small></span></label><label id="proMovesTopControl" class="pro-max-moves" hidden>Maximum per Pokémon<input id="proMovesTopN" type="number" min="1" max="10000" value="10"></label></div>
+      <dialog id="proMovesHelp" class="pro-help-dialog"><div class="pro-builder-heading"><h3>How moveset selection works</h3><button id="proCloseMovesHelp" type="button" class="secondary">Close</button></div><p>Recommended ranks the published moveset for every accepted Pokémon.</p><p>Multiple first shortlists combinations by type-aware damage and energy cycles, then scouts five battle scenarios against up to eight opponents chosen for weight and type coverage. The recommended moveset reserves one of the selected slots. If fewer combinations exist than your maximum, all are retained.</p><p>Scouting models energy, damage, shields and timing, but cannot guarantee the full-roster best moveset. Move filters test what a Pokémon can learn; they do not restrict ranked movesets.</p><a href="includes/pro/README.html#16-selector-benchmark" target="_blank" rel="noopener">Screening benchmark &amp; method ↗</a></dialog></section>
+      <section class="pro-builder-section"><div class="pro-rule-heading"><h3><span class="pro-step">3</span> Ranking candidates</h3><span id="proPreviewCount" class="pro-count-badge"></span></div><div class="pro-choice-row"><label class="pro-choice"><input id="proAllCandidates" type="checkbox" checked><span><strong>Use all eligible Pokémon</strong><small>Rank every Pokémon matching your filters</small></span></label><label id="proCandidateLimitControl" hidden>Maximum ranking candidates · top PvPoke ranks<input id="proCandidateLimit" type="number" min="2" max="10000" value="100"></label></div><p class="hint">Tiles show the published PvPoke Overall rank in the selected league. The limit keeps the highest-ranked Pokémon within your filtered pool. Dimmed tiles are excluded by filters or the limit.</p><div class="pro-preview-toolbar"><label>Find Pokémon<input id="proRosterSearch" type="search" placeholder="Search the preview…"></label><span class="hint">Click to exclude or restore eligibility</span></div><div id="proRoster" class="pro-pokemon-grid" aria-label="Preview Pokémon"></div><p id="proPreviewStatus" class="hint" role="status"></p></section>
+      <section id="proOpponentSection" class="pro-builder-section"><div class="pro-rule-heading"><h3><span class="pro-step">4</span> Battle opponents</h3><span id="proOpponentPreviewCount" class="pro-count-badge"></span></div>      <section class="pro-opponent-weights"><h4>Opponent weights</h4><div class="pro-choice-row"><label class="pro-choice"><input type="radio" name="proWeightMode" value="default" checked><span><strong>Default</strong><small>PvPoke opponent weights</small></span></label><label class="pro-choice"><input type="radio" name="proWeightMode" value="equal"><span><strong>Equal</strong><small>Every opponent weighs 1</small></span></label><label class="pro-choice"><input type="radio" name="proWeightMode" value="calculate"><span><strong>Calculate</strong><small>Estimate the meta from performance</small></span></label></div><div id="proCalculateControls" class="pro-calculate-controls" hidden><div class="pro-calculation-toolbar"><label class="pro-guidance-label">PvPoke guidance <output id="proGuidanceValue">75%</output><input id="proWeightGuidance" type="range" min="0" max="100" step="5" value="75"><small>0%: performance only · 100%: tapered PvPoke weights</small></label><button id="proCalculateWeights" type="button" class="secondary">Calculate weights</button><button id="proWeightsInfo" type="button" class="pro-info-button" aria-label="How calculated weights work" aria-haspopup="dialog">i</button></div><p class="hint">Simulates recommended movesets across your selected roster, then balances their weights against the evolving meta. Generate calculates weights automatically if needed. Large rosters take longer; battles are reused within the same generation run.</p><div id="proWeightMetrics" class="pro-weight-metrics" hidden></div></div><p id="proWeightStatus" class="hint" role="status"></p>
+      <dialog id="proWeightsHelp" class="pro-help-dialog"><div class="pro-builder-heading"><h3>How calculated weights work</h3><button id="proCloseWeightsHelp" type="button" class="secondary">Close</button></div><p>This is an estimated strength-based meta, not measured usage. PvPoke guidance preserves its curated priorities while simulations adapt to your selected roster.</p><p>Weights of 0 or 1 get a steep performance taper, so hundreds of fringe Pokémon do not each contribute a full 1×. Every Pokémon remains eligible with a tiny positive floor.</p><p>Recommended movesets battle in all five scenarios. We repeatedly measure performance against the current weighted opponents, blend that with the PvPoke prior, and damp updates until stable or the iteration limit is reached. More variants do not create extra opponents.</p><p>Calculated weights replace the existing iterative meta multiplier in category scoring, preventing the estimate from being applied twice. Other score rules remain in place.</p><a href="includes/pro/README.html#4a-calculated-meta-weights" target="_blank" rel="noopener">Full algorithm &amp; validation ↗</a></dialog></section>
+<div class="pro-choice-row"><label class="pro-choice"><input id="proAllOpponents" type="checkbox" checked><span><strong>Use all ranking candidates</strong><small>Battle every Pokémon selected above</small></span></label><label id="proOpponentLimitControl" hidden>Maximum opponents · highest weights<input id="proOpponentLimit" type="number" min="2" max="10000" value="100"></label></div><p class="hint">The grid previews which ranking candidates will be used as opponents. Dimmed tiles are outside the weight limit. Ties and missing weights use PvPoke default weights, then roster order. Calculate’s initial weight estimation still simulates the full selected candidate roster.</p><div class="pro-preview-toolbar"><label>Find opponent<input id="proOpponentSearch" type="search" placeholder="Search the opponent preview…"></label></div><div id="proOpponentPreview" class="pro-pokemon-grid" aria-label="Preview battle opponents"></div><p id="proOpponentPreviewStatus" class="hint" role="status"></p></section>
+      <div id="proRosterCount" class="pro-build-metrics" role="status"></div>
+      <div class="save-actions"><button id="proGenerate" type="button" disabled>Generate custom rankings</button></div>
+    </section>
+    <button id="proCancel" type="button" class="secondary" hidden>Cancel calculation</button>
+    <p id="proStatus" role="status" aria-live="polite">Open this tab to load rankings.</p>
+    <section id="proRankPanel" role="tabpanel" aria-labelledby="proRankTab">
+    <details id="proRankingOptions" class="pro-ranking-options" hidden><summary id="proRankingOptionsTitle">Save Ranking</summary>
+    <div id="proSavedControls" class="pro-saved-controls" hidden>
+      <label>Ranking name<input id="proSavedName" type="text" maxlength="120" placeholder="Name your custom rankings" autocomplete="off"></label>
+      <div class="save-actions"><button id="proSaveRanking" type="button" disabled>Save rankings</button><button id="proRenameRanking" type="button" class="secondary" hidden>Rename</button><button id="proDeleteRanking" type="button" class="secondary" hidden>Delete saved ranking</button></div>
+      <p id="proSavedStatus" class="hint" role="status">Saved in this browser on this device.</p>
+    </div>
+<p id="proGeneratedContext" class="hint" hidden></p>
+    <label id="proBestFilter" class="pro-best-filter" hidden><input id="proRankBestOnly" type="checkbox"> Show best moveset per Pokémon only</label><div id="proRunSummary" class="hint"></div>
+    <p id="proMovesetLegend" class="pro-moveset-legend" hidden><span class="pro-alternate-key">Alternate moveset</span><span class="pro-better-key">Beats recommended</span><span class="hint">Compared with the same Pokémon’s recommended moveset in this report and category.</span></p>
+    </details>
+    <div class="pro-layout">
+      <section class="pro-rank-card" aria-label="League rankings">
+      <label class="pro-search pro-rank-control">Search Pokémon<input id="proSearch" type="search" placeholder="water&amp;@fighting, gfisk, +politoed…" aria-describedby="proSearchStatus"></label>
+    <div class="pro-search-help pro-rank-control"><span id="proSearchStatus" class="hint" role="status"></span><details><summary>PvPoke search guide</summary>
+      <p>Combine terms with <strong>&amp;</strong> (AND), <strong>,</strong> (OR), and <strong>!</strong> (NOT). Move searches use learnable moves, including Elite TM moves, regardless of the displayed moveset.</p>
+      <div class="table-scroll"><table class="pro-search-guide"><thead><tr><th>Search by</th><th>Examples</th></tr></thead><tbody>
+      <tr><td>Name or nickname</td><td>azumarill · gfisk</td></tr><tr><td>Type or tag</td><td>water · legendary · mythical · ultrabeast · regional · alolan · galarian · starter · shadow · shadoweligible · mega · supermega · xl</td></tr>
+      <tr><td>Generation or region</td><td>gen1 · gen2 · kanto · johto · hoenn · sinnoh · unova · kalos · alola · galar · hisui · paldea</td></tr><tr><td>Pokédex number or family</td><td>184 · +politoed</td></tr>
+      <tr><td>Move name or type</td><td>@counter · @fighting</td></tr><tr><td>Fast or charged moves only</td><td>@1fighting · @2mud</td></tr><tr><td>Legacy or special moves</td><td>@legacy (excludes Return/Frustration) · @special (includes them)</td></tr>
+      <tr><td>Traits</td><td id="proSearchTraits">Bulky · Spammy · Technical · Inconsistent</td></tr><tr><td>Second charged move cost</td><td>10k · 50k · 75k · 100k</td></tr><tr><td>Buddy distance</td><td>1km · 3km · 5km · 20km</td></tr>
+      <tr><td>Meta, editor notes, perfect IVs</td><td>meta · notes · 4* · hundo</td></tr><tr><td>Combine searches</td><td>water&amp;@fighting · water,fighting · !water</td></tr>
+      </tbody></table></div><p class="hint">Move searches (@move, @type, @1 and @2) match the moveset shown in the row, including saved alternate movesets. Meta uses PvPoke’s bundled league meta group. Traits, XL and perfect IVs use the league’s default Pokémon build and published recommended moveset. Notes searches entries with editor notes in the displayed report.</p>
+    </details></div>
+<div class="pro-score-toolbar"><button id="proAddScore" type="button" class="secondary" hidden>Add Score</button></div>
+<dialog id="proAddScoreDialog" class="pro-help-dialog pro-score-dialog"><div class="pro-builder-heading"><h2>Add Score</h2><button id="proCloseAddScore" type="button" class="secondary">Close</button></div><p class="hint">Add a score using the same stored battles and movesets. The existing scores stay unchanged. Published scores use PvPoke’s recommended moveset. The leftmost score determines rank. Double-click a score header to add a difference; drag headers to reorder columns.</p><section class="pro-builder-section"><h3>Score source</h3><div class="pro-choice-row"><label class="pro-choice"><input type="radio" name="proScoreMode" value="published"><span><strong>PvPoke</strong><small>Published score for this league</small></span></label>
+<label class="pro-choice"><input type="radio" name="proScoreMode" value="default" checked><span><strong>Default</strong><small>PvPoke opponent weights</small></span></label><label class="pro-choice"><input type="radio" name="proScoreMode" value="equal"><span><strong>Equal</strong><small>Every opponent weighs 1</small></span></label><label class="pro-choice"><input type="radio" name="proScoreMode" value="calculate"><span><strong>Calculate</strong><small>Estimate the meta from performance</small></span></label></div><div id="proScoreCalculateControls" class="pro-calculate-controls" hidden><div class="pro-calculation-toolbar"><label class="pro-guidance-label">PvPoke guidance <output id="proScoreGuidanceValue">75%</output><input id="proScoreGuidance" type="range" min="0" max="100" step="5" value="75"><small>0%: performance only · 100%: tapered PvPoke weights</small></label><button id="proScoreWeightsInfo" type="button" class="pro-info-button" aria-label="How score weights work">i</button></div><p class="hint">Uses recommended movesets against the stored opponents. No battle simulations are rerun.</p></div><p id="proScoreModeHint" class="hint"></p></section><div class="save-actions"><button id="proApplyScore" type="button">Add score column</button></div><p id="proScoreStatus" class="hint" role="status"></p></dialog>
+<dialog id="proScorePreviewDialog" class="pro-help-dialog pro-score-dialog"><div class="pro-builder-heading"><h2 id="proScorePreviewTitle">Opponent weights</h2><button id="proCloseScorePreview" type="button" class="secondary">Close</button></div><p id="proScorePreviewRules" class="hint"></p><div class="pro-rule-heading"><h3>Preview Pokémon</h3><span id="proScorePreviewCount" class="pro-count-badge"></span></div><div class="pro-preview-toolbar"><label>Find Pokémon<input id="proScorePreviewSearch" type="search" placeholder="Search the preview…"></label></div><div id="proScorePreviewGrid" class="pro-pokemon-grid" aria-label="Score opponent weights"></div></dialog>
+<dialog id="proColumnDialog" class="pro-help-dialog"><div class="pro-builder-heading"><h2 id="proColumnTitle">Score column</h2><button id="proCloseColumn" type="button" class="secondary">Close</button></div><p class="hint">The leftmost score column determines rank automatically. Add Difference compares this score minus another column.</p><div class="save-actions"><button id="proAddDifference" type="button" class="secondary">Add Difference</button></div></dialog><p id="proColumnStatus" class="hint" role="status"></p><div id="proRankings" class="table-scroll" tabindex="0"></div><div class="analysis-pagination"><span id="proPagination"></span><button id="proPrev" type="button" class="secondary">Previous</button><button id="proNext" type="button" class="secondary">Next</button></div></section>
+      <aside id="proDetailParking" class="pro-detail-card" hidden><div id="proDetail"><h3>Pokémon details</h3><p>Select a Pokémon in the rankings.</p></div>
+        <section id="proBattlePanel" class="pro-battle-card" aria-label="Simulated battle" hidden></section>
+      </aside>
+    </div>
+    </section>
+    <section id="proLabPanel" role="tabpanel" aria-labelledby="proLabTab" class="pro-lab" hidden>
+      <h2>Moveset lab</h2><label>Pokémon to evaluate<select id="proLabPokemon"></select></label><p class="hint">Evaluate every legal move combination for the selected Pokémon against your accepted weighted roster. Opponents use published movesets and PvPoke’s default IVs. This uses equal shields, zero starting energy and weighted mean Battle Rating (0–1000); it is a separate comparison from the five-scenario overall ranking. Elite TM and legacy moves are included.</p>
+      <div class="pro-toolbar"><label>Shields per side<select id="proShields"><option value="0">0</option><option value="1" selected>1</option><option value="2">2</option></select></label><label>Maximum combinations<input id="proLimit" type="number" min="1" max="10000" value="500"></label><label>Within % of best<input id="proThreshold" type="number" min="0" max="100" value="10" step="0.5"></label><label class="pro-check"><input id="proBestOnly" type="checkbox" checked> Best moveset only (include ties)</label></div>
+      <button id="proEvaluate" type="button" disabled>Evaluate selected Pokémon’s movesets</button><p id="proVariantContext" class="hint"></p><p id="proLabMovesetLegend" class="pro-moveset-legend" hidden><span class="pro-alternate-key">Alternate moveset</span><span class="pro-better-key">Beats recommended</span><span class="hint">Compared using weighted Battle Rating against this lab’s roster.</span></p><div id="proVariants" class="table-scroll" tabindex="0">Select a Pokémon to begin.</div>
+    </section>
+    <p class="hint">Powered by <a href="https://pvpoke.com/rankings/" target="_blank" rel="noopener">PvPoke</a> · <a href="includes/pro/vendor/LICENSE">MIT license</a>. Simulations estimate performance under fixed assumptions; actual play varies.</p>
+  </section>
+
+<section id="metaPanel" role="tabpanel" aria-labelledby="metaTab" hidden>
+ <div class="meta-heading"><div><p class="meta-eyebrow">BATTLE VIDEO → REVIEWED TEAMS → OBSERVED META</p><h2>Turn your battles into better data.</h2></div><button id="metaInfo" class="pro-info-button" aria-label="Meta Extractor README: how each metric is measured" aria-haspopup="dialog">i</button></div>
+ <p class="meta-demo-note">Analyze recordings on your device. Review opponent teams, replay important moments, and build a usage sample. This demo keeps videos private and records in this browser; export and import reviewed reports to combine contributors’ samples.</p>
+ <div class="meta-tabs"><button id="metaAnalyzeView" aria-pressed="true">Analyze &amp; review</button><button id="metaDatasetView" class="secondary" aria-pressed="false">Observed meta <span id="metaCount">0</span></button><button id="metaValidateView" class="secondary" aria-pressed="false">Validate <span id="metaValidateCount">0</span></button></div>
+ <div id="metaAnalysisPane">
+ <section class="meta-card"><label class="meta-upload" id="metaDrop"><strong>Add your battle recording</strong><span>Drop a video here or choose a file · MP4, MOV, WebM</span><input id="metaFile" type="file" accept="video/*,.mp4,.mov,.webm"></label>
+ <div class="meta-actions" style="margin-top:14px"><button id="metaExample" class="secondary">Try an example report</button><span class="hint">Illustrative review data · no video upload needed</span></div></section>
+ <section id="metaWorkspace" class="meta-card" hidden><div class="meta-workspace"><div><div class="meta-video-wrap"><video id="metaVideo" controls playsinline muted preload="metadata"></video><canvas id="metaOverlay" class="meta-overlay"></canvas></div><p id="metaFileInfo" class="hint"></p><div class="meta-actions"><label>Preview second<input id="metaPreviewSecond" type="number" min="0" value="22" style="width:100px"></label><button id="metaSeek" class="secondary">Go</button></div><button id="metaTestCrops" type="button" class="secondary">Read this frame</button></div><div>
+ <h3 style="margin-top:0">1. Set your recording context</h3><div class="meta-fields"><label>League<select id="metaLeague"><option value="1500">Great · 1,500 CP</option><option value="2500">Ultra · 2,500 CP</option><option value="10000">Master · Unlimited</option><option value="500">Little · 500 CP</option></select></label><label>Cup<input id="metaCup" value="all" maxlength="60"></label><label>Battle date<input id="metaDate" type="date"></label><label>Rating / bracket<input id="metaRating" placeholder="e.g. 2200–2400" maxlength="60"></label></div>
+ <h3>2. Check the battle layout</h3><p class="hint">Nameplates, Poké Balls and shields are found automatically on the first battle frame (mint boxes). Use <strong>Read this frame</strong> on a battle frame to check them. The blue box is the charged-attack banner; adjust it only for unusual screens. English UI supported.</p>
+ <div id="metaCrops"></div><button id="metaResetCrops" class="secondary">Reset portrait layout</button>
+ <div class="meta-fields"><label>Sampling<select id="metaSampling"><option value="key" selected>Keyframes · about 1 / sec (fastest)</option><option value="1">Fixed · 1 frame / sec</option><option value="0.5">Fixed · 2 frames / sec</option></select></label><label>Start time (seconds)<input id="metaStart" type="number" min="0" value="0" step="1"></label><label>End time (seconds)<input id="metaEnd" type="number" min="1" step="1"></label></div>
+ <label class="meta-check"><input id="metaCaptureMoves" type="checkbox" checked>Include charged-attack timeline</label><label class="meta-check"><input id="metaFastMoves" type="checkbox" checked>Estimate fast moves and Shadow status from HP bars (slower)</label><label class="meta-check"><input id="metaSendValidate" type="checkbox" checked>Send uncertain detections to the Validate tab (only the questions and battle summaries are saved, never video)</label><div class="meta-actions"><button id="metaRun">Analyze video</button><button id="metaCancel" class="secondary" hidden>Stop &amp; review partial results</button></div><progress id="metaProgress" class="meta-progress" value="0" max="1"></progress><p id="metaStatus" role="status" aria-live="polite">Battles are split using the Poké Balls and shields on each nameplate. Each distinct name is read once; results are read from the screen after each battle.</p><p id="metaReadout" class="hint"></p>
+ </div></div></section>
+ <section id="metaReviewPane" class="meta-card" hidden><div class="meta-heading"><div><p class="meta-eyebrow">HUMAN REVIEW REQUIRED</p><h2>3. Check every battle</h2></div><div class="meta-actions"><button id="metaManual" class="secondary">+ Add missed battle</button><button id="metaSave">Save reviewed battles</button></div></div><label class="meta-check" id="metaShareRow" hidden><input id="metaShare" type="checkbox">Also contribute these battles to the shared meta sample (species, results, league and date only; never video or trainer names)</label><p class="hint">Confirm forms and Shadow status from the video; name OCR cannot distinguish them. First sighting may not be the lead. Unknown results are retained. Add only Pokémon actually revealed.</p><section id="metaQuestions" class="meta-questions" aria-live="polite" hidden></section><div id="metaRunMetrics" class="meta-metrics"></div><div id="metaBattles" class="meta-battles"></div><p id="metaSaveStatus" role="status"></p></section>
+ </div>
+ <section id="metaValidatePane" class="meta-card" hidden></section>
+ <section id="metaDataPane" class="meta-card" hidden><div class="meta-heading"><div><p class="meta-eyebrow">REVIEWED OBSERVATIONS · THIS BROWSER</p><h2>Your meta sample</h2></div><div class="meta-actions"><button id="metaExport">Export reviewed report</button><button id="metaTrainer" class="secondary">Export team-training data</button><label class="secondary">Import reports<input id="metaImport" type="file" accept="application/json,.json" multiple></label></div></div><div class="meta-fields"><label>League filter<select id="metaDataLeague"><option value="1500">Great</option><option value="2500">Ultra</option><option value="10000">Master</option><option value="500">Little</option></select></label><label>Cup filter<input id="metaDataCup" value="all"></label><label>Since<input id="metaSince" type="date"></label><label>Recency half-life<select id="metaHalfLife" title="Older battles count less, so the sample follows balance updates"><option value="0">Off</option><option value="30">30 days</option><option value="90">90 days</option></select></label><label>Source<select id="metaDataSource" disabled title="All contributors is available in the published app"><option value="local">This browser</option><option value="shared">All contributors</option></select></label><label>Per-contributor cap<select id="metaCap" title="Keeps each contributor’s most recent battles so no one dominates the pooled sample"><option value="0">None</option><option value="25">25 battles</option><option value="50" selected>50 battles</option><option value="100">100 battles</option></select></label><span class="hint"><span id="metaSharedCount">0</span> shared battles</span><button id="metaWithdraw" class="secondary" type="button" hidden>Remove my shared battles</button></div><div id="metaDataMetrics" class="meta-metrics"></div><p class="hint">Appearance rate counts reviewed battles where a species was revealed; it is a lower bound when opponents remain hidden. Full-team frequencies require three confirmed forms and a confirmed lead. Keep cup, date, and rating brackets separate when training. These are contributed observations, not population-wide usage.</p><div id="metaDataTables"></div><p id="metaImportStatus" role="status"></p></section>
+ <dialog id="metaHelp" class="meta-help"><div class="meta-heading"><h2>Meta Extractor README</h2><button id="metaCloseHelp" class="secondary">Close</button></div><div id="metaHelpBody"></div></dialog>
+</section>
+
+</main>

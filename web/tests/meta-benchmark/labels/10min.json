@@ -1,0 +1,244 @@
+{
+ "schema": "meta-benchmark-labels-v1",
+ "recording": "10min.mp4",
+ "source": "Desktop/Projects/PoGo Recorder/src (not copied)",
+ "width": 886,
+ "height": 1920,
+ "codec": "HEVC",
+ "durationS": 650.6,
+ "league": "Willpower Cup (Great League CP, limited)",
+ "leagueEvidence": "party-select screen at 2:05",
+ "verification": "Battle boundaries from HUD faint/shield resets; results from YOU WIN / GOOD EFFORT screens or final Poké Ball count, with every uncertain one checked by eye; every species label checked against its nameplate image. Forms (regional) and Shadow status are NOT yet verified. Reveal times are keyframe-resolution (~1 s).",
+ "battles": [
+  {
+   "n": 1,
+   "start": 19.968,
+   "end": 114.57,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Mandibuzz",
+    "Guzzlord",
+    "Hatterene"
+   ],
+   "opp": [
+    "Hatterene",
+    "Claydol",
+    "Sableye"
+   ],
+   "oppLead": "Hatterene",
+   "oppFainted": 2,
+   "myFainted": 1,
+   "reveals": [
+    {
+     "t": 19.968,
+     "side": "my",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 19.968,
+     "side": "opp",
+     "species": "Hatterene"
+    },
+    {
+     "t": 64.765,
+     "side": "opp",
+     "species": "Claydol"
+    },
+    {
+     "t": 80.705,
+     "side": "my",
+     "species": "Guzzlord"
+    },
+    {
+     "t": 110.577,
+     "side": "my",
+     "species": "Hatterene"
+    },
+    {
+     "t": 111.575,
+     "side": "opp",
+     "species": "Sableye"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": "",
+   "verified": {
+    "opponent:claydol:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T05:13:37.064Z"
+    },
+    "opponent:sableye:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T05:14:19.185Z"
+    }
+   }
+  },
+  {
+   "n": 2,
+   "start": 146.373,
+   "end": 318.38,
+   "result": "Win",
+   "resultEvidence": "result screen",
+   "my": [
+    "Mandibuzz",
+    "Guzzlord",
+    "Hatterene"
+   ],
+   "opp": [
+    "Hatterene",
+    "Mandibuzz",
+    "Medicham"
+   ],
+   "oppLead": "Hatterene",
+   "oppFainted": 3,
+   "myFainted": 2,
+   "reveals": [
+    {
+     "t": 146.373,
+     "side": "my",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 146.373,
+     "side": "opp",
+     "species": "Hatterene"
+    },
+    {
+     "t": 189.142,
+     "side": "opp",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 220.977,
+     "side": "my",
+     "species": "Guzzlord"
+    },
+    {
+     "t": 301.438,
+     "side": "my",
+     "species": "Hatterene"
+    },
+    {
+     "t": 301.438,
+     "side": "opp",
+     "species": "Medicham"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": ""
+  },
+  {
+   "n": 3,
+   "start": 351.215,
+   "end": 499.475,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Mandibuzz",
+    "Hatterene",
+    "Guzzlord"
+   ],
+   "opp": [
+    "Qwilfish",
+    "Mandibuzz",
+    "Rapidash"
+   ],
+   "oppLead": "Qwilfish",
+   "oppFainted": 1,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 351.215,
+     "side": "my",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 351.215,
+     "side": "opp",
+     "species": "Qwilfish"
+    },
+    {
+     "t": 404.917,
+     "side": "my",
+     "species": "Hatterene"
+    },
+    {
+     "t": 413.903,
+     "side": "opp",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 432.808,
+     "side": "my",
+     "species": "Guzzlord"
+    },
+    {
+     "t": 444.74,
+     "side": "opp",
+     "species": "Rapidash"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": ""
+  },
+  {
+   "n": 4,
+   "start": 526.387,
+   "end": 642.912,
+   "result": "Loss",
+   "resultEvidence": "result screen",
+   "my": [
+    "Mandibuzz",
+    "Hatterene",
+    "Guzzlord"
+   ],
+   "opp": [
+    "Hatterene",
+    "Sableye",
+    "Lucario"
+   ],
+   "oppLead": "Hatterene",
+   "oppFainted": 2,
+   "myFainted": 3,
+   "reveals": [
+    {
+     "t": 526.387,
+     "side": "my",
+     "species": "Mandibuzz"
+    },
+    {
+     "t": 526.387,
+     "side": "opp",
+     "species": "Hatterene"
+    },
+    {
+     "t": 559.188,
+     "side": "my",
+     "species": "Hatterene"
+    },
+    {
+     "t": 559.188,
+     "side": "opp",
+     "species": "Sableye"
+    },
+    {
+     "t": 605.035,
+     "side": "opp",
+     "species": "Lucario"
+    },
+    {
+     "t": 611.027,
+     "side": "my",
+     "species": "Guzzlord"
+    }
+   ],
+   "formsVerified": false,
+   "shadowVerified": false,
+   "note": ""
+  }
+ ]
+}

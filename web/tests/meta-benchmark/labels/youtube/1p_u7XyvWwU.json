@@ -1,0 +1,161 @@
+{
+ "schema": "meta-benchmark-labels-v1",
+ "recording": "1p_u7XyvWwU.mp4",
+ "source": "YouTube 1p_u7XyvWwU · KZ FAM · CC BY (Desktop/Projects/PoGo Recorder/src/youtube-cc, not copied)",
+ "width": 1920,
+ "height": 1080,
+ "screenBox": [
+  0,
+  0,
+  560,
+  1080
+ ],
+ "codec": "H.264 (YouTube, keyframe every 6 s)",
+ "durationS": 914.1,
+ "league": "Great League: Mega Edition",
+ "leagueEvidence": "party-select screen at 3:31",
+ "verification": "Labelled by Claude from HUD contact sheets every 4 s and 1 fps strips around each battle end (2026-10-10). Results from YOU WIN / GOOD EFFORT screens. Species from nameplates; forms and Shadow status not verified. Start/end are ±4 s.",
+ "battles": [
+  {
+   "n": 1,
+   "start": 24,
+   "end": 202,
+   "result": "Win",
+   "resultEvidence": "result screen 3:29",
+   "my": [
+    "Cramorant",
+    "Sableye",
+    "Fearow"
+   ],
+   "opp": [
+    "Melmetal",
+    "Feraligatr",
+    "Gourgeist"
+   ],
+   "oppLead": "Melmetal",
+   "verified": {
+    "my:sableye:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T20:58:16.752Z"
+    },
+    "opponent:gourgeist:fast": {
+     "value": "INCINERATE",
+     "answeredAt": "2026-10-10T20:58:20.185Z"
+    }
+   }
+  },
+  {
+   "n": 2,
+   "start": 224,
+   "end": 389,
+   "result": "Loss",
+   "resultEvidence": "result screen 6:31",
+   "my": [
+    "Cramorant",
+    "Fearow",
+    "Sableye"
+   ],
+   "opp": [
+    "Skeledirge",
+    "Umbreon",
+    "Wigglytuff"
+   ],
+   "oppLead": "Skeledirge",
+   "verified": {
+    "opponent:wigglytuff:fast": {
+     "value": "CHARM",
+     "answeredAt": "2026-10-10T20:58:32.652Z"
+    }
+   }
+  },
+  {
+   "n": 3,
+   "start": 404,
+   "end": 551,
+   "result": "Win",
+   "resultEvidence": "result screen 9:18",
+   "my": [
+    "Cramorant",
+    "Sableye",
+    "Fearow"
+   ],
+   "opp": [
+    "Typhlosion",
+    "Charjabug",
+    "Cradily"
+   ],
+   "oppLead": "Typhlosion",
+   "verified": {
+    "opponent:cradily:fast": {
+     "value": "BULLET_SEED",
+     "answeredAt": "2026-10-10T20:58:35.102Z"
+    },
+    "opponent:typhlosion:fast": {
+     "value": "INCINERATE",
+     "answeredAt": "2026-10-10T20:58:39.669Z"
+    }
+   }
+  },
+  {
+   "n": 4,
+   "start": 572,
+   "end": 718,
+   "result": "Win",
+   "resultEvidence": "result screen 12:00",
+   "my": [
+    "Cramorant",
+    "Fearow",
+    "Sableye"
+   ],
+   "opp": [
+    "Hydreigon",
+    "Quagsire",
+    "Ninetales"
+   ],
+   "oppLead": "Hydreigon",
+   "verified": {
+    "opponent:hydreigon:fast": {
+     "value": "DRAGON_BREATH",
+     "answeredAt": "2026-10-10T20:58:42.869Z"
+    },
+    "opponent:ninetales:shadow": {
+     "value": true,
+     "answeredAt": "2026-10-10T20:58:52.086Z"
+    },
+    "opponent:quagsire:fast": {
+     "value": "MUD_SHOT",
+     "answeredAt": "2026-10-10T20:58:47.269Z"
+    }
+   }
+  },
+  {
+   "n": 5,
+   "start": 744,
+   "end": 890,
+   "result": "Loss",
+   "resultEvidence": "result screen 14:52; a Surrender and exit? dialog was on screen for under a second just before the end, and it is not known whether it was confirmed (asked in Validate)",
+   "my": [
+    "Cramorant",
+    "Sableye",
+    "Fearow"
+   ],
+   "opp": [
+    "Stunfisk",
+    "Mimikyu",
+    "Cramorant"
+   ],
+   "oppLead": "Stunfisk",
+   "ending": "you-forfeit",
+   "verified": {
+    "ending": {
+     "value": "Loss:you-forfeit",
+     "answeredAt": "2026-10-10T20:59:07.820Z"
+    },
+    "opponent:cramorant:fast": {
+     "value": "PECK",
+     "answeredAt": "2026-10-10T20:58:56.253Z"
+    }
+   }
+  }
+ ]
+}

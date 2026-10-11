@@ -1,0 +1,18 @@
+{
+ "hud_names": {
+  "strips": 69,
+  "shown": 38,
+  "namedShown": 74,
+  "named": 74,
+  "right": 74,
+  "wrong": [],
+  "failed": 1,
+  "providers": {
+   "ovh": 31
+  },
+  "failedShown": 1,
+  "precision": 1.0,
+  "coverage": 1.0,
+  "passed": true
+ }
+}

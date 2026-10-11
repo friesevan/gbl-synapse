@@ -1,0 +1,219 @@
+{
+ "schema": "meta-benchmark-labels-v1",
+ "recording": "Mv4o3HC29iU.mp4",
+ "source": "YouTube Mv4o3HC29iU · KZ FAM · CC BY (Desktop/Projects/PoGo Recorder/src/youtube-cc, not copied)",
+ "width": 1920,
+ "height": 1080,
+ "screenBox": [
+  0,
+  0,
+  562,
+  1080
+ ],
+ "codec": "H.264 (YouTube, keyframe every 6 s)",
+ "durationS": 1393.6,
+ "league": "Master League: Mega Edition",
+ "leagueEvidence": "party-select screen at 3:51",
+ "verification": "Labelled by Claude from HUD contact sheets every 5 s and 1 fps strips around each battle end (2026-10-10). Results from YOU WIN / GOOD EFFORT screens; forfeits from the Surrender and exit? dialog or an early YOU WIN. Species from nameplates (Mega/Primal names shown in full); Shadow status not verified. Start/end are ±5 s. Phone notifications cover the HUD at 7:55 and 15:30.",
+ "battles": [
+  {
+   "n": 1,
+   "start": 45,
+   "end": 221,
+   "result": "Win",
+   "resultEvidence": "result screen 3:44",
+   "my": [
+    "Primal Kyogre",
+    "Dialga",
+    "Lunala"
+   ],
+   "opp": [
+    "Xerneas",
+    "Primal Kyogre",
+    "Garchomp"
+   ],
+   "oppLead": "Xerneas",
+   "verified": {
+    "my:dialga:form": {
+     "value": "dialga_origin",
+     "answeredAt": "2026-10-10T21:15:25.349Z"
+    }
+   }
+  },
+  {
+   "n": 2,
+   "start": 245,
+   "end": 366,
+   "result": "Win",
+   "resultEvidence": "result screen 6:09",
+   "my": [
+    "Primal Kyogre",
+    "Dialga",
+    "Lunala"
+   ],
+   "opp": [
+    "Primal Kyogre",
+    "Zamazenta",
+    "Xerneas"
+   ],
+   "oppLead": "Primal Kyogre",
+   "verified": {
+    "opponent:zamazenta:fast": {
+     "value": "ICE_FANG",
+     "answeredAt": "2026-10-10T21:15:46.950Z"
+    }
+   }
+  },
+  {
+   "n": 3,
+   "start": 390,
+   "end": 497,
+   "result": "Win",
+   "resultEvidence": "result screen 8:20",
+   "my": [
+    "Primal Kyogre",
+    "Dialga",
+    "Lunala"
+   ],
+   "opp": [
+    "Yveltal",
+    "Mega Mewtwo X",
+    "Necrozma"
+   ],
+   "oppLead": "Yveltal",
+   "verified": {
+    "opponent:necrozma:fast": {
+     "value": "SHADOW_CLAW",
+     "answeredAt": "2026-10-10T21:16:01.967Z"
+    }
+   }
+  },
+  {
+   "n": 4,
+   "start": 580,
+   "end": 759,
+   "result": "Loss",
+   "ending": "you-forfeit",
+   "resultEvidence": "Surrender and exit? at 12:39, GOOD EFFORT 12:45",
+   "my": [
+    "Primal Kyogre",
+    "Dialga",
+    "Lunala"
+   ],
+   "opp": [
+    "Dialga",
+    "Primal Kyogre",
+    "Zacian"
+   ],
+   "oppLead": "Dialga",
+   "verified": {
+    "opponent:dialga:fast": {
+     "value": "DRAGON_BREATH",
+     "answeredAt": "2026-10-10T21:16:05.784Z"
+    },
+    "opponent:dialga:form": {
+     "value": "dialga_origin",
+     "answeredAt": "2026-10-10T21:16:07.717Z"
+    }
+   }
+  },
+  {
+   "n": 5,
+   "start": 785,
+   "end": 841,
+   "result": "Win",
+   "ending": "opponent-forfeit",
+   "resultEvidence": "result screen 14:04 with opponent at 2 Pokémon",
+   "my": [
+    "Primal Kyogre",
+    "Dialga"
+   ],
+   "opp": [
+    "Necrozma",
+    "Primal Kyogre"
+   ],
+   "oppLead": "Necrozma"
+  },
+  {
+   "n": 6,
+   "start": 895,
+   "end": 1044,
+   "result": "Win",
+   "resultEvidence": "result screen 17:27",
+   "my": [
+    "Dialga",
+    "Lunala",
+    "Primal Kyogre"
+   ],
+   "opp": [
+    "Zekrom",
+    "Zacian",
+    "Primal Kyogre"
+   ],
+   "oppLead": "Zekrom",
+   "verified": {
+    "opponent:zacian:fast": {
+     "value": "METAL_CLAW",
+     "answeredAt": "2026-10-10T21:16:11.752Z"
+    },
+    "opponent:zekrom:shadow": {
+     "value": false,
+     "answeredAt": "2026-10-10T21:16:15.417Z"
+    }
+   }
+  },
+  {
+   "n": 7,
+   "start": 1070,
+   "end": 1234,
+   "result": "Win",
+   "resultEvidence": "result screen 20:37",
+   "my": [
+    "Primal Kyogre",
+    "Dialga",
+    "Lunala"
+   ],
+   "opp": [
+    "Necrozma",
+    "Kyurem",
+    "Mega Garchomp"
+   ],
+   "oppLead": "Necrozma",
+   "verified": {
+    "opponent:kyurem:fast": {
+     "value": "DRAGON_BREATH",
+     "answeredAt": "2026-10-10T21:16:20.851Z"
+    }
+   }
+  },
+  {
+   "n": 8,
+   "start": 1255,
+   "end": 1360,
+   "result": "Loss",
+   "ending": "you-forfeit",
+   "resultEvidence": "Surrender and exit? at 22:40, GOOD EFFORT 22:45",
+   "my": [
+    "Primal Kyogre",
+    "Lunala",
+    "Dialga"
+   ],
+   "opp": [
+    "Mega Mewtwo X",
+    "Dialga",
+    "Lunala"
+   ],
+   "oppLead": "Mega Mewtwo X",
+   "verified": {
+    "opponent:dialga:fast": {
+     "value": "DRAGON_BREATH",
+     "answeredAt": "2026-10-10T21:16:25.318Z"
+    },
+    "opponent:dialga:form": {
+     "value": "dialga_origin",
+     "answeredAt": "2026-10-10T21:16:38.618Z"
+    }
+   }
+  }
+ ]
+}

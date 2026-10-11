@@ -1,0 +1,44 @@
+{
+ "schema": "meta-benchmark-species-v1",
+ "recording": "jZ4ux4QBdUU.mp4",
+ "source": "YouTube jZ4ux4QBdUU · AMaizad97 · CC BY (not copied)",
+ "width": 1920,
+ "height": 1080,
+ "screenBox": [
+  718,
+  0,
+  1202,
+  1080
+ ],
+ "league": "Ultra League",
+ "layout": "edited highlights: cuts within and between battles, starts mid-battle",
+ "verification": "Opponent species seen in HUD contact sheets every 5 s (Claude, 2026-10-10). A lower bound: a Pokémon on screen for under ~5 s can be missing. Battle boundaries and results are not labelled because of the edits. Ampharos added 2026-10-10 after the pipeline found them; checked on the nameplate by Claude.",
+ "my": [
+  "Gourgeist",
+  "Walrein",
+  "Florges"
+ ],
+ "oppSpecies": [
+  "Togekiss",
+  "Tyranitar",
+  "Florges",
+  "Giratina",
+  "Feraligatr",
+  "Primeape",
+  "Drapion",
+  "Skuntank",
+  "Golurk",
+  "Avalugg",
+  "Mamoswine",
+  "Kommo-o",
+  "Empoleon",
+  "Ninetales",
+  "Steelix",
+  "Regidrago",
+  "Magnezone",
+  "Dragonite",
+  "Miltank",
+  "Weezing",
+  "Ampharos"
+ ]
+}
