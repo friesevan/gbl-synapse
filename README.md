@@ -39,6 +39,8 @@ The trainer was developed separately as PvPokeTeamTrainer and merged here on 202
 
 Benchmark runs need ffmpeg: `node web/tests/meta-benchmark/run-batch.cjs JOBS.txt OUTDIR` (see the header of that file).
 
+Overnight YouTube harvest (discover → metadata + league guess → download → Meta Extractor, resumable): `bash web/scripts/yt-harvest/overnight.sh --hours 9`; see "Overnight harvest" in `web/tests/meta-benchmark/sources/README.md`.
+
 ## Data policy
 
 Recordings (`*.mp4`, `recorder/src/`) are git-ignored and stay local. Only derived data (labels, summaries) is committed. Opponent trainer names are never read or stored. API keys live in `~/.config/freellm/env`, outside the repo.
