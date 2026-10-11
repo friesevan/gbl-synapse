@@ -2,8 +2,9 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
+const path=require('node:path');
 const core=vm.createContext({console});
-vm.runInContext(fs.readFileSync('includes/analysis/core.js','utf8'),core);
+vm.runInContext(fs.readFileSync(path.join(__dirname,'includes/analysis/core.js'),'utf8'),core);
 const {buildReport,moveUpdates}=core.PvPokeAnalysis;
 const xl={non_shadow:{'45':118},shadow:{'45':141}};
 const pokemon=(id,types=['grass','poison'])=>({speciesId:id,speciesName:id,baseStats:{atk:100,def:120,hp:130},types,fastMoves:['FAST'],chargedMoves:['CHARGE','OTHER'],defaultIVs:{cp1500:[45,0,15,15]}});
@@ -46,7 +47,7 @@ test('missing metadata and score produce nulls rather than zeros or NaN',()=>{
  const report=buildReport(snapshot([rank('missing',null)],[]),snapshot([rank('missing',90)],[]),'10000',xl);
  assert.equal(report.rows[0].Difference,null);assert.equal(report.rows[0].Attack,null);assert.equal(report.rows[0].XL,null);
 });
-function dataContext(fetcher){const c=vm.createContext({fetch:fetcher,URL,URLSearchParams,Date,console});vm.runInContext(fs.readFileSync('includes/analysis/data.js','utf8'),c);return c.PvPokeData;}
+function dataContext(fetcher){const c=vm.createContext({fetch:fetcher,URL,URLSearchParams,Date,console});vm.runInContext(fs.readFileSync(path.join(__dirname,'includes/analysis/data.js'),'utf8'),c);return c.PvPokeData;}
 test('snapshot resolver uses whole branch commit and inclusive UTC cutoff',async()=>{
  let requested;
  const data=dataContext(async url=>{requested=url;return {ok:true,json:async()=>[{sha:'abc',commit:{committer:{date:'2025-01-01T12:00:00Z'}}}]};});
@@ -82,4 +83,24 @@ test('branch options include every API page',async()=>{
  let requests=0;
  const data=dataContext(async url=>{requests++;const page=new URL(url).searchParams.get('page');return {ok:true,json:async()=>page==='1'?Array.from({length:100},(_,i)=>({name:'branch-'+i})):[{name:'last-branch'}]};});
  const names=await data.branches();assert.equal(names.length,101);assert.equal(names.at(-1),'last-branch');assert.equal(requests,2);
+});
+
+// Compare-with-snapshot columns on PvPoke Pro › Pokémon Rankings › Current reuse this engine.
+test('snapshot lookup ranks by list position and keeps the first entry per species',()=>{
+ const {snapshotLookup,scoreChange}=core.PvPokeAnalysis;
+ const lookup=snapshotLookup([{speciesId:'a',score:91.25},{speciesId:'b'},{speciesId:'a',score:10},{score:5}]);
+ assert.deepEqual({...lookup.get('a')},{rank:1,score:91.25});assert.deepEqual({...lookup.get('b')},{rank:2,score:null});assert.equal(lookup.size,2);
+ assert.equal(snapshotLookup(null).size,0);
+ assert.equal(scoreChange(93.4,91.25),2.15);assert.equal(scoreChange(90,91.25),-1.25);
+ assert.equal(scoreChange(90,null),null);assert.equal(scoreChange(undefined,90),null);assert.equal(scoreChange(NaN,90),null);
+});
+test('snapshot rankings load one category file and treat a missing league as null',async()=>{
+ const requested=[];
+ const data=dataContext(async url=>{requested.push(url);return url.includes('rankings-500')?{status:404,ok:false}:{ok:true,json:async()=>[{speciesId:'a',score:90}]};});
+ const rows=await data.loadRankings({sha:'abc',cup:'all',branch:'master'},1500,'leads');
+ assert.equal(rows[0].speciesId,'a');assert.equal(requested[0],'https://raw.githubusercontent.com/pvpoke/pvpoke/abc/src/data/rankings/all/leads/rankings-1500.json');
+ assert.equal(await data.loadRankings({sha:'abc',branch:'master'},500,'overall'),null);
+ assert.match(requested[1],/rankings\/all\/overall\/rankings-500\.json$/);
+ await assert.rejects(data.loadRankings({sha:'abc',cup:'all'},1500,'../x'),/category/);
+ assert.equal(requested.length,2);
 });

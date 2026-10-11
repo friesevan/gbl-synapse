@@ -33,12 +33,6 @@
     }
     return rows;
   }
-  function filterVariants(rows,bestOnly,threshold){
-    if(!rows.length)return [];
-    const sorted=rows.slice().sort((a,b)=>b.rating-a.rating);
-    if(bestOnly)return sorted.filter(row=>Math.abs(row.rating-sorted[0].rating)<1e-8);
-    return sorted.filter(row=>row.rating>=sorted[0].rating*(1-threshold/100));
-  }
   const key=(id,moves)=>id+'|'+moves.join('|');
   function cycleDpt(fast,charges){
     const fastDpt=fast.damage/fast.turns;
@@ -188,5 +182,5 @@
     output.overall=report.overall.map(r=>{const values=scores.get(r.variantId),consistency=r.scores[5];return {...r,score:overallScore(values,consistency),scores:[...values,consistency]};}).sort((a,b)=>b.score-a.score||a.variantId.localeCompare(b.variantId));
     return output;
   }
-  root.PvPPro={source,customWeight,sameMoveset,compareMoveset,validateRoster,enumerate,filterVariants,key,cycleDpt,selectCandidates,categoryScores,overallScore,seededCandidates,weightPrior,calculateMetaWeights,weightModelVersion,rescoreRankings,chooseOpponents,chooseCandidates,scoreColumn,publishedScoreColumn,rankingColumnOrder};
+  root.PvPPro={source,customWeight,sameMoveset,compareMoveset,validateRoster,enumerate,key,cycleDpt,selectCandidates,categoryScores,overallScore,seededCandidates,weightPrior,calculateMetaWeights,weightModelVersion,rescoreRankings,chooseOpponents,chooseCandidates,scoreColumn,publishedScoreColumn,rankingColumnOrder};
 })(typeof self!=='undefined'?self:globalThis);

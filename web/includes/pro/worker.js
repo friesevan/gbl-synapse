@@ -53,33 +53,6 @@ function calculateWeights(request){
   const {cup}=setup(request.data,request.cp,request.published,request.roster);const battle=new Battle();battle.setCP(request.cp);battle.setCustomCup(cup);
   adaptiveWeights(request,battle,new Map());
 }
-function variants(request){
-  const {data,cp,published,roster,speciesId,limit}=request;
-  PvPPro.validateRoster(roster,new Set(published.map(row=>row.speciesId)));
-  const {gm,cup}=setup(data,cp,published,roster),battle=new Battle();battle.setCP(cp);if(request.weightMode==='calculate')battle.setCustomCup(cup);
-  if(request.weightMode==='calculate'&&!request.weightModel)adaptiveWeights(request,battle,new Map());
-  const entry=published.find(row=>row.speciesId===speciesId);if(!entry)throw new Error('Choose a Pokémon from the ranking list.');
-  const sample=createPokemon(speciesId,0,battle,entry.moveset);
-  // Enumerate actual engine pools: includes Elite TM moves and allowed Return/Frustration.
-  const movesets=PvPPro.enumerate(sample.fastMovePool.map(m=>m.moveId),sample.chargedMovePool.map(m=>m.moveId),sample.hasThirdChargedMove()?sample.extraChargedMovePool.map(m=>m.moveId):[]);
-  if(!movesets.length)throw new Error('This Pokémon has no selectable fast / charged move combination in the upstream engine.');
-  if(movesets.length>limit)throw new Error(movesets.length+' movesets exceed the chosen limit of '+limit+'. Increase the limit to evaluate all; no combinations were silently omitted.');
-  const targets=roster.filter(item=>item.speciesId!==speciesId).map(item=>({...item,moveset:published.find(row=>row.speciesId===item.speciesId).moveset}));
-  const results=[];let completed=0;
-  for(const moveset of movesets){
-    const p=createPokemon(speciesId,0,battle,moveset),matches=[];let sum=0,totalWeight=0;
-    for(const target of targets){
-      const opponent=createPokemon(target.speciesId,1,battle,target.moveset);
-      battle.setNewPokemon(p,0,false);battle.setNewPokemon(opponent,1,false);p.reset();opponent.reset();
-      p.startEnergy=0;opponent.startEnergy=0;p.setShields(request.shields);opponent.setShields(request.shields);
-      battle.simulate();const rating=Math.floor((p.hp/p.stats.hp+(opponent.stats.hp-opponent.hp)/opponent.stats.hp)*500);
-      sum+=rating*target.weight;totalWeight+=target.weight;matches.push({opponent:target.speciesId,rating});
-    }
-    results.push({speciesId,moveset,rating:sum/totalWeight,matches});
-    completed++;if(completed%5===0 || completed===movesets.length)self.postMessage({type:'progress',text:'Evaluated '+completed+' / '+movesets.length+' movesets against '+targets.length+' weighted opponents'});
-  }
-  results.sort((a,b)=>b.rating-a.rating);self.postMessage({type:'variants',rows:results,total:movesets.length});
-}
 function pools(p){return PvPPro.enumerate(p.fastMovePool.map(m=>m.moveId),p.chargedMovePool.map(m=>m.moveId),p.hasThirdChargedMove()?p.extraChargedMovePool.map(m=>m.moveId):[]);}
 function filterRoster(request){
   const {data,cp,published,filters}=request;
@@ -261,4 +234,4 @@ function reweight(request){
   }
   self.postMessage({type:'reweighted',report:PvPPro.rescoreRankings(request.report,request.settings),simulations:0});
 }
-self.onmessage=function(event){try{if(event.data.mode==='reweight')reweight(event.data);else if(['details','battle'].includes(event.data.mode))detail(event.data);else if(event.data.mode==='searchIndex')searchIndex(event.data);else if(event.data.mode==='filter')filterRoster(event.data);else if(event.data.mode==='weights')calculateWeights(event.data);else if(event.data.mode==='variants')variants(event.data);else generate(event.data);}catch(error){self.postMessage({type:'error',error:error.message});}};
+self.onmessage=function(event){try{if(event.data.mode==='reweight')reweight(event.data);else if(['details','battle'].includes(event.data.mode))detail(event.data);else if(event.data.mode==='searchIndex')searchIndex(event.data);else if(event.data.mode==='filter')filterRoster(event.data);else if(event.data.mode==='weights')calculateWeights(event.data);else generate(event.data);}catch(error){self.postMessage({type:'error',error:error.message});}};

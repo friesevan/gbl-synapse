@@ -15,7 +15,7 @@ node training/team-search/status.cjs training/runs/team-search-v4
 node training/team-search/stop.cjs training/runs/team-search-v4
 ```
 
-Import that directory's `report.pvpteams.json.gz` in Full Team Neural Network. The updated site supports v4 reports and matching battle replay. Original v1/v3 results and adapters remain separate.
+Import that directory's `report.pvpteams.json.gz` in PvPoke Pro › Team Rankings. The updated site supports v4 reports and matching battle replay. Original v1/v3 results and adapters remain separate.
 
 See [the v4 information-boundary guide](../next/OBSERVATION_CONTROLLER.md) for precisely what the controller knows, how it predicts hidden information, and its limitations. This patch changes the **battle controller**, not the neural architecture. It is a realism correction, not a proven increase in playing strength. Full-information scores are not directly comparable with v4 scores.
 
@@ -93,7 +93,7 @@ The technical notes below include earlier versions and are retained as historica
 
 # Current version: v3
 
-Run `node training/team-search/launch-next.cjs --hours 8`. New runs go to `training/runs/team-search-v3-next`; import `report.pvpteams.json.gz` in Full Team Neural Network. See [v3 changes and portable report guide](../../includes/pro/NEURAL_REPORTS.md). Earlier instructions below describe previous experiments. Do not warm-start v3 from old labels.
+Run `node training/team-search/launch-next.cjs --hours 8`. New runs go to `training/runs/team-search-v3-next`; import `report.pvpteams.json.gz` in PvPoke Pro › Team Rankings. See [v3 changes and portable report guide](../../includes/pro/NEURAL_REPORTS.md). Earlier instructions below describe previous experiments. Do not warm-start v3 from old labels.
 
 # v2 next-run update
 
@@ -253,7 +253,7 @@ The simulator inherits full-information Champion heuristics and the existing vir
 
 ## Published results dashboard
 
-In PvPoke Pro, select **Full Team Neural Network** to view the completed run’s search-quality, held-out error, simulation-count and baseline charts, plus all eight independently tested finalists. The info button opens the algorithm documentation. `?app=pro&view=neural` links directly to this tab.
+In PvPoke Pro, select **Team Rankings** to view the completed run’s search-quality, held-out error, simulation-count and baseline charts, plus all eight independently tested finalists. The info button opens the algorithm documentation. `?app=pro&view=teams` links directly to this tab (the older `view=neural` still works).
 
 The dashboard is a snapshot, not a live trainer. To update its public data after another completed run, from the application repository:
 
@@ -265,7 +265,7 @@ The export checks final outcomes, common validation seeds and chronological hist
 
 ### All-team rankings and deterministic replay
 
-The Team Rankings view shows every evaluated team with training, cautious selection, screening and fresh-test scores (missing evaluations display a dash), 500 per page. Twelve baseline comparison teams also have fresh test scores, marked separately from the eight finalists. Pokémon show the pinned Great League published rank and an Alternate Moveset badge; swapping charged move order is not an alternate.
+The Teams view shows every evaluated team with training, cautious selection, screening and fresh-test scores (missing evaluations display a dash), 500 per page. Twelve baseline comparison teams also have fresh test scores, marked separately from the eight finalists. Pokémon show the pinned Great League published rank and an Alternate Moveset badge; swapping charged move order is not an alternate.
 
 Export the complete team report with:
 

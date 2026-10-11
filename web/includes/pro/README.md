@@ -1,6 +1,6 @@
 # PvPoke Pro — ranking logic README
 
-This guide describes the third tab of PvP IV Pro. It documents the code currently shipped, rather than an idealized ranking algorithm. It is also available as a plain Markdown file for AI tools.
+This guide describes PvPoke Pro › Pokémon Rankings, the second tab of PvP IV Pro: **Current** (published and custom rankings) and **Historical** (PvPoke snapshot comparisons). Team Rankings, the full-team neural network beside it, is documented in [NEURAL_REPORTS.md](NEURAL_REPORTS.md) and `training/team-search/README.md`. It documents the code currently shipped, rather than an idealized ranking algorithm. It is also available as a plain Markdown file for AI tools.
 
 ## 1. Three different kinds of result
 
@@ -8,9 +8,9 @@ This guide describes the third tab of PvP IV Pro. It documents the code currentl
 | --- | --- |
 | Published PvPoke | Exact bundled upstream rankings, with stored editor adjustments. No battles run. |
 | Generated custom roster | Every selected Pokémon × selected moveset, versus one recommended moveset per accepted opponent species, across five scenarios. Relative category scores, consistency and overall formula; no editor blend. |
-| Moveset Lab subtab | One selected Pokémon's combinations versus the same accepted species roster, in one equal-shield scenario. Weighted mean raw Battle Rating, not Overall. |
+| Snapshot comparison | Published PvPoke rankings from an earlier commit, beside either result above (Old rank, Old score, Change) or in full in Historical. No battles run. |
 
-Rankings and Moveset Lab are separate subtabs inside PvPoke Pro. League and Include roster controls are shared; the lab has its own Pokémon selector. Selecting a ranking row shows details for that exact variant and can open that species in the lab. Published and generated results remain separate. An overall score of 94 is not a 94% win rate. The first tab's IV stat-product ranks are unrelated to these battle-performance scores.
+Current holds the published rankings, the custom-rankings builder and saved rankings; selecting a ranking row shows details for that exact variant. Published and generated results remain separate. To compare movesets for one Pokémon, generate custom rankings with **Multiple** movesets and a Species filter (section 5); the former one-species Moveset Lab was removed in favour of this five-scenario ranking. An overall score of 94 is not a 94% win rate. The first tab's IV stat-product ranks are unrelated to these battle-performance scores.
 
 ## 2. Source, data, and reproducibility
 
@@ -31,7 +31,7 @@ The Master league uses `10000` as the engine's unlimited-league identifier. Curr
 
 Selecting a league loads its bundled arrays. Published mode performs no battles and preserves upstream ranking positions and stored values. Search matches name, type or moves; sorting changes display order; 25 rows are displayed per page. Published scores match the snapshot even when regeneration would depend on curation/settings not used here.
 
-Generated results have unique `variantId = speciesId + "|" + moveset.join("|")`. Distinct combinations for one species occupy separate rows and retain their own score, projection, matchups, and category scores. The table can show every evaluated combination or only the highest-scoring row per species in the selected category. That checkbox is a display filter and never changes simulations. Rank remains the position in the complete selected category array. Ties use variant ID order for deterministic display; best-per-species shows one of tied rows, while the lab's best-only filter includes ties.
+Generated results have unique `variantId = speciesId + "|" + moveset.join("|")`. Distinct combinations for one species occupy separate rows and retain their own score, projection, matchups, and category scores. The table can show every evaluated combination or only the highest-scoring row per species in the selected category. That checkbox is a display filter and never changes simulations. Rank remains the position in the complete selected category array. Ties use variant ID order for deterministic display; best-per-species shows one of tied rows.
 
 ## 4. Consolidated Include filters and weights
 
@@ -157,7 +157,7 @@ D = (opponentStartingMaxHP - opponentRemainingHP) / opponentStartingMaxHP
 BR = floor(500 × (H + D))
 ```
 
-Raw BR ranges from 0 to 1000: above 500 indicates a win, below 500 a loss, and 500 a tie. For example, a winner retaining half its HP has BR 750. This is the rating displayed for individual key matchups and used directly by the moveset lab.
+Raw BR ranges from 0 to 1000: above 500 indicates a win, below 500 a loss, and 500 a tie. For example, a winner retaining half its HP has BR 750. This is the rating displayed for individual key matchups.
 
 The category ranker then rewards the winning side for shields burned and retained:
 
@@ -264,31 +264,27 @@ Our custom scoring never applies an overall editor override. Therefore this blen
 
 Finally, `floor(overall × 10) / 10` truncates the overall score to one decimal and results are sorted descending. Overall scores are not rescaled to force a leader of 100. The six detail scores are Lead, Closer, Switch, Charger, Attacker, and Consistency.
 
-## 13. Moveset lab — separate algorithm
+## 13. Historical rankings and snapshot comparison
 
-The lab evaluates the selected species against accepted opponents, excluding its own species ID. The subject need not itself be accepted. There must still be at least two accepted roster entries. Every opponent keeps its published moveset and gamemaster default IVs.
+**Historical** (Pokémon Rankings › Historical, formerly the PvPoke Analysis tab) compares two PvPoke repository snapshots. Each snapshot is the latest commit on the chosen branch at or before the end of the chosen UTC day; leave the date blank for the latest commit. Every file is then read at that pinned SHA: the game master Pokémon and moves, and each selected league's `src/data/rankings/<cup>/overall/rankings-<cp>.json`. Leagues missing from either snapshot are skipped. Reports list each Pokémon's old and new rank (position in the source list), score and `Difference = current − previous`, recommended moveset changes, newly learnable moves, move buffs, nerfs and reworks, XL, level, base stats and typing; the Types report averages Pokémon present in both snapshots. The algorithm ports [PvPokeAnalysis](https://github.com/friesevan/PvPokeAnalysis).
 
-The engine's actual fast and charged move pools are deduplicated and enumerated. For F fast moves and C ordinary charged moves (C at least 2), there are `F × C × (C - 1) / 2` combinations. Charged-move order permutations are not separately tested. Supported extra charged move pools multiply those pairs by the number of distinct extra choices. A single ordinary charged move uses a second-slot `none`. Pool accessibility is handled upstream, including available Elite TM, legacy, Return/Frustration, and form-specific rules; this is not a live check of the user's TM inventory or event access.
+**Compare with snapshot** (Current) adds three optional columns to the published or generated table without leaving the view. It resolves one `master` commit for the chosen date and loads only `src/data/rankings/all/<category>/rankings-<cp>.json` for the league and category on screen; other leagues and categories load once, when first shown. Nothing is fetched until the columns are added.
 
-Each matchup starts with full HP, zero energy, and the chosen equal shield count (0, 1, or 2). Fresh opponent objects and reset battle state prevent previous matchups carrying over. For each moveset m:
+| Column | Meaning |
+| --- | --- |
+| Old rank | Position in the snapshot's published list. **New** marks a species absent from it. |
+| Old score | The snapshot's published score for the species' recommended moveset. |
+| Change | The score that sets rank (the leftmost score column) minus Old score, rounded to 0.01. |
 
-```
-labRating[m] = sum(rawBR[m,j] × userWeight[j]) / sum(userWeight[j])
-```
-
-This uses raw BR. It does not use category shield bonuses, seven-pass meta reweighting, score curves, Charger factors, consistency, or editor adjustments. It therefore answers a different question from Overall: how does this moveset perform against this weighted roster in this one shield scenario?
-
-Movesets are sorted by labRating. Best-only keeps all ties within `1e-8` of the best. Otherwise, a threshold p shows `rating >= best × (1 - p / 100)`. A 10% threshold means at least 90% of the best weighted BR, not 10 points below the overall score. Set 100% to show every evaluated moveset. Below-best percentage is `(1 - rating / best) × 100`, with a zero-best guard.
-
-The combination limit defaults to 500 and can be set from 1 to 10,000. If the complete set exceeds the limit, the run stops with an explicit error; it does not silently sample combinations. A species with no selectable combination reports an error. The Lab remains a one-species raw-BR tool. The Rankings subtab now jointly ranks selected combinations across all accepted species using the five-category pipeline above; opponents remain recommended-only in both tools.
+For generated rankings every moveset variant of a species shares the species' Old rank and Old score, so Change mixes a custom score with a published one: different opponents, weights and normalization (sections 9 and 19) still apply. The bundled Current data is snapshot `f627e89`, so choose an earlier date for a forward-looking Change. Columns sort like the others; missing values always sort last. Requests use public GitHub endpoints, which have rate limits.
 
 ## 14. Browser execution, state and compute
 
-Filters, custom rankings and lab battles run in cancellable Web Workers against bundled data. No server-side simulations or upstream PHP writes occur, and no roster/results are uploaded. The unchanged Battle, Pokemon, DamageCalculator and supporting action classes supply the combat model. The adapter handles rectangular generation; the original category/overall rankers remain as readable reference sources. The overall combination formula is implemented in testable `core.js`, with upstream `Pokemon.calculateConsistency` supplying C.
+Filters, custom rankings and calculated weights run in cancellable Web Workers against bundled data. No server-side simulations or upstream PHP writes occur, and no roster/results are uploaded. The unchanged Battle, Pokemon, DamageCalculator and supporting action classes supply the combat model. The adapter handles rectangular generation; the original category/overall rankers remain as readable reference sources. The overall combination formula is implemented in testable `core.js`, with upstream `Pokemon.calculateConsistency` supplying C.
 
-Rank cost includes a cheap cycle shortlist, five-scenario scout battles against at most eight opponents when pruning is needed, and final retained-candidate battles against the remaining full roster. Matching scout/final cells are cached, including recommended baselines. The cheap cycle stage uses arithmetic and performs no Battle.simulate calls; the scout stage deliberately does. The UI reports actual total battle count including screening. Work estimates include scouting and baseline overhead before cache savings. A large roster can still be expensive even with one moveset per species. Multiple limits the number of combinations per species. The worker’s programmatic All mode has no hidden candidate cap. Top N deliberately uses the documented bounded preliminary shortlist. The UI estimates work, reports progress and provides Cancel; a fresh worker prevents data leaking between runs. Moveset Lab has its own explicit maximum-combination guard.
+Rank cost includes a cheap cycle shortlist, five-scenario scout battles against at most eight opponents when pruning is needed, and final retained-candidate battles against the remaining full roster. Matching scout/final cells are cached, including recommended baselines. The cheap cycle stage uses arithmetic and performs no Battle.simulate calls; the scout stage deliberately does. The UI reports actual total battle count including screening. Work estimates include scouting and baseline overhead before cache savings. A large roster can still be expensive even with one moveset per species. Multiple limits the number of combinations per species. The worker’s programmatic All mode has no hidden candidate cap. Top N deliberately uses the documented bounded preliminary shortlist. The UI estimates work, reports progress and provides Cancel; a fresh worker prevents data leaking between runs.
 
-Changing Include rules/league, weights or candidate-selection settings invalidates generated results and lab output; changing display filters does not. Pending/invalid Include filters disable generation. Individual limits are validated before running. Results are kept in page memory; reload clears them. Published results remain accessible. Selecting a different ranking species clears the previous lab output; the lab selector can choose any published species regardless of whether it is an accepted opponent.
+Changing Include rules/league, weights or candidate-selection settings invalidates generated results; changing display filters does not. Pending/invalid Include filters disable generation. Individual limits are validated before running. Results are kept in page memory; reload clears them. Published results remain accessible.
 
 The engine remains heuristic: defaults, move timing, shield baiting, form mechanics and rounding matter. Projections can miss shield- or buff-dependent movesets. Generated scores include the described rectangular scoring changes and omit editor adjustments. They are not calibrated win probabilities or exhaustive optimal-play proofs.
 
@@ -298,9 +294,11 @@ Read these files in order to inspect or modify the algorithm. All links resolve 
 
 | File | Responsibility |
 | --- | --- |
-| [worker.js](worker.js) | Upstream Include filtering, moveset projection/pruning, rectangular battles, variant scores and lab. |
-| [core.js](core.js) | Validation, enumeration, cycle DPT, top N, rectangular category scoring, overall formula, lab thresholds. |
-| [ui.js](ui.js) | Initial population, weights, user actions, results and state. |
+| [worker.js](worker.js) | Upstream Include filtering, moveset projection/pruning, rectangular battles and variant scores. |
+| [core.js](core.js) | Validation, enumeration, cycle DPT, top N, rectangular category scoring, overall formula. |
+| [ui.js](ui.js) | Initial population, weights, user actions, results, state and snapshot comparison columns. |
+| [../app-tabs.js](../app-tabs.js) | App navigation: tab levels, old-link redirects (`?app=analysis`, `?view=lab`, `?view=neural`) and the remembered view. |
+| [../analysis/](../analysis/core.js) | Historical snapshot loading and comparison (`data.js`, `core.js`, `ui.js`), also used by the comparison columns. |
 | [GameMaster.js](vendor/GameMaster.js) | Data lookup, filtering, override application. |
 | [Pokemon.js](vendor/Pokemon.js) | IV/level/stats, move pools, forms, reset behavior, consistency. |
 | [Battle.js](vendor/Battle.js) | Turn simulation, action resolution, shields, buffs, end conditions. |
@@ -310,7 +308,7 @@ Read these files in order to inspect or modify the algorithm. All links resolve 
 | [RankerOverall.js](vendor/RankerOverall.js) | Upstream reference for overall/consistency/editor formulas; generated combination lives in core.js. |
 | [TimelineAction.js](vendor/TimelineAction.js), [TimelineEvent.js](vendor/TimelineEvent.js), [DecisionOption.js](vendor/DecisionOption.js) | Supporting action/event/decision structures. |
 
-Run `node --test familyRanks.test.cjs analysis.test.cjs pro.test.cjs`. Tests cover the existing tools, complete multi-species variant generation, unique IDs, weight sensitivity, rectangular opponent count, recommended-seeded scout top N and individual limits, all nine upstream filter types, AND/Species override semantics, cycle DPT, candidate-population independence, lab limits and league coverage.
+Run `node --test familyRanks.test.cjs analysis.test.cjs pro.test.cjs tests/app-tabs.test.cjs`. Tests cover the existing tools, complete multi-species variant generation, unique IDs, weight sensitivity, rectangular opponent count, recommended-seeded scout top N and individual limits, all nine upstream filter types, AND/Species override semantics, cycle DPT, candidate-population independence, league coverage, snapshot comparison lookups and tab routing.
 
 To refresh the snapshot, update all vendor sources, gamemaster, league bundles, overrides and pinned references together. To change scoring, edit the documented adapter/core functions and tests; keep vendor sources unchanged for provenance. Future opponent optimization would require an explicit new policy rather than treating variants as extra independently weighted species.
 
@@ -362,7 +360,7 @@ Generated and saved ranking rows use neutral **Recommended** or **Alternate Move
 
 For custom reports, the reference is the bundled **Overall** recommended moveset used by the opponent population and protected by the selector. Comparisons look through the full category results, before search, pagination, and best-only display filtering, so hiding the recommended row does not remove its baseline. Ordinary charged-move order is ignored; fast moves and the separate third charged-move slot must match. A missing second move and an explicit `none` are equivalent. Existing saved results work without rerunning when their baseline is present. If an older saved report lacks that baseline, the alternate badge tooltip explains that no score comparison is available. Scores from the published meta are never substituted for scores from a custom roster.
 
-Moveset Lab uses the same neutral badges, comparing weighted Battle Rating under its own opponent roster and shield setting. Its baseline is found among all evaluated variants before the best-only/threshold display filter. The detail panel repeats the ranking row’s badge.
+The detail panel repeats the ranking row’s badge.
 
 
 Saved ranking controls, name, save/rename/delete actions, display options, run context and status are grouped inside the collapsed **Edit Saved Ranking** disclosure. Newly generated reports use **Save Ranking & Options**. Detailed move cards are always visible under **Move details**, with compact typography and spacing.

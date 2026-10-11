@@ -9,22 +9,8 @@
   const typeColumns=['Type','Compared','New','Removed','Old Score','Score','Difference','Update'];
   const visible = new Set(pokemonColumns.filter(key=>!['Attack','Defense','Stamina','Bulk','Stat Product','Shadow'].includes(key)));
   function element(tag,text,className) {const node=document.createElement(tag); if(text!=null)node.textContent=text;if(className)node.className=className;return node;}
-  const appTabs=['iv','analysis','pro','meta'];
-  function appTab(which,replace=false) {
-    if(!appTabs.includes(which))which='iv';
-    for(const name of appTabs){$(name+'Panel').hidden=name!==which;$(name+'Tab').setAttribute('aria-selected',String(name===which));$(name+'Tab').tabIndex=name===which?0:-1;}
-    const titles={iv:'PvP IV Pro',analysis:'PvPoke Analysis',pro:'PvPoke Pro',meta:'Meta Extractor'};
-    $('appTitle').textContent=titles[which];document.title=titles[which];
-    $('appSubtitle').textContent=which==='iv'?'Modification of PvP IVs':which==='analysis'?'Based on PvPokeAnalysis · Data from PvPoke':which==='meta'?'Built from PoGo Recorder · Battle data powered by you':'Powered by PvPoke';
-    $('appSubtitle').href=which==='iv'?'https://pvpivs.com/':which==='analysis'?'https://github.com/friesevan/PvPokeAnalysis':which==='meta'?'https://github.com/evanjfries/PoGoAnalyzer':'https://pvpoke.com/';
-    $('appIntro').textContent=which==='iv'?'Compare your Pokémon. Plan your best evolutions.':which==='analysis'?'Explore ranking changes across updates, branches and cups.':which==='meta'?'Review your battles. Reveal the live meta.':'Explore the meta. Build your roster. Test every moveset.';
-    if(which==='analysis' && !optionsLoaded)loadOptions();
-    if(replace){const url=new URL(location.href);if(which==='iv')url.searchParams.delete('app');else url.searchParams.set('app',which);history.replaceState(null,'',url);}
-    document.dispatchEvent(new CustomEvent('pvp-tab-change',{detail:which}));
-  }
-  for(const name of appTabs)$(name+'Tab').addEventListener('click',()=>appTab(name,true));
-  $('appTabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const active=appTabs.findIndex(name=>!$(name+'Panel').hidden);const index=event.key==='Home'?0:event.key==='End'?appTabs.length-1:(active+(event.key==='ArrowRight'?1:appTabs.length-1))%appTabs.length;appTab(appTabs[index],true);$(appTabs[index]+'Tab').focus();});
-  appTab(new URLSearchParams(location.search).get('app') || 'iv');
+  // The app router (includes/app-tabs.js) shows this view as PvPoke Pro › Pokémon Rankings › Historical.
+  document.addEventListener('pvp-view-change',event=>{const route=event.detail||{};if(route.app==='pro'&&route.proView==='rankings'&&route.mode==='historical'&&!optionsLoaded)loadOptions();});
   const earlier=new Date();earlier.setUTCDate(earlier.getUTCDate()-90);$('previousDate').value=earlier.toISOString().slice(0,10);
   function snapshot(prefix){return {branch:$(prefix+'Branch').value.trim(),cup:$(prefix+'Cup').value.trim(),date:$(prefix+'Date').value};}
   function validation(value) {

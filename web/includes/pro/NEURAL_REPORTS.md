@@ -39,7 +39,7 @@ The stop command checkpoints after active work. The deadline reserves time for s
 
 ## Display a run
 
-The trainer automatically writes **`report.pvpteams.json.gz`** inside its run directory. In PvPoke Pro → Full Team Neural Network, click **Import Report** and select this file. Keep it to reopen after a browser reload. Importing processes data locally; it does not upload the report to a shared database or change the published archive.
+The trainer automatically writes **`report.pvpteams.json.gz`** inside its run directory. In PvPoke Pro → Team Rankings, click **Import Report** and select this file. Keep it to reopen after a browser reload. Importing processes data locally; it does not upload the report to a shared database or change the published archive.
 
 A manual export is also available:
 
@@ -78,7 +78,7 @@ The neural network predicts outcomes and guides team selection; it does not lear
 
 ## Other environment: copy/paste instructions
 
-> Integrate the provided neural v3 report support into the existing Full Team Neural Network page. Preserve the historical v1 archive. Use `includes/pro/neural-report-core.js` to validate and decompress `report.pvpteams.json.gz`, then render it through `NeuralPortable.render(report)` after the existing TeamBrowser/search/detail dependencies load. The implementation is in `neural-portable.js`; `neural.js` adds the Import Report selector. Copy the matching replay adapter, manifest, lookahead and worker files listed below. Do not recompute rankings or mix reports. Require matching mechanics/data hashes for replay. Test import, team search, a stored matchup replay, comparisons, charts and switching back to the v1 archive. Follow this document's schema and keep all imported content as text, never executable code.
+> Integrate the provided neural v3 report support into the existing Team Rankings page (PvPoke Pro › Team Rankings, formerly Full Team Neural Network). Preserve the historical v1 archive. Use `includes/pro/neural-report-core.js` to validate and decompress `report.pvpteams.json.gz`, then render it through `NeuralPortable.render(report)` after the existing TeamBrowser/search/detail dependencies load. The implementation is in `neural-portable.js`; `neural.js` adds the Import Report selector. Copy the matching replay adapter, manifest, lookahead and worker files listed below. Do not recompute rankings or mix reports. Require matching mechanics/data hashes for replay. Test import, team search, a stored matchup replay, comparisons, charts and switching back to the v1 archive. Follow this document's schema and keep all imported content as text, never executable code.
 
 Viewer files under `includes/pro/`:
 

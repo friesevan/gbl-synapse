@@ -33,6 +33,14 @@
     if(!Array.isArray(pokemon)||!Array.isArray(moves)||rankings.some(value=>value!==null&&!Array.isArray(value))) throw new Error('Unexpected PvPoke data format in '+snapshot.branch+'.');
     return {...snapshot,pokemon,moves,rankings:Object.fromEntries(caps.map((cap,i)=>[cap,rankings[i]]))};
   }
+  // One category's published rankings at a resolved snapshot, without the game master files.
+  // Used by the "Compare with snapshot" columns on Current rankings. Null when the file is missing.
+  async function loadRankings(snapshot,cap,category,signal) {
+    if(!/^[a-z]+$/.test(category||''))throw new Error('Unknown ranking category.');
+    const rankings=await json(rawUrl(snapshot.sha,'src/data/rankings/'+encodeURIComponent(snapshot.cup||'all')+'/'+category+'/rankings-'+cap+'.json'),signal,true);
+    if(rankings!==null&&!Array.isArray(rankings))throw new Error('Unexpected PvPoke data format in '+snapshot.branch+'.');
+    return rankings;
+  }
   async function branches(signal) {
     const names=[];
     for(let page=1;;page++) {
@@ -44,5 +52,5 @@
   async function cups(branch,signal) {
     const data=await json(api+'contents/src/data/rankings?'+new URLSearchParams({ref:branch}),signal);return data.filter(item=>item.type==='dir').map(item=>item.name);
   }
-  root.PvPokeData = {resolveSnapshot,loadSnapshot,branches,cups};
+  root.PvPokeData = {resolveSnapshot,loadSnapshot,loadRankings,branches,cups};
 })(typeof self !== 'undefined' ? self : globalThis);

@@ -1,5 +1,5 @@
 // Adapts the app to the Claude artifact viewer:
-// - GitHub requests (PvPoke Analysis) go through the viewer's GitHub connector.
+// - GitHub requests (Historical rankings and snapshot comparison columns) go through the viewer's GitHub connector.
 // - PvPoke Pro data files load live from PvPoke's latest commit, falling back
 //   to the bundled snapshot when the connector can't deliver them.
 // - File downloads go through the viewer's save prompt.
@@ -163,7 +163,7 @@
     }
   }
 
-  // ---------- GitHub REST URLs used by PvPoke Analysis ----------
+  // ---------- GitHub REST URLs used by Historical rankings and snapshot comparisons ----------
 
   const API = 'https://api.github.com/repos/pvpoke/pvpoke/', RAW = 'https://raw.githubusercontent.com/pvpoke/pvpoke/';
   function jsonResponse(text, status) {

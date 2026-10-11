@@ -1,4 +1,4 @@
-"""Export the opponent teams seen in harvested YouTube battles as a Full Team Neural Network usage file.
+"""Export the opponent teams seen in harvested YouTube battles as a Team Rankings (full-team neural network) usage file.
 
     python3 -I web/scripts/yt-harvest/usage_export.py [--pool web/training/runs/team-search/pool.json]
 

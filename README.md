@@ -4,7 +4,7 @@ Tools for Pokémon GO Battle League analysis, in one codebase:
 
 | Folder | What it is |
 | --- | --- |
-| `web/` | The PvP IVs site: IV rankings, PvP IV Pro, the **Full Team Neural Network** (`web/includes/pro/`, `web/training/`) and the **Meta Extractor** that reads battle recordings (`web/includes/meta/`, documented in `web/includes/meta/README.md`). |
+| `web/` | The PvP IVs site: IV rankings, PvP IV Pro, **PvPoke Pro** with Pokémon Rankings (current and historical) and **Team Rankings**, the full-team neural network (`web/includes/pro/`, `web/training/`), and the **Meta Extractor** that reads battle recordings (`web/includes/meta/`, documented in `web/includes/meta/README.md`). |
 | `web/tests/meta-benchmark/` | Node runner and batch engine for scoring the Meta Extractor on long recordings, plus labels and tuning tools. |
 | `web/scripts/freellm/` | Router for free-tier vision models used to pre-label public (Creative Commons) footage. Never sent private recordings. |
 | `recorder/` | PoGo Recorder: the original Python battle recorder and analyzer (OpenCV/OCR). |
@@ -18,9 +18,9 @@ node web/tests/meta-extractor.test.cjs
 node artifact/build.cjs /path/to/out   # assemble the artifact for publishing
 ```
 
-## Full Team Neural Network
+## Team Rankings (full-team neural network)
 
-The neural network searches for the best 3-Pokémon team against a meta. It runs locally, in Node 20 or later, from `web/`:
+The neural network behind PvPoke Pro › Team Rankings searches for the best 3-Pokémon team against a meta. It runs locally, in Node 20 or later, from `web/`:
 
 ```bash
 node training/team-search/launch-next.cjs --hours 8                # start a detached run
@@ -29,7 +29,7 @@ node training/team-search/stop.cjs training/runs/team-search-v4    # stop safely
 node --test training/*.test.cjs training/next/*.test.cjs training/team-search/*.test.cjs
 ```
 
-When a run finishes, open the **Full Team Neural Network** tab and import `training/runs/<run>/report.pvpteams.json.gz` to view the report. Runs stay local in `web/training/runs/`, which git ignores. The full guide is in `web/training/team-search/README.md`, and the simulator speed work is in `PERFORMANCE.md` next to it.
+When a run finishes, open **PvPoke Pro › Team Rankings** (`familyRanks.html?app=pro&view=teams`) and import `training/runs/<run>/report.pvpteams.json.gz` to view the report. Runs stay local in `web/training/runs/`, which git ignores. The full guide is in `web/training/team-search/README.md`, and the simulator speed work is in `PERFORMANCE.md` next to it.
 
 **Opponent meta.** Without a usage file, opponent teams are built from PvPoke's per-Pokémon default weights (`--meta hybrid`): half are drawn member by member in proportion to weight, and half are built like real teams, favouring members that cover the earlier picks' weaknesses (sometimes in an ABB shape). The main source is now the **opponent teams observed in harvested YouTube battles**. `python3 -I web/scripts/yt-harvest/usage_export.py` writes them as a usage file outside git (`~/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json`) with a quality report beside it. Its rules: Great League and Great League: Mega Edition only; complete opponent teams; human answers first; Shadow form only when confirmed; one date per team; repeated battles removed; each YouTube channel capped at 10% of the weight. They are documented at the top of the script. The file's format is `web/training/next/usage-template.json` plus an optional per-row `weight`. Pass it with `--usage-file FILE --usage-half-life-days 30 --usage-as-of YYYY-MM-DD --usage-prior-strength N`; the exporter prints the date and the N that make observed teams 75% of the opponents. With `--meta observed` they make up all of them. The reviewed-only export, **Observed meta → Export team-training data** (`observed-meta-teams.json`), loads the same way.
 

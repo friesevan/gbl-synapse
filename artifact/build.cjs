@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Assembles the claude.ai artifact (PvP IV Pro with the Meta Extractor and Full Team Neural Network)
+// Assembles the claude.ai artifact (PvP IV Pro, PvPoke Pro with Team Rankings, and the Meta Extractor)
 // from this repo: the artifact's own page and shim from artifact/, everything else from web/ as listed
 // in artifact/manifest.txt. Publish the output folder with pvp-iv-pro.html as the page.
 // Usage: node artifact/build.cjs OUT_DIR

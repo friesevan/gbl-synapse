@@ -82,5 +82,13 @@
     }
     return {rows,types};
   }
-  root.PvPokeAnalysis = {leagues,moveUpdates,buildReport};
+  // Snapshot comparison columns on Current rankings: rank is the position in the source list,
+  // the same definition as the Historical report's Old Rank.
+  function snapshotLookup(rankings) {
+    const lookup = new Map();
+    (rankings || []).forEach((entry, i) => { if (entry?.speciesId && !lookup.has(entry.speciesId)) lookup.set(entry.speciesId, {rank:i+1, score:Number.isFinite(entry.score) ? entry.score : null}); });
+    return lookup;
+  }
+  const scoreChange = (score, oldScore) => Number.isFinite(score) && Number.isFinite(oldScore) ? round(score - oldScore) : null;
+  root.PvPokeAnalysis = {leagues,moveUpdates,buildReport,snapshotLookup,scoreChange};
 })(typeof self !== 'undefined' ? self : globalThis);

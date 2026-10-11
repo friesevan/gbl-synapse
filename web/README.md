@@ -1,4 +1,4 @@
-# PvP IV Pro + PvPoke Analysis + PvPoke Pro
+# PvP IV Pro + PvPoke Pro + Meta Extractor
 
 A modification of [PvP IVs](https://pvpivs.com/) for comparing a base Pokémon’s
 IV spreads across its family and leagues, and planning evolutions.
@@ -220,9 +220,25 @@ Description of features and functionality for the Pokémon Go PvP IVs website: h
 ## [Contribute](https://pvpivs.com/contribute.html)
 
 
-## PvPoke Analysis tab
+## App navigation
 
-The second app tab ports [PvPokeAnalysis](https://github.com/friesevan/PvPokeAnalysis)
+| Tab | Views | Link |
+| --- | --- | --- |
+| PvPIV Pro | IV comparison and evolution planning | `familyRanks.html` |
+| PvPoke Pro › Pokémon Rankings › Current | Published rankings, snapshot comparison columns, custom rankings | `?app=pro&view=current` |
+| PvPoke Pro › Pokémon Rankings › Historical | PvPoke snapshot comparison (formerly the PvPoke Analysis tab) | `?app=pro&view=historical` |
+| PvPoke Pro › Team Rankings | Full-team neural network search results and battle replays | `?app=pro&view=teams` |
+| Meta Extractor | Battle-video analysis and the observed meta | `?app=meta` |
+
+Old links still work: `?app=analysis` opens Historical, `?app=pro&view=rank` or `view=lab` opens Current
+(Moveset Lab was removed; rank one Pokémon's movesets with custom rankings, **Multiple** movesets and a
+Species filter), and `view=neural` opens Team Rankings. `?app=pro` without a view reopens the last
+PvPoke Pro view used in this browser. Navigation lives in `includes/app-tabs.js`; tablists support the
+arrow keys, Home and End. Tests: `node --test tests/app-tabs.test.cjs`.
+
+## Historical rankings (PvPoke Pro › Pokémon Rankings › Historical)
+
+This view ports [PvPokeAnalysis](https://github.com/friesevan/PvPokeAnalysis)
 into browser reports. Select previous/current PvPoke branches,
 optional cutoff dates and cup folders. Branch and cup dropdowns load all available choices automatically. Cup choices
 follow the selected branch; use “Refresh branches & cups” to reload them.
@@ -250,13 +266,17 @@ spreadsheet's colors and new recommendation markers, while also recognizing
 fast-move turn changes and flagging buff/debuff mechanic changes as reworks.
 Tests: `node --test familyRanks.test.cjs analysis.test.cjs`.
 
+On Current, **Compare with snapshot** reuses this engine to add Old rank, Old score and Change columns
+to the published or generated table for one chosen date; see section 13 of the
+[ranking logic README](includes/pro/README.md).
 
-## PvPoke Pro tab
 
-Open `familyRanks.html?app=pro` or the hosted site's `?app=pro`. Rankings and Moveset Lab are separate subtabs sharing a league and consolidated roster editor. The Include builder supports all nine upstream filter types using the unchanged GameMaster filtering code: type, tag, species, Pokédex ranges, move, move type, charged-move cost, buddy distance and evolution stage.
+## PvPoke Pro › Pokémon Rankings › Current
+
+Open `familyRanks.html?app=pro&view=current` or the hosted site's `?app=pro&view=current`. Current shows the published rankings for a league and hosts the consolidated roster editor for custom rankings. The Include builder supports all nine upstream filter types using the unchanged GameMaster filtering code: type, tag, species, Pokédex ranges, move, move type, charged-move cost, buddy distance and evolution stage.
 
 Custom generation ranks every selected Pokémon × move combination against one recommended opponent moveset per accepted species across five PvPoke scenarios. All combinations is the default. Scouted top N, plus individual limits, use a generous damage/energy cycle shortlist, real five-scenario battles against up to eight weighted/type-diverse opponents, and a protected published recommendation. Matching scout battles are cached for the full-roster run. In a 120-case benchmark, N=5 retained an exhaustive best in 117 cases and N=10 in all 120; this is measured screening reliability, not a universal guarantee. Rows have unique variant IDs and their own detail panels; best-per-species is an optional display filter. Opponent meta weighting is based on recommended baseline species, never inflated by candidate count. The adapter extends upstream scoring for this rectangular matrix and omits editor adjustments. Published rankings remain the pinned exact upstream data.
 
 The **ⓘ How rankings work** link opens the full [ranking logic README](includes/pro/README.md), with a static HTML reader at `includes/pro/README.html`. It documents projection, filtering, scenarios, score formulas, fallbacks, differences from upstream and compute scaling. Rebuild after editing Markdown with `python3 scripts/build-pro-readme.py`.
 
-Vendor/data snapshot: `f627e89e53c0c7b903fff097df7a0ad0ac95decc`; MIT license in `includes/pro/vendor/LICENSE`. Run `node --test familyRanks.test.cjs analysis.test.cjs pro.test.cjs`.
+Vendor/data snapshot: `f627e89e53c0c7b903fff097df7a0ad0ac95decc`; MIT license in `includes/pro/vendor/LICENSE`. Run `node --test familyRanks.test.cjs analysis.test.cjs pro.test.cjs tests/app-tabs.test.cjs`.

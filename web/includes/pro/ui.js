@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   const $=id=>document.getElementById(id),el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
-  let data, leagueData, overrides=[], weights=new Map(), custom=null, selected='', variants=[], variantContext='', worker, loading=0, loadedCp=0, page=0, sortKey='score',descending=true;
+  let data, leagueData, overrides=[], weights=new Map(), custom=null, selected='', worker, loading=0, loadedCp=0, page=0, sortKey='score',descending=true;
   let filters=[],filterWorker,filterTimer,filterPending=false,combinationCounts={},selectedKey='';
   const rankingPageSize=500;let expandedKey='';
   let calculatedModel=null,autoWeightTimer,headerClickTimer,pendingDifference=null,editingColumn=null,draggedColumn=null;
@@ -13,20 +13,6 @@
   const choices={type:[...types,'none'],moveType:types,tag:['legendary','mythical','ultrabeast','alolan','galarian','hisuian','regional','starter','shadow','shadoweligible','mega'],cost:[10000,50000,75000,100000],distance:[1,3,5,20],evolution:[0,1,2,3]};
   const labels={none:'Mono-type',ultrabeast:'Ultra Beast',shadoweligible:'Shadow Eligible',0:'No evolution',1:'First stage',2:'Middle stage',3:'Final stage'};
   const rowKey=row=>row.variantId||row.speciesId;
-  function subTab(which){
-    const lab=which==='lab',neural=which==='neural';$('proRankPanel').hidden=lab||neural;$('proLabPanel').hidden=!lab;$('proNeuralPanel').hidden=!neural;
-    $('proPanel').classList.toggle('neural-active',neural);
-    for(const [id,on] of [['proRankTab',!lab&&!neural],['proLabTab',lab],['proNeuralTab',neural]]){$(id).setAttribute('aria-selected',String(on));$(id).tabIndex=on?0:-1;}
-    for(const node of document.querySelectorAll('.pro-rank-control'))node.hidden=lab||neural;
-    $('proOpenBuilder').textContent=lab?'Configure roster':'Create custom rankings';updateSavedControls();
-    const url=new URL(location.href);if(which==='rank')url.searchParams.delete('view');else url.searchParams.set('view',which);history.replaceState(null,'',url);
-    if(neural)document.dispatchEvent(new Event('neural-open'));
-  }
-  const proViews=[['proRankTab','rank'],['proLabTab','lab'],['proNeuralTab','neural']];
-  for(const [id,view] of proViews)$(id).addEventListener('click',()=>subTab(view));
-  $('proSubTabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();let i=proViews.findIndex(([id])=>$(id).getAttribute('aria-selected')==='true');i=event.key==='Home'?0:event.key==='End'?2:(i+(event.key==='ArrowRight'?1:2))%3;subTab(proViews[i][1]);$(proViews[i][0]).focus();});
-  const initialProView=new URL(location.href).searchParams.get('view');if(['lab','neural'].includes(initialProView))setTimeout(()=>subTab(initialProView),0);
-  $('proLabPokemon').addEventListener('change',()=>{stop();selected=$('proLabPokemon').value;variants=[];renderVariants();});
   function renderFilters(){
     $('proFilters').replaceChildren();
     filters.forEach((filter,index)=>{
@@ -122,8 +108,8 @@
   function roster(){const eligible=eligibleRoster();return PvPPro.chooseCandidates(eligible,leagueData?.overall||[],$('proAllCandidates').checked?null:Math.max(2,Math.min(10000,Math.floor(Number($('proCandidateLimit').value)||2))));}
   function previewOpponents(){return PvPPro.chooseOpponents(roster(),$('proAllOpponents').checked?null:Math.max(2,Math.min(10000,Math.floor(Number($('proOpponentLimit').value)||2))),Object.fromEntries(overrides.map(r=>[r.speciesId,r.weight??1])));}
   async function json(path){if(cache.has(path))return cache.get(path);const r=await fetch('includes/pro/data/'+path);if(!r.ok)throw new Error('Unable to load bundled PvPoke data: '+path);const result=await r.json();cache.set(path,result);return result;}
-  function stop(){clearTimeout(autoWeightTimer);if(worker){worker.terminate();worker=null;}$('proApplyScore').disabled=!custom?._targets?.length;$('proAddScore').disabled=false; $('proCancel').hidden=true;$('proGenerate').disabled=filterPending||loadedCp!==cp()||roster().filter(row=>row.weight>0).length<2;$('proEvaluate').disabled=filterPending||!selected || loadedCp!==cp();}
-  function invalidate(){generatedSnapshot=null;activeSaved='';updateSavedControls();stop();custom=null;variants=[];$('proSource').value='published';$('proSource').querySelector('option[value=custom]').disabled=true;$('proSource').querySelector('option[value=custom]').hidden=true;variantContext='';$('proRunSummary').textContent='';renderVariants();updateSavedControls();if(leagueData)render();status('Roster changed. Generate rankings to apply your selection and weights.');}
+  function stop(){clearTimeout(autoWeightTimer);if(worker){worker.terminate();worker=null;}$('proApplyScore').disabled=!custom?._targets?.length;$('proAddScore').disabled=false; $('proCancel').hidden=true;$('proGenerate').disabled=filterPending||loadedCp!==cp()||roster().filter(row=>row.weight>0).length<2;}
+  function invalidate(){generatedSnapshot=null;activeSaved='';updateSavedControls();stop();custom=null;$('proSource').value='published';$('proSource').querySelector('option[value=custom]').disabled=true;$('proSource').querySelector('option[value=custom]').hidden=true;$('proRunSummary').textContent='';updateSavedControls();if(leagueData)render();status('Roster changed. Generate rankings to apply your selection and weights.');}
   function prepareSearch(league,request){
     if(searchWorker){searchWorker.terminate();searchWorker=null;}
     searchError='';searchIndex=searchCache.get(league)||null;$('proSearchStatus').textContent=searchIndex?'PvPoke search syntax supported.':'Preparing PvPoke search…';
@@ -141,16 +127,15 @@
     PvPProDetail.cancel();$('proBattlePanel').hidden=true;renderedDetail=null;
     if(searchWorker){searchWorker.terminate();searchWorker=null;}searchIndex=null;
     generatedSnapshot=null;activeSaved='';updateSavedControls();
-    clearTimeout(filterTimer);if(filterWorker){filterWorker.terminate();filterWorker=null;}filterPending=false;selectedKey='';loadedCp=0;selected='';variants=[];leagueData=null;weights.clear();calculatedModel=null;stop();$('proRankings').textContent='Loading league…';$('proDetail').textContent='Loading Pokémon details…';renderVariants();const league=cp(),request=++loading;status('Loading published PvPoke rankings…');$('proGenerate').disabled=true;
+    clearTimeout(filterTimer);if(filterWorker){filterWorker.terminate();filterWorker=null;}filterPending=false;selectedKey='';loadedCp=0;selected='';leagueData=null;weights.clear();calculatedModel=null;stop();$('proRankings').textContent='Loading league…';$('proDetail').textContent='Loading Pokémon details…';const league=cp(),request=++loading;status('Loading published PvPoke rankings…');$('proGenerate').disabled=true;
     try{
       const result=await Promise.all([data?Promise.resolve(data):json('gamemaster.json'),json('league-'+league+'.json'),json('overrides-'+league+'.json'),json('meta-'+league+'.json')]);
       if(loading!==request)return;
-      [data,leagueData,overrides,leagueMeta]=result;loadedCp=league;custom=null;variants=[];page=0;selected='';$('proSource').value='published';$('proSource').querySelector('option[value=custom]').disabled=true;$('proSource').querySelector('option[value=custom]').hidden=true;
+      [data,leagueData,overrides,leagueMeta]=result;loadedCp=league;custom=null;page=0;selected='';$('proSource').value='published';$('proSource').querySelector('option[value=custom]').disabled=true;$('proSource').querySelector('option[value=custom]').hidden=true;
       weights=new Map(leagueData.overall.map((row,i)=>[row.speciesId,{accepted:true,weight:1}]));
       $('proCategory').replaceChildren(...Object.keys(leagueData).map(category=>{const option=el('option',category[0].toUpperCase()+category.slice(1));option.value=category;return option;}));
       filters=[{filterType:'type',values:[...choices.type]}];applyWeightMode();
       $('proSource').querySelector('option[value=published]').textContent=leagueName();
-      $('proLabPokemon').replaceChildren(...leagueData.overall.map(row=>{const option=el('option',row.speciesName);option.value=row.speciesId;return option;}));
       $('proSpeciesIds').replaceChildren(...leagueData.overall.map(row=>{const option=el('option',row.speciesName);option.value=row.speciesId;return option;}));
       $('proMoveIds').replaceChildren(...data.moves.map(row=>{const option=el('option',row.name);option.value=row.moveId;return option;}));
       $('proSearchTraits').textContent=[...data.pokemonTraits.pros,...data.pokemonTraits.cons].join(' · ');
@@ -158,7 +143,8 @@
       $('proGenerate').disabled=filterPending;
     }catch(error){if(loading===request)status(error.message);}
   }
-  document.addEventListener('pvp-tab-change',event=>{if(event.detail==='pro'&&!data)load();});
+  // The app router (includes/app-tabs.js) announces each view; published rankings load on the first visit to Current.
+  document.addEventListener('pvp-view-change',event=>{const route=event.detail||{};if(route.app==='pro'&&route.proView==='rankings'&&route.mode==='current'&&!data)load();});
   $('proLeague').addEventListener('change',()=>{sourceRequest++;load();});
   function toggleSpecies(id){
     const accepted=weights.get(id).accepted;let filter=filters.find(f=>f.filterType==='id');if(!filter){filter={filterType:'id',values:[],excludedValues:[]};filters.push(filter);}
@@ -202,16 +188,14 @@
     if(filterPending||!data || !leagueData || loadedCp!==cp())return;
     let accepted;
     try{PvPPro.chooseCandidates(eligibleRoster(),leagueData.overall,$('proAllCandidates').checked?null:Number($('proCandidateLimit').value));accepted=PvPPro.validateRoster(roster(),new Set(leagueData.overall.map(row=>row.speciesId)));}catch(error){status(error.message);return;}
-    if(mode==='variants' && accepted.every(row=>row.speciesId===selected)){status('Select at least one other opponent for the moveset lab.');return;}
     const limits={},policy='top',topN=movesLimit();
     try{PvPPro.chooseOpponents(accepted,$('proAllOpponents').checked?null:Number($('proOpponentLimit').value));}catch(error){status(error.message);return;}
     try{PvPPro.selectCandidates([],policy,topN);}catch(error){status(error.message);return;}
-    const limit=Number($('proLimit').value);if(!Number.isInteger(limit)||limit<1||limit>10000){status('Moveset limit must be an integer from 1 to 10,000.');return;}
     stop();worker=new Worker('includes/pro/worker.js');const current=worker;renderWeightControls();
-    $('proGenerate').disabled=true;$('proEvaluate').disabled=true;$('proCancel').hidden=false;
-    status(mode==='weights'?'Simulating the recommended roster to estimate meta weights…':mode==='variants'?'Evaluating movesets against the accepted weighted roster…':'Projecting and ranking moveset combinations against recommended opponents…');
+    $('proGenerate').disabled=true;$('proCancel').hidden=false;
+    status(mode==='weights'?'Simulating the recommended roster to estimate meta weights…':'Projecting and ranking moveset combinations against recommended opponents…');
     const scope=weightScope(),model=currentWeightModel();
-    const context=accepted.length+' accepted Pokémon · '+$('proLeague').selectedOptions[0].textContent+(mode==='variants'?' · '+$('proShields').value+' shields each':' · five ranking scenarios')+' · '+(weightMode()==='calculate'?'Calculated weights ('+$('proWeightGuidance').value+'% PvPoke guidance)':weightMode()==='equal'?'Equal weights':'PvPoke default weights');
+    const context=accepted.length+' accepted Pokémon · '+$('proLeague').selectedOptions[0].textContent+' · five ranking scenarios'+' · '+(weightMode()==='calculate'?'Calculated weights ('+$('proWeightGuidance').value+'% PvPoke guidance)':weightMode()==='equal'?'Equal weights':'PvPoke default weights');
     current.onmessage=event=>{
       if(worker!==current)return;
       const result=event.data;
@@ -225,35 +209,97 @@
         $('proRunSummary').textContent=summary.selectedCombinations+' / '+summary.totalCombinations+' combinations ranked · '+summary.opponents+' recommended opponents · '+summary.simulations.toLocaleString()+' simulated battles'+(summary.scoutOpponents?' · Scout sample: '+summary.scoutOpponents+' opponents; recommended moveset retained':'')+(summary.fallbacks?' · '+summary.fallbacks+' scoring rows/passes used the zero-meta-weight fallback':'')+'.';
         generatedSnapshot={rankings:custom,context:$('proGeneratedContext').textContent,summary:$('proRunSummary').textContent};
         openBuilder(false);status('Custom ranking generation complete.');
-      }else if(result.type==='variants'){
-        variants=result.rows;variantContext=context;$('proVariantContext').textContent=result.total+' movesets evaluated · '+context+'. Weighted mean Battle Rating (0–1000), not published overall score.';renderVariants();status('Moveset evaluation complete.');
       }
       stop();renderWeightControls();
     };
     current.onerror=event=>{stop();renderWeightControls();status('Calculation failed: '+event.message);};
-    current.postMessage({mode,data,opponentLimit:$('proAllOpponents').checked?null:Number($('proOpponentLimit').value),weightMode:weightMode(),weightGuidance:Number($('proWeightGuidance').value)/100,defaultWeights:Object.fromEntries(overrides.map(r=>[r.speciesId,r.weight??1])),weightModel:mode==='weights'?null:model,cp:cp(),published:leagueData.overall,roster:accepted,speciesId:selected,limit,policy,topN,limits,shields:Number($('proShields').value)});
+    current.postMessage({mode,data,opponentLimit:$('proAllOpponents').checked?null:Number($('proOpponentLimit').value),weightMode:weightMode(),weightGuidance:Number($('proWeightGuidance').value)/100,defaultWeights:Object.fromEntries(overrides.map(r=>[r.speciesId,r.weight??1])),weightModel:mode==='weights'?null:model,cp:cp(),published:leagueData.overall,roster:accepted,policy,topN,limits});
   }
-  $('proGenerate').addEventListener('click',()=>launch('generate'));$('proEvaluate').addEventListener('click',()=>launch('variants'));$('proCancel').addEventListener('click',()=>{stop();renderWeightControls();status('Calculation cancelled.');});
+  $('proGenerate').addEventListener('click',()=>launch('generate'));$('proCancel').addEventListener('click',()=>{stop();renderWeightControls();status('Calculation cancelled.');});
   $('proCategory').addEventListener('change',()=>{clearTimeout(headerClickTimer);page=0;sortKey='score';descending=true;expandedKey='';pendingDifference=null;render();});
   $('proSource').addEventListener('change',selectSource);
   $('proSearch').addEventListener('input',()=>{page=0;render();});
   $('proPrev').addEventListener('click',()=>{page--;render();});$('proNext').addEventListener('click',()=>{page++;render();});
-  function comparison(row,lab=false){
+  function comparison(row){
     const recommended=leagueData?.overall.find(item=>item.speciesId===row.speciesId);
-    if(!lab&&!isCustom())return PvPPro.compareMoveset(row,leagueData?.[$('proCategory').value]?.find(item=>item.speciesId===row.speciesId),row.score);
-    const baseline=(lab?variants:rows()).find(item=>item.speciesId===row.speciesId&&PvPPro.sameMoveset(item.moveset,recommended?.moveset));
-    return PvPPro.compareMoveset(row,recommended,lab?baseline?.rating:baseline?.score,lab?row.rating:row.score);
+    if(!isCustom())return PvPPro.compareMoveset(row,leagueData?.[$('proCategory').value]?.find(item=>item.speciesId===row.speciesId),row.score);
+    const baseline=rows().find(item=>item.speciesId===row.speciesId&&PvPPro.sameMoveset(item.moveset,recommended?.moveset));
+    return PvPPro.compareMoveset(row,recommended,baseline?.score,row.score);
   }
-  function movesetBadge(comparison,lab=false,row){
+  function movesetBadge(comparison,row){
     if(!comparison)return null;
     const wrap=el('span',null,'pro-moveset-comparison');
     const gain=comparison.delta<.1?'<0.1':comparison.delta?.toFixed(1);
-    const text=comparison.kind==='recommended'?'Recommended':'Alternate Moveset'+(comparison.kind==='better'?' · Beats recommended by '+gain+(lab?' BR':' points'):'');
+    const text=comparison.kind==='recommended'?'Recommended':'Alternate Moveset'+(comparison.kind==='better'?' · Beats recommended by '+gain+' points':'');
     const badge=el('span',text,'pro-moveset-badge');wrap.append(badge);
-    badge.title=comparison.kind==='recommended'?'PvPoke recommended moveset (charged move order ignored).':comparison.baselineScore==null?'Recommended moveset is not present in this saved report; a score comparison is unavailable.':(lab?'Recommended weighted Battle Rating: ':'Recommended moveset score in this report: ')+comparison.baselineScore.toFixed(1)+(lab?'. Compared against the same lab opponents and shield setting.':'. Compared in the current category against the same opponents.');
+    badge.title=comparison.kind==='recommended'?'PvPoke recommended moveset (charged move order ignored).':comparison.baselineScore==null?'Recommended moveset is not present in this saved report; a score comparison is unavailable.':'Recommended moveset score in this report: '+comparison.baselineScore.toFixed(1)+'. Compared in the current category against the same opponents.';
     if(comparison.kind!=='recommended'&&row){const recommended=leagueData?.overall.find(item=>item.speciesId===row.speciesId);if(recommended)wrap.append(el('span','Recommended: '+recommended.moveset.filter(id=>id!=='none').map(move).join(' · '),'pro-recommended-reference'));}
     return wrap;
   }
+  // Compare with snapshot (Current): optional Old rank / Old score / Change columns from PvPoke's published
+  // rankings on an earlier date, loaded with the Historical engine (includes/analysis/data.js and core.js).
+  // Off by default; nothing is fetched until the columns are added. Each league and category loads once.
+  const compare={info:null,tables:new Map(),controller:null};
+  const compareKey=()=>cp()+'|'+$('proCategory').value;
+  const compareTable=()=>compare.info?compare.tables.get(compareKey()):undefined;
+  const compareStatus=text=>{$('proCompareStatus').textContent=text;};
+  const categoryName=()=>$('proCategory').selectedOptions[0]?.textContent||'Overall';
+  function snapshotTitle(id){const when='PvPoke '+compare.info.date+' (commit '+compare.info.sha.slice(0,7)+')';return id==='snap:rank'?'Published rank at '+when:id==='snap:score'?'Published score at '+when+'. Scores refer to the recommended moveset.':'Score that sets rank minus the published score at '+when+'.';}
+  function describeCompare(){
+    const info=compare.info,table=compareTable(),commit=' · commit '+info.sha.slice(0,7)+' from '+new Date(info.committed).toLocaleDateString(undefined,{timeZone:'UTC'});
+    if(table?.error)return 'Could not load the snapshot rankings. '+table.error;
+    if(table===null)return 'No published '+leagueName()+' · '+categoryName()+' rankings at the '+info.date+' snapshot'+commit+'.';
+    return 'Comparing with PvPoke '+info.branch+' on '+info.date+commit+'. Rows missing from the snapshot show New.';
+  }
+  function updateCompareControls(){
+    const active=!!compare.info;$('proCompareToggle').dataset.active=String(active);
+    $('proCompareToggle').textContent=active?'Snapshot · '+compare.info.date:'Compare with snapshot';
+    $('proCompareApply').textContent=active?'Update comparison':'Add comparison columns';$('proCompareClear').hidden=!active;
+  }
+  function openCompare(open){$('proComparePanel').hidden=!open;$('proCompareToggle').setAttribute('aria-expanded',String(open));if(open)$('proCompareDate').focus();}
+  async function loadCompareTable(){
+    const info=compare.info,tables=compare.tables,key=compareKey(),category=$('proCategory').value,league=cp();
+    if(!info||tables.has(key))return;
+    tables.set(key,'loading');compareStatus('Loading '+leagueName()+' · '+categoryName()+' rankings from '+info.date+'…');
+    try{const rankings=await PvPokeData.loadRankings(info,league,category,compare.controller.signal);tables.set(key,rankings?PvPokeAnalysis.snapshotLookup(rankings):null);}
+    catch(error){if(error.name==='AbortError'){tables.delete(key);return;}tables.set(key,{error:error.message});}
+    if(compare.info!==info)return;
+    if(leagueData)render();else if(compareKey()===key)compareStatus(describeCompare());
+  }
+  async function applyCompare(){
+    const date=$('proCompareDate').value,today=new Date().toISOString().slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T00:00:00Z'))){compareStatus('Choose a snapshot date.');$('proCompareDate').focus();return;}
+    if(date>today){compareStatus('Choose today or an earlier date.');$('proCompareDate').focus();return;}
+    compare.controller?.abort();const controller=compare.controller=new AbortController();
+    $('proCompareApply').disabled=true;compareStatus('Finding the PvPoke commit for '+date+'…');
+    try{
+      const resolved=await PvPokeData.resolveSnapshot({branch:'master',cup:'all',date},controller.signal);
+      if(compare.controller!==controller)return;
+      compare.info={...resolved,date};compare.tables=new Map();updateCompareControls();
+      await loadCompareTable();
+    }catch(error){if(compare.controller===controller&&error.name!=='AbortError')compareStatus('Could not find that snapshot. '+error.message);}
+    finally{if(compare.controller===controller)$('proCompareApply').disabled=false;}
+  }
+  function clearCompare(){
+    compare.controller?.abort();compare.controller=null;compare.info=null;compare.tables=new Map();updateCompareControls();
+    $('proCompareApply').disabled=false;compareStatus('Comparison columns removed.');
+    if(sortKey.startsWith('snap:')){sortKey='score';descending=true;}
+    if(leagueData)render();
+  }
+  function snapshotCell(cell,header,v,comp){
+    if(header.first)cell.classList.add('pro-snapshot-first');
+    if(header.id==='snap:rank'){if(Number.isFinite(v)){cell.textContent=v;return;}cell.textContent='New';cell.classList.add('pro-snapshot-new');cell.title='Not in the published '+leagueName()+' rankings at this snapshot.';return;}
+    if(header.id==='snap:score'){cell.textContent=Number.isFinite(v)?v.toFixed(1):'—';if(Number.isFinite(v)){cell.classList.add('rated-cell');cell.style.setProperty('--rating-hue',Math.max(0,Math.min(130,v*1.3)));}return;}
+    cell.textContent=Number.isFinite(v)?(v>0?'+':'')+v.toFixed(1):'—';cell.classList.add('pro-score-difference');if(v>0)cell.classList.add('positive');else if(v<0)cell.classList.add('negative');
+    if(isCustom()&&['alternate','better'].includes(comp?.kind))cell.title='This row uses an alternate moveset; the snapshot score refers to the recommended moveset.';
+  }
+  {const earlier=new Date();earlier.setUTCDate(earlier.getUTCDate()-90);$('proCompareDate').value=earlier.toISOString().slice(0,10);$('proCompareDate').max=new Date().toISOString().slice(0,10);}
+  $('proCompareToggle').addEventListener('click',()=>openCompare($('proComparePanel').hidden));
+  $('proCloseCompare').addEventListener('click',()=>{openCompare(false);$('proCompareToggle').focus();});
+  $('proCompareApply').addEventListener('click',applyCompare);
+  $('proCompareClear').addEventListener('click',clearCompare);
+  $('proCompareDate').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();applyCompare();}});
+  $('proOpenHistorical').addEventListener('click',()=>{if(compare.info||$('proCompareDate').value)$('previousDate').value=compare.info?.date||$('proCompareDate').value;globalThis.PvPTabs?.show({app:'pro',proView:'rankings',mode:'historical'});});
   function render(){
     updateSavedControls();
     let list=rows();if(!list.length){$('proRankings').textContent='Load a league to view rankings.';$('proDetailParking').hidden=true;document.querySelector('.pro-layout').classList.remove('pro-has-details','pro-has-battle');PvPProDetail.cancel();renderedDetail=null;return;}
@@ -263,10 +309,15 @@
     const columns=scoreColumns(),columnMaps=new Map(columns.map(c=>[c.id,c.scores[$('proCategory').value]||{}]));
     const differences=(custom?._differenceColumns||[]).filter(d=>columnMaps.has(d.left)&&columnMaps.has(d.right));
     const scoreValue=(row,id)=>id==='primary'?row.score:columnMaps.get(id)?.[row.variantId];
-    const value=(row,key)=>{if(key==='speciesName')return row.speciesName;if(key==='score')return row.score;if(key.startsWith('score:'))return scoreValue(row,key.slice(6));const d=differences.find(d=>'diff:'+d.id===key);return d?scoreValue(row,d.left)-scoreValue(row,d.right):undefined;};
-    if(!['score','speciesName'].includes(sortKey)&&!columns.some(c=>'score:'+c.id===sortKey)&&!differences.some(d=>'diff:'+d.id===sortKey))sortKey='score';
+    const snapshot=compareTable(),snap=snapshot instanceof Map?snapshot:null;if(compare.info&&snapshot===undefined)loadCompareTable();
+    if(compare.info&&snapshot!==undefined&&snapshot!=='loading'){const text=describeCompare();if($('proCompareStatus').textContent!==text)compareStatus(text);}
+    // Change compares the score that sets rank (the leftmost score column) with the snapshot's published score.
+    const snapshotValue=(row,key)=>{const old=snap?.get(row.speciesId);if(key==='snap:rank')return old?.rank;if(key==='snap:score')return old?.score??undefined;return PvPokeAnalysis.scoreChange(rankColumn?scoreValue(row,rankColumn.id):row.score,old?.score)??undefined;};
+    const value=(row,key)=>{if(key==='speciesName')return row.speciesName;if(key==='score')return row.score;if(key.startsWith('score:'))return scoreValue(row,key.slice(6));if(key.startsWith('snap:'))return snapshotValue(row,key);const d=differences.find(d=>'diff:'+d.id===key);return d?scoreValue(row,d.left)-scoreValue(row,d.right):undefined;};
+    if(!['score','speciesName'].includes(sortKey)&&!columns.some(c=>'score:'+c.id===sortKey)&&!differences.some(d=>'diff:'+d.id===sortKey)&&!(snap&&sortKey.startsWith('snap:')))sortKey='score';
     const baseHeaders=[{id:'rank',label:'Rank'},{id:'pokemon',label:'Pokémon',key:'speciesName'},...(columns.length?columns.map(c=>({id:'score:'+c.id,label:'Score ('+c.label+')',key:'score:'+c.id,column:c})):[{id:'score',label:'Score',key:'score'}]),...differences.map(d=>({id:'diff:'+d.id,label:'Difference ('+columns.find(c=>c.id===d.left).label+' − '+columns.find(c=>c.id===d.right).label+')',key:'diff:'+d.id,difference:d})),{id:'moves',label:isCustom()?'Moveset':'Recommended moveset'}];
     const order=PvPPro.rankingColumnOrder(baseHeaders.map(h=>h.id),isCustom()?custom?._columnOrder||[]:[]),headers=order.map(id=>baseHeaders.find(h=>h.id===id));
+    if(snap){const last=headers.reduce((at,h,i)=>h.key&&(h.key==='score'||h.key.startsWith('score:')||h.key.startsWith('diff:'))?i:at,1);headers.splice(last+1,0,{id:'snap:rank',label:'Old rank',key:'snap:rank',snapshot:true,first:true},{id:'snap:score',label:'Old score',key:'snap:score',snapshot:true},{id:'snap:change',label:'Change',key:'snap:change',snapshot:true});}
     const ranked=rows().slice(),rankColumn=headers.find(h=>h.column)?.column;
     if(rankColumn&&sortKey==='score')sortKey='score:'+rankColumn.id;
     if(rankColumn)ranked.sort((a,b)=>(scoreValue(b,rankColumn.id)??-Infinity)-(scoreValue(a,rankColumn.id)??-Infinity)||a.speciesName.localeCompare(b.speciesName)||rowKey(a).localeCompare(rowKey(b)));
@@ -274,22 +325,22 @@
     if($('proRankBestOnly').checked&&isCustom()){const seen=new Set();list=list.slice().sort((a,b)=>rankMap.get(rowKey(a))-rankMap.get(rowKey(b))).filter(row=>{if(seen.has(row.speciesId))return false;seen.add(row.speciesId);return true;});}
     const matches=PvPProSearch.compile(query,data);
     const filtered=query?(searchIndex?list.filter(row=>matches(row,searchIndex)):[]):list.slice();
-    filtered.sort((a,b)=>(sortKey==='speciesName'?a.speciesName.localeCompare(b.speciesName):(value(a,sortKey)??-Infinity)-(value(b,sortKey)??-Infinity))*(descending?-1:1));
+    filtered.sort((a,b)=>{if(sortKey==='speciesName')return a.speciesName.localeCompare(b.speciesName)*(descending?-1:1);const x=value(a,sortKey),y=value(b,sortKey),missingX=!Number.isFinite(x),missingY=!Number.isFinite(y);if(missingX||missingY)return missingX===missingY?0:missingX?1:-1;return (x-y)*(descending?-1:1);});
     const pages=Math.max(1,Math.ceil(filtered.length/rankingPageSize));page=Math.max(0,Math.min(page,pages-1));
-    document.querySelector('.pro-layout').classList.toggle('pro-has-score-columns',columns.length>1);
-    const table=el('table',null,'pro-ranking-table'+(columns.length>1?' pro-score-table':''));table.append(el('caption',(activeSaved?(savedRankings.find(item=>item.id===activeSaved)?.name||'Saved'):(isCustom()?'Generated':leagueName()))+' · '+$('proCategory').selectedOptions[0].textContent+(isCustom()?' · '+$('proLeague').selectedOptions[0].textContent:'')));
+    document.querySelector('.pro-layout').classList.toggle('pro-has-score-columns',columns.length>1||!!snap);
+    const table=el('table',null,'pro-ranking-table'+(columns.length>1||snap?' pro-score-table':''));table.append(el('caption',(activeSaved?(savedRankings.find(item=>item.id===activeSaved)?.name||'Saved'):(isCustom()?'Generated':leagueName()))+' · '+$('proCategory').selectedOptions[0].textContent+(isCustom()?' · '+$('proLeague').selectedOptions[0].textContent:'')+(snap?' · compared with PvPoke '+compare.info.date:'')));
     const head=table.createTHead().insertRow();
-    for(const {id,label,key,column,difference} of headers){const th=el('th');th.scope='col';if(column&&column.id===rankColumn?.id){th.classList.add('pro-rank-basis');const indicator=el('span','Rank basis','pro-rank-basis-label');th.append(indicator);}
-      if(key){const button=el('button',label+(sortKey===key?(descending?' ↓':' ↑'):' ↕'),'column-sort');button.type='button';button.addEventListener('click',()=>{clearTimeout(headerClickTimer);if(pendingDifference&&column){addDifference(pendingDifference,column.id);return;}headerClickTimer=setTimeout(()=>{descending=sortKey===key?!descending:key!=='speciesName';sortKey=key;render();},260);});th.append(button);th.setAttribute('aria-sort',sortKey===key?(descending?'descending':'ascending'):'none');}else th.textContent=label;
+    for(const {id,label,key,column,difference,snapshot:snapshotHeader,first} of headers){const th=el('th');th.scope='col';if(first)th.classList.add('pro-snapshot-first');if(snapshotHeader)th.title=snapshotTitle(id);if(column&&column.id===rankColumn?.id){th.classList.add('pro-rank-basis');const indicator=el('span','Rank basis','pro-rank-basis-label');th.append(indicator);}
+      if(key){const button=el('button',label+(sortKey===key?(descending?' ↓':' ↑'):' ↕'),'column-sort');button.type='button';button.addEventListener('click',()=>{clearTimeout(headerClickTimer);if(pendingDifference&&column){addDifference(pendingDifference,column.id);return;}headerClickTimer=setTimeout(()=>{descending=sortKey===key?!descending:!['speciesName','snap:rank'].includes(key);sortKey=key;render();},260);});th.append(button);th.setAttribute('aria-sort',sortKey===key?(descending?'descending':'ascending'):'none');}else th.textContent=label;
       if(column){th.addEventListener('dblclick',event=>{if(event.target.closest('.pro-info-button,.pro-remove-score'))return;clearTimeout(headerClickTimer);editingColumn=column.id;$('proColumnTitle').textContent='Score ('+column.label+')';$('proColumnDialog').showModal();});const info=el('button','i','pro-info-button');info.type='button';info.setAttribute('aria-label','Information for Score ('+column.label+')');info.addEventListener('click',()=>previewScore(column));th.append(info);if(column.id!=='primary'){const remove=el('button','×','pro-remove-score');remove.type='button';remove.setAttribute('aria-label','Remove Score ('+column.label+')');remove.addEventListener('click',()=>{custom._scoreColumns=custom._scoreColumns.filter(c=>c.id!==column.id);custom._differenceColumns=differences.filter(d=>d.left!==column.id&&d.right!==column.id);persistColumnView();});th.append(remove);}}
       if(difference){const remove=el('button','×','pro-remove-score');remove.type='button';remove.setAttribute('aria-label','Remove '+label);remove.addEventListener('click',()=>{custom._differenceColumns=differences.filter(d=>d.id!==difference.id);persistColumnView();});th.append(remove);}
-      if(isCustom()){th.draggable=true;th.title='Drag to reorder'+(column?' · Double-click for score actions':'');th.addEventListener('dragstart',event=>{draggedColumn=id;event.dataTransfer.setData('text/plain',id);event.dataTransfer.effectAllowed='move';});th.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';});th.addEventListener('drop',event=>{event.preventDefault();const from=draggedColumn;if(!from||from===id)return;const ids=headers.map(h=>h.id);ids.splice(ids.indexOf(from),1);ids.splice(ids.indexOf(id),0,from);custom._columnOrder=ids;const firstScore=ids.find(id=>id.startsWith('score:'));if(firstScore!=='score:'+rankColumn?.id){sortKey=firstScore;descending=true;page=0;}draggedColumn=null;persistColumnView();});th.addEventListener('dragend',()=>{draggedColumn=null;});}head.append(th);
+      if(isCustom()&&!snapshotHeader){th.draggable=true;th.title='Drag to reorder'+(column?' · Double-click for score actions':'');th.addEventListener('dragstart',event=>{draggedColumn=id;event.dataTransfer.setData('text/plain',id);event.dataTransfer.effectAllowed='move';});th.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';});th.addEventListener('drop',event=>{event.preventDefault();const from=draggedColumn;if(!from||from===id)return;const ids=headers.filter(h=>!h.snapshot).map(h=>h.id);ids.splice(ids.indexOf(from),1);ids.splice(ids.indexOf(id),0,from);custom._columnOrder=ids;const firstScore=ids.find(id=>id.startsWith('score:'));if(firstScore!=='score:'+rankColumn?.id){sortKey=firstScore;descending=true;page=0;}draggedColumn=null;persistColumnView();});th.addEventListener('dragend',()=>{draggedColumn=null;});}head.append(th);
     }
     const detailHost=$('proDetail'),battleHost=$('proBattlePanel'),parking=$('proDetailParking');parking.append(detailHost,battleHost);detailHost.className='pro-sidebar-content';
     const body=table.createTBody();
     for(const row of filtered.slice(page*rankingPageSize,(page+1)*rankingPageSize)){
       const tr=body.insertRow(),comp=comparison(row);if(rowKey(row)===selectedKey)tr.classList.add('pro-selected');
-      for(const header of headers){const cell=tr.insertCell();if(header.column&&header.column.id===rankColumn?.id)cell.classList.add('pro-rank-basis');if(header.id==='rank'){cell.textContent=rankMap.get(rowKey(row));continue;}if(header.id==='pokemon'){const button=el('button',row.speciesName,'pro-pokemon-button');button.type='button';button.setAttribute('aria-expanded',String(expandedKey===rowKey(row)));button.setAttribute('aria-controls','proDetail');button.addEventListener('click',()=>{if(selected!==row.speciesId){stop();variants=[];selected=row.speciesId;renderVariants();}selectedKey=rowKey(row);expandedKey=expandedKey===selectedKey?'':selectedKey;if(!expandedKey){PvPProDetail.cancel();renderedDetail=null;}render();if(expandedKey)$('proDetail').scrollIntoView({behavior:'smooth',block:'nearest'});});cell.append(button,PvPProDetail.pokemonTypes(data.pokemon.find(p=>p.speciesId===row.speciesId)));continue;}if(header.id==='moves'){cell.append(PvPProDetail.moves(row.moveset,data));const badge=movesetBadge(comp,false,row);if(badge&&isCustom())cell.append(badge);continue;}const v=value(row,header.key);cell.textContent=Number.isFinite(v)?(header.difference&&v>0?'+':'')+v.toFixed(1):'—';if(header.difference){cell.className='pro-score-difference '+(v>0?'positive':v<0?'negative':'');const left=columns.find(c=>c.id===header.difference.left),right=columns.find(c=>c.id===header.difference.right);if(Number.isFinite(v)&&((left?.mode==='published')!==(right?.mode==='published'))&&['alternate','better'].includes(comp?.kind)){const badge=el('span','Alternate Moveset','pro-moveset-badge pro-difference-moveset-badge');badge.title='This row uses an alternate moveset. The published PvPoke score refers to the recommended moveset.';cell.append(badge);}}else{cell.classList.add('rated-cell');cell.style.setProperty('--rating-hue',Math.max(0,Math.min(130,(v||0)*1.3)));if(header.column?.mode==='published')cell.title='Published PvPoke score for the recommended moveset; shared by all variants of this species.';}}
+      for(const header of headers){const cell=tr.insertCell();if(header.column&&header.column.id===rankColumn?.id)cell.classList.add('pro-rank-basis');if(header.id==='rank'){cell.textContent=rankMap.get(rowKey(row));continue;}if(header.id==='pokemon'){const button=el('button',row.speciesName,'pro-pokemon-button');button.type='button';button.setAttribute('aria-expanded',String(expandedKey===rowKey(row)));button.setAttribute('aria-controls','proDetail');button.addEventListener('click',()=>{selected=row.speciesId;selectedKey=rowKey(row);expandedKey=expandedKey===selectedKey?'':selectedKey;if(!expandedKey){PvPProDetail.cancel();renderedDetail=null;}render();if(expandedKey)$('proDetail').scrollIntoView({behavior:'smooth',block:'nearest'});});cell.append(button,PvPProDetail.pokemonTypes(data.pokemon.find(p=>p.speciesId===row.speciesId)));continue;}if(header.id==='moves'){cell.append(PvPProDetail.moves(row.moveset,data));const badge=movesetBadge(comp,row);if(badge&&isCustom())cell.append(badge);continue;}const v=value(row,header.key);if(header.snapshot){snapshotCell(cell,header,v,comp);continue;}cell.textContent=Number.isFinite(v)?(header.difference&&v>0?'+':'')+v.toFixed(1):'—';if(header.difference){cell.className='pro-score-difference '+(v>0?'positive':v<0?'negative':'');const left=columns.find(c=>c.id===header.difference.left),right=columns.find(c=>c.id===header.difference.right);if(Number.isFinite(v)&&((left?.mode==='published')!==(right?.mode==='published'))&&['alternate','better'].includes(comp?.kind)){const badge=el('span','Alternate Moveset','pro-moveset-badge pro-difference-moveset-badge');badge.title='This row uses an alternate moveset. The published PvPoke score refers to the recommended moveset.';cell.append(badge);}}else{cell.classList.add('rated-cell');cell.style.setProperty('--rating-hue',Math.max(0,Math.min(130,(v||0)*1.3)));if(header.column?.mode==='published')cell.title='Published PvPoke score for the recommended moveset; shared by all variants of this species.';}}
     }
     if(!filtered.length){const cell=body.insertRow().insertCell();cell.colSpan=headers.length;cell.textContent=query&&!searchIndex?(searchError||'Preparing search data…'):'No Pokémon match this search.';}
     $('proRankings').replaceChildren(table);$('proPagination').textContent=filtered.length+' Pokémon · Page '+(page+1)+' / '+pages+' · '+rankingPageSize+' per page';$('proPrev').disabled=page===0;$('proNext').disabled=page===pages-1;
@@ -299,33 +350,19 @@
   }
   let renderedDetail;
   function renderDetail(row){
-    if(!row)return;const identity=[row,cp(),$('proSource').value,$('proCategory').value];if(renderedDetail&&identity.every((v,i)=>v===renderedDetail[i]))return;renderedDetail=identity;selected=row.speciesId;$('proLabPokemon').value=selected;const p=data.pokemon.find(item=>item.speciesId===row.speciesId),host=$('proDetail');host.replaceChildren();const summary=el('div',null,'pro-inline-summary');
+    if(!row)return;const identity=[row,cp(),$('proSource').value,$('proCategory').value];if(renderedDetail&&identity.every((v,i)=>v===renderedDetail[i]))return;renderedDetail=identity;selected=row.speciesId;const p=data.pokemon.find(item=>item.speciesId===row.speciesId),host=$('proDetail');host.replaceChildren();const summary=el('div',null,'pro-inline-summary');
     if(row.stats)summary.append(el('p','Attack '+row.stats.atk+' · Defense '+row.stats.def+' · HP '+row.stats.hp,'hint'));
     if(row.editorNotes)summary.append(el('p',row.editorNotes,'hint'));
     const targets=isCustom()?(custom._targets||[...new Set(custom.overall.map(r=>r.speciesId))].map(speciesId=>({speciesId,weight:1,moveset:leagueData.overall.find(r=>r.speciesId===speciesId)?.moveset}))).filter(t=>t.moveset):leagueData.overall.map(r=>({speciesId:r.speciesId,moveset:r.moveset,weight:1}));
     PvPProDetail.mount({host,data,cp:cp(),published:leagueData.overall,row,category:$('proCategory').value,targets,custom:isCustom(),historical:isCustom()&&!custom._targets,
       categoryRow:slug=>custom?.[slug]?.find(r=>rowKey(r)===rowKey(row)),battleHost:$('proBattlePanel')});host.querySelector('.pro-move-info').after(summary);
-    const labButton=el('button','Open this Pokémon in Moveset Lab','secondary');labButton.type='button';labButton.addEventListener('click',()=>{subTab('lab');$('proLabPanel').scrollIntoView({behavior:'smooth',block:'start'});});host.append(labButton);$('proEvaluate').disabled=!!worker||filterPending;
-  }
-  function renderVariants(){
-    const host=$('proVariants');host.replaceChildren();
-    $('proLabMovesetLegend').hidden=true;
-    if(!variants.length){host.textContent='Select a Pokémon, then evaluate its movesets against your accepted roster.';$('proVariantContext').textContent='';return;}
-    const threshold=Number($('proThreshold').value);if(!Number.isFinite(threshold)||threshold<0||threshold>100){host.textContent='Threshold must be from 0 to 100%.';return;}
-    const shown=PvPPro.filterVariants(variants,$('proBestOnly').checked,threshold),table=el('table',null,'pro-variants-table');
-    table.append(el('caption',name(selected)+' · '+shown.length+' / '+variants.length+' movesets shown'));
-    const head=table.createTHead().insertRow();for(const text of ['Moveset','Weighted Battle Rating','Below best']){const th=el('th',text);th.scope='col';head.append(th);}
-    const body=table.createTBody();
-    for(const row of shown){const tr=body.insertRow(),comp=comparison(row,true);tr.insertCell().append(PvPProDetail.moves(row.moveset,data));const badge=movesetBadge(comp,true,row);if(badge)tr.cells[0].append(badge);tr.insertCell().textContent=row.rating.toFixed(1);tr.insertCell().textContent=(variants[0].rating ? (1-row.rating/variants[0].rating)*100 : 0).toFixed(2)+'%';
-      const detail=el('details');detail.append(el('summary','Matchups'));for(const item of row.matches)detail.append(el('p',name(item.opponent)+' · '+item.rating,'hint'));tr.cells[0].append(detail);}
-    host.append(table);
   }
   function updateSavedControls(){
     const available=!!custom&&isCustom();
     $('proRankingOptions').hidden=!available;$('proRankingOptionsTitle').textContent=activeSaved?'Edit Saved Ranking':'Save Ranking & Options';$('proSavedControls').hidden=!available;$('proBestFilter').hidden=!available;$('proMovesetLegend').hidden=true;
     $('proAddScore').hidden=!available||!custom?._targets?.length;$('proAddScore').disabled=!!worker;$('proApplyScore').disabled=!!worker||!available;
     if(available)$('proRankingOptions').append($('proStatus'));else $('proRankPanel').before($('proStatus'));
-    $('proStatus').hidden=$('proBuilder').hidden&&!available&&$('proLabPanel').hidden;
+    $('proStatus').hidden=$('proBuilder').hidden&&!available;
     $('proRunSummary').hidden=!available;
     $('proSaveRanking').disabled=saveBusy||!available;
     $('proSaveRanking').textContent=activeSaved?'Save a copy':'Save rankings';
@@ -415,6 +452,4 @@
   $('proRenameRanking').addEventListener('click',()=>saveAction('rename'));
   $('proDeleteRanking').addEventListener('click',()=>saveAction('delete'));
   PvPProSaved.list().then(records=>{savedRankings=records;refreshSavedOptions();}).catch(error=>{$('proSavedStatus').textContent='Browser storage is unavailable: '+error.message;});
-  if(!$('proPanel').hidden)load();
-  for(const id of ['proBestOnly','proThreshold'])$(id).addEventListener('input',renderVariants);
 })();

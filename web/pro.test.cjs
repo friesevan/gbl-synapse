@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const base=path.join(__dirname,'includes/pro');
 require('./includes/pro/core.js');
-const {validateRoster,enumerate,filterVariants}=globalThis.PvPPro;
+const {validateRoster,enumerate}=globalThis.PvPPro;
 function run(mode='generate',options={}){
   const timers=[],messages=[];
   const context=vm.createContext({console:{log(){}},setInterval(fn){timers.push(fn);return timers.length;},clearInterval(){},setTimeout,JSON,Math,Date});
@@ -10,7 +10,7 @@ function run(mode='generate',options={}){
   vm.runInContext(fs.readFileSync(path.join(base,'worker.js'),'utf8'),context);
   const data=JSON.parse(fs.readFileSync(path.join(base,'data/gamemaster.json'))),published=JSON.parse(fs.readFileSync(path.join(base,'data/league-1500.json'))).overall;
   const roster=published.slice(0,5).map(row=>({speciesId:row.speciesId,weight:1}));
-  context.onmessage({data:{mode,data,cp:1500,published,roster,speciesId:roster[0].speciesId,limit:500,shields:1,...options}});
+  context.onmessage({data:{mode,data,cp:1500,published,roster,...options}});
   for(const fn of timers)fn();
   return messages;
 }
@@ -23,12 +23,6 @@ test('move enumeration covers combinations without duplicate charged move permut
  assert.deepEqual(enumerate(['F','F'],['A','B','C']),[['F','A','B'],['F','A','C'],['F','B','C']]);
  assert.equal(enumerate(['F','G'],['A','B','C'],['D','E']).length,12);
  assert.deepEqual(enumerate(['F'],['A']),[['F','A','none']]);
-});
-test('moveset threshold keeps ties and includes boundary scores',()=>{
- const rows=[{rating:800},{rating:1000},{rating:900},{rating:1000}];
- assert.deepEqual(filterVariants(rows,true,10).map(p=>p.rating),[1000,1000]);
- assert.deepEqual(filterVariants(rows,false,10).map(p=>p.rating),[1000,1000,900]);
- assert.equal(filterVariants(rows,false,100).length,4);
 });
 test('all four leagues include published overall data and five ranking scenarios',()=>{
  for(const cp of [500,1500,2500,10000]){
@@ -53,13 +47,16 @@ test('all moveset candidates rank against recommended-only opponents with unique
  const changed=run('generate',{roster:ids.map((speciesId,i)=>({speciesId,weight:i===0?20:1}))}).find(p=>p.type==='result');
  assert.notDeepEqual(changed.rows.map(p=>[p.speciesId,p.score]),result.rows.map(p=>[p.speciesId,p.score]));
 });
-test('moveset lab simulates every combination with bounded ratings and explicit limits',()=>{
- const messages=run('variants'),result=messages.find(p=>p.type==='variants');
- assert.ok(result,JSON.stringify(messages));assert.ok(result.total>1);assert.equal(result.total,result.rows.length);
- for(const row of result.rows){assert.ok(row.rating>=0&&row.rating<=1000);assert.equal(row.matches.length,4);}
- const limited=run('variants',{limit:1});assert.match(limited.find(p=>p.type==='error').error,/exceed/);assert.ok(!limited.some(p=>p.type==='variants'));
+test('Moveset Lab is removed from the worker, the core API and both pages',()=>{
+ assert.equal(globalThis.PvPPro.filterVariants,undefined);
+ assert.doesNotMatch(fs.readFileSync(path.join(base,'worker.js'),'utf8'),/variants\(|mode==='variants'/);
+ for(const page of [path.join(__dirname,'familyRanks.html'),path.join(__dirname,'..','artifact','pvp-iv-pro.html')]){
+  const html=fs.readFileSync(page,'utf8');
+  assert.doesNotMatch(html,/proLab|Moveset Lab|proEvaluate|proVariants|proShields|proThreshold/i,page);
+ }
+ const ui=fs.readFileSync(path.join(base,'ui.js'),'utf8');
+ assert.doesNotMatch(ui,/proLab|renderVariants|proEvaluate|launch\('variants'\)/);
 });
-
 test('scouted top N respects individual limits and retains every published recommendation',()=>{
  const all=run().find(p=>p.type==='result');const ids=[...new Set(all.rows.map(p=>p.speciesId))];
  const top=run('generate',{policy:'top',topN:2,limits:{[ids[0]]:1}}).find(p=>p.type==='result');
