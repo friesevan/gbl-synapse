@@ -40,16 +40,37 @@ bash web/scripts/yt-harvest/overnight.sh --hours 9          # one command, unatt
 python3 -I web/scripts/yt-harvest/test_yt_harvest.py       # unit tests
 ```
 It creates `~/.cache/gbl-synapse/venv` and installs/updates yt-dlp there, keeps the Mac awake (`caffeinate -i`), and runs four stages at once until the deadline:
-1. **Discover**: date-sorted YouTube searches (leagues, every cup in the schedule, seasons, years, 8 languages), then the uploads of every channel that produced a battle video, then relevance-sorted searches. Flat extraction only. Shorts and unrelated titles are dropped by `policy.relevance()`.
+1. **Discover**: date-sorted YouTube searches (leagues, every cup in the schedule, seasons, years, 8 languages), then the uploads of every channel that produced a battle video, then relevance-sorted searches. Flat extraction only. Shorts and unrelated titles are dropped by `policy.relevance()`. Learned from reviewer footage answers, it also vetoes Greek basketball ("STOIXIMAN GBL") and the separate Pokémon Champions game. Max battles, raids, Community Day, events, tips and similar titles are vetoed unless the title has a PvP marker.
 2. **Metadata**: newest first. With a YouTube Data API key (see below), 50 videos per request; otherwise yt-dlp through the web player, capped at 20/min. Videos whose title already looks like a battle video skip this stage: their metadata comes with the download request, so each downloaded video costs YouTube one player request, not two. `league.guess_league()` combines the GBL schedule (`data/gbl-schedule.json`: seasons, every rotation since 2020 and PvPoke cup rules, with a source URL per entry) for the upload date and the 14 days before it with keywords in the title, tags, description and chapters.
 3. **Download**: videos that pass `policy.download_allowed()` (or, before metadata, battle-like titles; the download is skipped if the full metadata says no), newest first by upload date or the approximate date in channel listings, ≤1080p H.264 video only. Each file gets a SHA-256 prefix, and duplicates and same-channel re-uploads are dropped. Downloading stops at `--disk-budget-gb` (default 150) or `--min-free-gb` (30).
-4. **Extract**: a pool of `run-node.cjs` processes, one video each (default: half the cores). A finished worker takes the next video at once, so long videos don't hold up short ones. Measured alone: 5–8× real time per worker. Running it alongside a neural-network training run slows it about tenfold (0.7× in the first smoke run). League CP comes from the guess, and GAMEMASTER is PvPoke's file as of the upload date (cached in `~/.cache/gbl-synapse/gamemaster`). Then `<id>.leagues.json` records the per-battle league from observed CPs and species (`league.refine_battle_league`). Then every open question is written for the **Validate** tab (next section), and the video is deleted unless `--keep` is given.
+4. **Extract**: a pool of extraction workers, one video each (default: two thirds of the cores, ffmpeg decoding single-threaded via `--ffmpeg-threads 1`). A finished worker takes the next video at once. First, `probe.cjs` decodes only the keyframes, locates the phone screen and tests each keyframe for the battle HUD. Then:
+   - no HUD: the full pass is skipped;
+   - HUD in under 80 % of the video: `run-node.cjs` decodes only the padded battle ranges (`RANGES`);
+   - otherwise: the whole video.
+   League CP comes from the guess, and GAMEMASTER is PvPoke's file as of the upload date (cached in `~/.cache/gbl-synapse/gamemaster`). `<id>.leagues.json` records the per-battle league from observed CPs and species (`league.refine_battle_league`), Team Rocket flags and the championship format. Every open question is written for the **Validate** tab (next section), and the video is deleted unless `--keep` is given (also after failures, skips and duplicates).
+
+   **Disk.** Downloads pause while more than `--max-backlog-hours` (2) of extraction work is queued, as well as at the disk budget. At startup the download dir is cleaned: files the state DB marks processed, deleted, duplicate or partial, and `<id>.<ext>` files it doesn't know, are removed and logged. Other files are left alone.
+
+   **Measured (2026-10-11, while the 6-worker harvester was running, so wall times are slow).**
+   - Probe cost: 1–3 % of a full pass, e.g. 16–24 s for a 70–99-minute stream.
+   - On the 109 queued videos (51 h): 30 have no HUD (skipped), 14 are decoded in ranges and 65 in full. The full pass decodes 65 % of the footage, about 1.5x fewer extraction worker-hours.
+   - Same battles as the full pass, faster:
+     - WE2BYyJyn4o: 32 s instead of 357 s (0 battles).
+     - DxiBdcqzQME: 681 s instead of 862 s.
+     - u3bK2DIXDSM (99 min): 771 s instead of 1629 s, 2.1x (the same 4 battles plus one 0-second fragment).
+   - INMpMrmY7GI: the probe located the screen where the full pass's CROP=auto failed (1 battle instead of 0).
+   - Labelled benchmark with probe + `--ffmpeg-threads 1`: 10min, 1p_u7XyvWwU, 2xvzDbWx-RE, cyu1yFuGtZA and Mv4o3HC29iU all have 100 % of battles found and 100 % opponent-species recall and precision.
+   - Decoder threads, CPU-seconds per video-second: 0.477 with 1 thread, 0.492 with 2, 0.510 with auto. Battles are identical.
 
 ### Validate questions from harvested videos
 Every decision the pipeline couldn't settle becomes a question in Meta Extractor › Validate:
 - **Extractor questions** (fast move, Shadow, regional form, unread result), from `export-questions.cjs` with `NO_FRAMES=1`.
 - **League/cup** (`validate.py`): asked once per video when the per-battle CP and eligibility check leaves close candidates and the title/schedule guess is below 90%; asked per battle for compilations or when battles disagree.
-- **No battles found**: the screen wasn't located or the video has no battle footage.
+- **No battles found**: the screen wasn't located or the video has no battle footage. The detail says whether the keyframe probe saw a battle HUD.
+- **Team Rocket battle?** Asked when opponent CPs exceed what a player's Pokémon can reach, or the cap the creator's team fits. Rocket battles train the extractor but never count in the observed meta. Every league question also offers "Team Rocket battle".
+- **Championship perspective**: asked for championship or tournament footage. Strong title or channel words (regional/world championship, NAIC/EUIC/LAIC, top cut, Play! Pokémon) set the separate "Championship" format; weak words or two phone screens only ask. Left/right re-analyses that phone; "not a championship" keeps GBL.
+- **Opponent lead**: up to two per video, for complete teams; a confirmed lead marks the team's lead in observed meta.
+- Footage answer **obscured**: the video is labelled and never requeued.
 
 Questions go to `PoGo Recorder/src/yt-harvest/validation/<id>/` and are collected into `web/tests/meta-benchmark/results/validation-inbox.json` (git-ignored). When the site runs locally (`python3 web/run_app.py`), the Validate tab uses the live local API, checking every four seconds while harvesting/refitting and every 15 seconds when idle. Human answers persist in the work directory, with a browser retry journal. On claude.ai, use **Import questions…** with the same file to add them to the shared store.
 
@@ -73,6 +94,7 @@ The script is a polite client: on a 429 or a "confirm you're not a bot" response
   - `--extract-jobs`
   - `--download-dir`
   - `--work-dir`
+  - `--no-probe` (always analyse whole videos), `--ffmpeg-threads N` (0 = auto), `--max-backlog-hours H` (0 = disk budget only)
 - **Per-battle league after analysis**: `python3 -I web/scripts/yt-harvest/league.py refine '{"cps":[1500,1498],"species":["medicham","azumarill"]}' 2025-01-10` returns the formats that survive the CP-cap and cup-eligibility checks, ranked.
 
 ### Live controls, queue order and refitting

@@ -393,10 +393,16 @@ class FeedbackService:
                 battles.append(b)
             b.setdefault("verified", {})[q["kind"]] = a
             if q["kind"] == "league":
-                if a["value"] not in (None, "other"):
+                # "rocket" is a battle type, not a league: training only, excluded from observed meta.
+                if a["value"] == "rocket" and confirmed(a):
+                    b["battleType"] = "rocket"
+                    b.pop("leagueId", None)
+                elif a["value"] not in (None, "other", "rocket"):
                     b["leagueId"] = a["value"]
+                    b.pop("battleType", None)
                 else:
                     b.pop("leagueId", None)
+                    b.pop("battleType", None)
             if q["kind"] == "result":
                 if confirmed(a):
                     result, _, ending = str(a["value"]).partition(":")
@@ -405,11 +411,35 @@ class FeedbackService:
                     b.pop("result", None)
                     b.pop("ending", None)
         if q["kind"] == "league" and q.get("allBattles"):
-            if a["value"] not in (None, "other"):
+            if a["value"] == "rocket" and confirmed(a):
+                labels["videoType"] = "rocket"
+                labels.pop("leagueId", None)
+            elif a["value"] not in (None, "other", "rocket"):
                 labels["leagueId"] = a["value"]
+                if labels.get("videoType") == "rocket":
+                    labels.pop("videoType")
             else:
                 labels.pop("leagueId", None)
+        perspective_requeue = False
+        if q["kind"] == "perspective":
+            # Championship broadcasts: which phone is the creator side (left/right re-analyses that screen).
+            if confirmed(a) and a["value"] == "gbl":
+                labels.pop("perspective", None)
+                labels["championship"] = False
+                if labels.get("videoType") == "championship":
+                    labels.pop("videoType")
+            elif confirmed(a):
+                perspective_requeue = a["value"] in ("left", "right") and labels.get("perspective") != a["value"]
+                labels["perspective"] = a["value"]
+                labels["championship"] = True
+                labels["videoType"] = "championship"
+            else:
+                labels.pop("perspective", None)
+                labels.pop("championship", None)
         atomic_json(labels_path, labels)
+        if perspective_requeue:
+            token = hashlib.sha256((a["qid"] + signature(a)).encode()).hexdigest()[:24]
+            atomic_json(self.work / "requeue" / (token + ".json"), {"videoId": vid, "reason": "Championship perspective: analyse the " + a["value"] + " screen", "requestedAt": now()})
         if q["kind"] == "footage":
             fpath = self.work / "relevance-feedback.json"
             feedback = read_json(fpath, {"videos": {}})
@@ -441,7 +471,7 @@ class FeedbackService:
                 if entry:
                     review = entry.get("leagueReview") or {}
                     previous = review.get("previous") or {k: entry.get(k) for k in ("leagueId", "leagueGuess", "leagueConfidence")}
-                    if a["value"] in (None, "other"):
+                    if a["value"] in (None, "other", "rocket"):
                         entry.update(previous)
                         entry.pop("reviewerLeague", None)
                         entry.pop("leagueReview", None)

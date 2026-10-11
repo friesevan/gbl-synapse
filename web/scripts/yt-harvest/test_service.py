@@ -167,11 +167,12 @@ class API(unittest.TestCase):
 class Pipeline(unittest.TestCase):
     def fake(self,directory):
         h=H.Harvester.__new__(H.Harvester)
-        h.a=SimpleNamespace(work_dir=directory,keep=True,inbox='',registry=None)
+        h.a=SimpleNamespace(work_dir=directory,download_dir=directory,keep=True,inbox='',registry=None,no_probe=True)
         h.state=H.State(os.path.join(directory,'state.sqlite'))
         h.inflight=set();h.registry={};h.validation_lock=threading.RLock()
         h.stop=threading.Event();h.deadline=0;h.schedule={'cups':{}}
         h.inc=lambda *_:None
+        h.clock=threading.Lock();h.c={'xVideoS':0.0,'xBusyS':0.0}
         return h
 
     def test_deleted_video_requeues_persistently_and_waits_for_active_work(self):
@@ -213,6 +214,34 @@ class Pipeline(unittest.TestCase):
             result=json.loads((Path(directory)/'results'/f'{vid}.json').read_text())
             self.assertEqual(result['learningContext'],{'gamemaster':'historical.json','league':2500,'uploadDate':'20200101'})
             self.assertEqual(h.state.q('SELECT x_status FROM videos')[0][0],'done')
+            h.state.db.close()
+
+    def test_probe_without_hud_skips_full_analysis_and_ranges_are_passed_on(self):
+        with tempfile.TemporaryDirectory() as directory:
+            h=self.fake(directory);h.a.no_probe=False;h.a.keep=False;vid='abcdefghijk'
+            path=Path(directory)/(vid+'.mp4');path.write_bytes(b'fake');(Path(directory)/'results').mkdir()
+            h.state.x("INSERT INTO videos(id,dl_status,dl_path) VALUES(?,'done',?)",(vid,str(path)))
+            seen={}
+            h.export_validation=lambda vid,res,*a,**kw:seen.setdefault('result',json.loads(Path(res).read_text())) and 1
+            def popen(*a,**kw):raise AssertionError('full analysis must be skipped')
+            no_hud={'box':[0,0,10,20],'ranges':[],'samples':90,'hits':0,'coverage':0,'duration':600,'keyInterval':6}
+            with patch.object(H.Harvester,'run_probe',lambda self,*a:no_hud),patch('harvest.subprocess.Popen',popen),\
+                 patch('harvest.gamemaster_for',return_value=''),patch('harvest.write_league_refinement',return_value=None):
+                h.extract_one({'id':vid,'dl_path':str(path),'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
+            self.assertEqual(seen['result']['battles'],[]);self.assertEqual(seen['result']['probe']['samples'],90)
+            self.assertFalse(path.exists(),'the video is deleted once it is no longer needed')
+            self.assertEqual(h.state.q('SELECT x_status FROM videos')[0][0],'done')
+            # Battles in part of the video: only those ranges are decoded, on the located screen.
+            path.write_bytes(b'fake');h.state.x("UPDATE videos SET x_status=NULL,deleted_date=NULL");(Path(directory)/'results'/(vid+'.json')).unlink()
+            ranged=dict(no_hud,ranges=[{'start':30.0,'end':400.0,'hits':40}],hits=40,coverage=.6)
+            class Process:
+                def __init__(self,command,**kwargs):
+                    seen['env']=kwargs['env'];Path(command[-1]).write_text('{"battles":[]}');self.returncode=0
+                def poll(self):return 0
+            with patch.object(H.Harvester,'run_probe',lambda self,*a:ranged),patch('harvest.subprocess.Popen',Process),\
+                 patch('harvest.gamemaster_for',return_value=''),patch('harvest.write_league_refinement',return_value=None):
+                h.extract_one({'id':vid,'dl_path':str(path),'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
+            self.assertEqual((seen['env']['RANGES'],seen['env']['CROP'],seen['env']['FFMPEG_THREADS']),('30.0-400.0','0,0,10,20','1'))
             h.state.db.close()
 
     def test_confirmed_league_survives_registry_export_and_retry(self):

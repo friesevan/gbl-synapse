@@ -45,6 +45,7 @@ from service import Lifecycle, atomic_json, read_json, file_lock  # noqa: E402
 WEB = os.path.normpath(os.path.join(HERE, "..", ".."))
 REGISTRY = os.path.join(WEB, "tests", "meta-benchmark", "sources", "registry.json")
 RUN_NODE = os.path.join(WEB, "tests", "meta-benchmark", "run-node.cjs")
+PROBE = os.path.join(WEB, "tests", "meta-benchmark", "probe.cjs")
 EXPORT_Q = os.path.join(WEB, "tests", "meta-benchmark", "export-questions.cjs")
 LEARNED = os.path.join(WEB, "tests", "meta-benchmark", "learned.json")
 # The Validate tab (familyRanks.html, served by run_app.py) loads this file when it exists. Git ignores
@@ -285,7 +286,8 @@ class Harvester:
         self.t0 = time.time()
         self.c = {"flat": 0, "flatNew": 0, "enriched": 0, "enrichErr": 0, "downloaded": 0, "dlBytes": 0,
                   "dlSeconds": 0.0, "dups": 0, "extracted": 0, "extractFailed": 0, "deleted": 0, "queries": 0,
-                  "channels": 0, "rateLimits": 0, "apiMeta": 0}
+                  "channels": 0, "rateLimits": 0, "apiMeta": 0, "probed": 0, "probeSkipped": 0,
+                  "probeRanged": 0, "xVideoS": 0.0, "xBusyS": 0.0, "cleaned": 0}
         self.clock = threading.Lock()
         self.inflight = set()
         self.dl_active = 0
@@ -603,6 +605,94 @@ class Harvester:
         free = shutil.disk_usage(self.a.download_dir).free
         return (self.used_bytes() + est <= self.a.disk_budget_gb * 1e9) and (free - est >= self.a.min_free_gb * 1e9)
 
+    def backlog_hours(self):
+        """Estimated hours of extraction work already downloaded and waiting (or running)."""
+        queued = self.state.q("SELECT COALESCE(SUM(duration),0) s FROM videos WHERE dl_status='done' AND "
+                              "deleted_date IS NULL AND (x_status IS NULL OR x_status='working')")[0]["s"]
+        with self.clock:
+            vs, busy = self.c["xVideoS"], self.c["xBusyS"]
+        # Measured video-seconds per busy worker-second once enough work is done (the probe makes
+        # non-battle videos cheap), else the full-analysis figure under load.
+        rate = vs / busy if busy >= 600 else DEFAULT_WORKER_REALTIME
+        return queued / max(0.1, rate) / max(1, self.extract_jobs) / 3600
+
+    def backlog_ok(self, duration):
+        cap = getattr(self.a, "max_backlog_hours", 0)
+        if not cap or self.a.no_extract:
+            return True
+        queued = self.backlog_hours()
+        return queued <= 0 or queued + (duration or 900) / DEFAULT_WORKER_REALTIME / max(1, self.extract_jobs) / 3600 <= cap
+
+    @property
+    def extract_jobs(self):
+        return self.a.extract_jobs or default_extract_jobs()
+
+    def remove_video_files(self, vid, why):
+        """Deletes the video and any partial download (<id>.*) from the download dir only."""
+        n = 0
+        try:
+            names = os.listdir(self.a.download_dir)
+        except OSError:
+            return 0
+        for name in names:
+            if name.split(".", 1)[0] != vid:
+                continue
+            fp = os.path.join(self.a.download_dir, name)
+            if os.path.islink(fp) or not os.path.isfile(fp):
+                continue
+            try:
+                os.remove(fp)
+                n += 1
+                log.info("deleted %s (%s)", name, why)
+            except FileNotFoundError:
+                pass
+        return n
+
+    def cleanup_download_dir(self):
+        """Startup: removes files the state DB marks processed/deleted/duplicate/skipped, partial downloads,
+        and harvest-named files (<11-char id>.<ext>) it doesn't know. Never touches other names,
+        subdirectories, symlinks or anything outside the download dir. Pending downloads stay."""
+        removed = 0
+        try:
+            names = sorted(os.listdir(self.a.download_dir))
+        except OSError:
+            return 0
+        for name in names:
+            fp = os.path.join(self.a.download_dir, name)
+            if os.path.islink(fp) or not os.path.isfile(fp):
+                continue
+            m = HARVEST_FILE.match(name)
+            if not m:
+                log.info("cleanup: left %s alone (not a harvest file name)", name)
+                continue
+            vid = m.group(1)
+            rows = self.state.q("SELECT dl_status, dl_path, x_status, deleted_date FROM videos WHERE id=?", (vid,))
+            r = rows[0] if rows else None
+            main_file = bool(r) and os.path.basename(r["dl_path"] or "") == name
+            pending = main_file and r["dl_status"] == "done" and not r["deleted_date"] and r["x_status"] != "done"
+            if pending or (main_file and self.a.keep and r["x_status"] == "done"):
+                continue
+            if not r:
+                why = "unknown to the state DB"
+            elif r["x_status"] == "done":
+                why = "already processed"
+            elif r["deleted_date"]:
+                why = "marked deleted"
+            else:
+                why = "download status %s (partial or stale)" % (r["dl_status"] or "none")
+            try:
+                os.remove(fp)
+            except FileNotFoundError:
+                continue
+            removed += 1
+            log.info("cleanup: deleted %s (%s)", name, why)
+            if r and main_file and not r["deleted_date"]:
+                self.state.x("UPDATE videos SET deleted_date=? WHERE id=?", (dt.date.today().isoformat(), vid))
+        self.inc("cleaned", removed)
+        if removed:
+            log.info("cleanup: %d stale file(s) removed from %s", removed, self.a.download_dir)
+        return removed
+
     def download_worker(self):
         while self.alive():
             with self.clock:   # reserve a slot so parallel workers can't overshoot --max-downloads
@@ -645,11 +735,12 @@ class Harvester:
                 self.inc("dups")
                 return
         est = meta.get("estBytes") or int((row["duration"] or 900) * 300_000)
-        while not self.disk_ok(est):
+        while not self.disk_ok(est) or not self.backlog_ok(row["duration"]):
             if not self.alive():
                 self.state.x("UPDATE videos SET dl_status=NULL WHERE id=?", (vid,))
                 return
-            log.info("disk budget reached (%.1f GB in use); waiting for processing to free space", self.used_bytes() / 1e9)
+            log.info("download paused: %.1f GB on disk, %.1f h of extraction queued (cap %.1f h); waiting for processing",
+                     self.used_bytes() / 1e9, self.backlog_hours(), getattr(self.a, "max_backlog_hours", 0))
             self.stop.wait(60)
         t = time.time()
         need_meta = row.get("meta_status") != "done"
@@ -669,6 +760,7 @@ class Harvester:
         path, err = self._yt_call(run, f"download {vid}", self.dl_rate)
         if path is SKIPPED:
             self.state.x("UPDATE videos SET dl_status='skip' WHERE id=?", (vid,))
+            self.remove_video_files(vid, "skipped after metadata")
             return
         if err and need_meta and not (err == "stopped" or err.startswith("ratelimit")):
             self._meta_error(vid, err)
@@ -679,6 +771,7 @@ class Harvester:
             self.state.x("UPDATE videos SET dl_status=?, attempts=attempts+1, err=? WHERE id=?",
                          ("error" if (err or "").startswith("unavailable") else None, err or "no file", vid))
             log.warning("download %s failed: %s", vid, (err or "no file")[:200])
+            self.remove_video_files(vid, "failed download")
             return
         size, secs = os.path.getsize(path), time.time() - t
         sha = sha256_prefix(path)
@@ -686,7 +779,7 @@ class Harvester:
         dup = (prior_dup if prior_dup != vid else None) or next((r["id"] for r in self.state.q(
             "SELECT id FROM videos WHERE sha256=? AND id<>?", (sha, vid))), None)
         if dup:
-            os.remove(path)
+            self.remove_video_files(vid, f"duplicate of {dup}")
             self.state.x("UPDATE videos SET dl_status='dup', sha256=?, err=? WHERE id=?", (sha, f"same file as {dup}", vid))
             self.inc("dups")
             return
@@ -714,10 +807,31 @@ class Harvester:
             finally:
                 self._release(row["id"])
 
+    def run_probe(self, vid, path, duration):
+        """Keyframe pre-screen (probe.cjs). Returns the probe dict, or None when it failed (full analysis)."""
+        out = os.path.join(self.a.work_dir, "probe", vid + ".json")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        try:
+            subprocess.run(["node", PROBE, path, out], check=True, capture_output=True,
+                           timeout=max(300, (duration or 900) * 0.25), env={**os.environ, "FFMPEG_THREADS": "1"})
+            probe = read_json(out, None)
+        except Exception as ex:  # any probe problem falls back to the full analysis
+            log.warning("probe %s failed (%s); analysing the whole video", vid, str(ex)[:200])
+            return None
+        finally:
+            try:
+                os.remove(out)
+            except FileNotFoundError:
+                pass
+        if probe:
+            self.inc("probed")
+        return probe
+
     def extract_one(self, r):
         vid, path = r["id"], r["dl_path"]
         if not path or not os.path.exists(path):
             self.state.x("UPDATE videos SET x_status='failed', err='file missing' WHERE id=?", (vid,))
+            self.remove_video_files(vid, "file missing")
             return
         out_dir = os.path.join(self.a.work_dir, "results")
         res = os.path.join(out_dir, f"{vid}.json")
@@ -730,12 +844,41 @@ class Harvester:
         learned = read_json(LEARNED, {})
         atomic_json(learned_snapshot, learned)
         env = {**os.environ, "LEAGUE": str(cp), "GAMEMASTER": gm, "CROP": "auto", "LEARNED_PATH": learned_snapshot}
+        if getattr(self.a, "ffmpeg_threads", 1):
+            env["FFMPEG_THREADS"] = str(getattr(self.a, "ffmpeg_threads", 1))
         ok = os.path.exists(res)
+        t = time.time()
+        probe, plan = None, {}
+        if not ok:
+            # A reviewer-requested reanalysis ("battles are shown") always decodes the whole video.
+            reprocess = bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,)))
+            labels = read_json(os.path.join(self.a.work_dir, "labels", vid + ".json"), {})
+            if not getattr(self.a, "no_probe", False) and not reprocess:
+                probe = self.run_probe(vid, path, r["duration"])
+                plan = probe_plan(probe)
+            elif reprocess and not getattr(self.a, "no_probe", False) and labels.get("perspective") in ("left", "right"):
+                probe = self.run_probe(vid, path, r["duration"])   # screens only; whole video is analysed
+                plan = {"CROP": probe["box"] and ",".join(map(str, probe["box"]))} if probe and probe.get("box") else {}
+            crop = perspective_crop(probe, labels.get("perspective"))
+            if crop and plan is not None:
+                plan["CROP"] = crop
+            if plan is None:
+                # No battle HUD in any keyframe: the full pass is skipped; the footage question still asks.
+                self.inc("probeSkipped")
+                atomic_json(res, {"pipeline": "probe only: no battle HUD in keyframes", "recording": os.path.basename(path),
+                                  "seconds": round(time.time() - t, 1), "videoSeconds": probe.get("duration") or r["duration"],
+                                  "battles": [], "full": [], "probe": probe_summary(probe)})
+                ok = True
+                log.info("probe %s: no battle HUD in %d keyframes (%s); full analysis skipped", vid, probe.get("samples") or 0,
+                         probe.get("reason") or "screen located")
+            else:
+                env.update({k: v for k, v in plan.items() if v})
+                if plan.get("RANGES"):
+                    self.inc("probeRanged")
         if not ok:
             timeout = max(900, (r["duration"] or 900) * 2 + 600)
-            t = time.time()
             with open(os.path.join(self.a.work_dir, "extract.log"), "a") as lf:
-                lf.write(f"--- {vid} ({(r['duration'] or 0) / 60:.0f} min)\n")
+                lf.write(f"--- {vid} ({(r['duration'] or 0) / 60:.0f} min{', ranges ' + plan['RANGES'] if plan.get('RANGES') else ''})\n")
                 lf.flush()
                 p = subprocess.Popen(["node", RUN_NODE, path, res + ".tmp"], stdout=lf, stderr=subprocess.STDOUT,
                                      env=env, start_new_session=True)
@@ -763,7 +906,16 @@ class Harvester:
             ok = p.returncode == 0 and os.path.exists(res + ".tmp")
             if ok:
                 os.replace(res + ".tmp", res)
-                log.info("extract %s: %.0f min of video in %.0f s", vid, (r["duration"] or 0) / 60, time.time() - t)
+                if probe:
+                    result = read_json(res, {})
+                    result["probe"] = probe_summary(probe)
+                    atomic_json(res, result)
+                log.info("extract %s: %.0f min of video in %.0f s%s", vid, (r["duration"] or 0) / 60, time.time() - t,
+                         f" (probe: {len(probe['ranges'])} ranges, {probe['coverage'] * 100:.0f}% decoded)" if probe and plan.get("RANGES") else "")
+        if ok and r["duration"]:
+            with self.clock:
+                self.c["xVideoS"] += r["duration"]
+                self.c["xBusyS"] += time.time() - t
         if ok:
             result = read_json(res, {})
             result["learningContext"] = {"gamemaster": gm, "league": cp, "uploadDate": r["upload_date"]}
@@ -790,10 +942,8 @@ class Harvester:
             self.state.x("DELETE FROM reprocess WHERE id=?", (vid,))
         self.inc("extracted" if ok else "extractFailed")
         if not self.a.keep:
-            try:
-                os.remove(path)
-            except FileNotFoundError:
-                pass
+            # Done or failed: the video is no longer needed (a requeue downloads it again on demand).
+            self.remove_video_files(vid, "processed" if ok else "analysis failed")
             self.state.x("UPDATE videos SET deleted_date=? WHERE id=?", (dt.date.today().isoformat(), vid))
             self.inc("deleted")
 
@@ -864,6 +1014,7 @@ class Harvester:
                       "processed": tot("SELECT COUNT(*) FROM videos WHERE x_status='done'"),
                       "questions": self.validation_count,
                       "onDiskGB": round(self.used_bytes() / 1e9, 2),
+                      "backlogHours": round(self.backlog_hours(), 2),
                       "channels": tot("SELECT COUNT(*) FROM channels"),
                       "channelsCrawled": tot("SELECT COUNT(*) FROM channels WHERE crawled IS NOT NULL"),
                       "queriesDone": tot("SELECT COUNT(*) FROM queries"), "queriesPlanned": 2 * len(self.queries),
@@ -901,6 +1052,12 @@ class Harvester:
                     continue
                 local = rows[0]["dl_path"]
                 existing = bool(local and os.path.isfile(local))
+                labels = read_json(os.path.join(self.a.work_dir, "labels", vid + ".json"), {})
+                if labels.get("videoType") == "obscured":
+                    # The reviewer said an overlay hides the HUD: reanalysis cannot help.
+                    log.info("requeue %s ignored: footage marked obscured", vid)
+                    os.replace(path, path + ".obscured")
+                    continue
                 self.state.x("UPDATE videos SET dl_status=?,x_status=NULL,deleted_date=NULL,attempts=0,"
                              "err=NULL,rel_label='relevant',allowed=1,updated=? WHERE id=?",
                              ("done" if existing else None, time.time(), vid))
@@ -956,6 +1113,7 @@ class Harvester:
 
     # ---- main
     def run(self):
+        self.cleanup_download_dir()
         log.info("metadata: %s", "YouTube Data API (key found)" if self.api_key else "web player (no YOUTUBE_API_KEY; see HANDOFF.md)")
         log.info("start: deadline %s, %d queries, download dir %s, work dir %s, policy=%s, keep=%s",
                  dt.datetime.fromtimestamp(self.deadline).strftime("%H:%M"), len(self.queries), self.a.download_dir,
@@ -967,7 +1125,7 @@ class Harvester:
         if self.a.max_downloads != 0:
             ts += [threading.Thread(target=self.download_worker, name=f"dl{i}", daemon=True) for i in range(self.a.download_workers)]
         if not self.a.no_extract:
-            jobs = self.a.extract_jobs or max(1, (os.cpu_count() or 4) // 2)
+            jobs = self.extract_jobs
             ts += [threading.Thread(target=self.extract_worker, name=f"x{i}", daemon=True) for i in range(jobs)]
         for t in ts:
             t.start()
@@ -1054,6 +1212,48 @@ def extract_meta(info):
     }
 
 
+# Without measurements, one extraction worker analyses about 2.5x real time while the machine is busy.
+DEFAULT_WORKER_REALTIME = 2.5
+HARVEST_FILE = re.compile(r"^([A-Za-z0-9_-]{11})\.(?:mp4|webm|mkv|m4a|mp4\.part|webm\.part|part|ytdl|temp|f\d+\.\w+(?:\.part)?)$")
+
+
+def default_extract_jobs(cpus=None):
+    """Extraction workers: two thirds of the cores (8 on 12). Each worker uses ~1.2-1.5 cores with a
+    single-threaded decoder, so this saturates the CPU without the 12-worker oversubscription."""
+    return max(1, (cpus or os.cpu_count() or 4) * 2 // 3)
+
+
+def probe_plan(probe, full_above=0.8, max_key_interval=12):
+    """probe.cjs result -> None (skip: no battle HUD) or env for run-node.cjs ({} = whole video)."""
+    if not probe:
+        return {}
+    box = probe.get("box")
+    crop = ",".join(str(v) for v in box) if box else None
+    if probe.get("keyInterval") and probe["keyInterval"] > max_key_interval:
+        return {"CROP": crop or "auto"}   # keyframes too sparse for a trustworthy scan
+    if not box or not probe.get("ranges"):
+        return None
+    if (probe.get("coverage") or 0) >= full_above:
+        return {"CROP": crop}
+    return {"CROP": crop, "RANGES": ",".join(f"{r['start']}-{r['end']}" for r in probe["ranges"])}
+
+
+def perspective_crop(probe, perspective):
+    """Championship broadcasts show two phones: the reviewer's 'perspective' answer picks one."""
+    screens = (probe or {}).get("screens") or []
+    if perspective not in ("left", "right") or len(screens) < 2:
+        return None
+    box = sorted(screens, key=lambda x: x["box"][0])[0 if perspective == "left" else -1]["box"]
+    return ",".join(str(v) for v in box)
+
+
+def probe_summary(probe):
+    if not probe:
+        return None
+    keep = ("version", "box", "screens", "samples", "hits", "keyInterval", "ranges", "coverage", "seconds", "reason")
+    return {k: probe.get(k) for k in keep if k in probe}
+
+
 def sha256_prefix(path, n=16):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -1116,6 +1316,11 @@ def registry_entry(row, prior=None):
         e["sha256"] = row.get("sha256")
         if row.get("size_bytes"):
             e["size1080MB"] = round(row["size_bytes"] / 1e6)
+    elif row.get("sha256") and not e.get("sha256"):
+        # Duplicates keep their fingerprint too, so a fresh work dir never downloads them again.
+        e["sha256"] = row["sha256"]
+        if row.get("dl_status") == "dup":
+            e["duplicateOf"] = re.sub(r"^(?:same file as|re-upload of) ", "", row.get("err") or "") or None
     if row.get("x_status") == "done":
         e["processed"] = row.get("x_date")
     elif row.get("x_status") == "failed":
@@ -1183,24 +1388,43 @@ def gamemaster_for(upload_date):
 
 
 def write_league_refinement(result_path, video_league, schedule, upload_date):
-    """Post-analysis hook: per-battle league from observed CPs/species (league.refine_battle_league)."""
+    """Post-analysis hook: per-battle league from observed CPs/species (league.refine_battle_league),
+    Team Rocket flags (impossible or over-cap opponent CPs) and the championship format."""
     with open(result_path, encoding="utf-8") as f:
         res = json.load(f)
     cands = sorted(set((video_league.get("cupCandidates") or []) + ([video_league["leagueId"]] if video_league.get("leagueId") else [])
                        + list(L.BASE)))
     gm = L.load_gamemaster()
+    screens = len(((res.get("probe") or {}).get("screens")) or [])
+    championship = bool(video_league.get("championship"))
+    possible = championship or bool(video_league.get("possibleChampionship")) or screens >= 2
     out = []
     for b in res.get("battles", []):
-        mons = (b.get("myDetail") or []) + (b.get("opponentDetail") or [])
-        species = [((m.get("form") or {}).get("id") or m.get("formId")) for m in mons]
-        obs = {"cps": [m.get("cp") for m in mons if isinstance(m.get("cp"), (int, float))],
-               "species": [s for s in species if isinstance(s, str)]}
+        def team(side):
+            return [{"species": (m.get("form") or {}).get("id") or m.get("formId"), "cp": m.get("cp")}
+                    for m in b.get(side + "Detail") or []]
+        my, opp = team("my"), team("opponent")
+        mons = my + opp
+        obs = {"cps": [m["cp"] for m in mons if isinstance(m.get("cp"), (int, float))],
+               "species": [m["species"] for m in mons if isinstance(m.get("species"), str)],
+               "teams": {"my": my, "opponent": opp}}
         r = L.refine_battle_league(obs, cands, schedule, gm)
-        out.append({"start": b.get("start"), "best": r["ranked"][0]["id"] if r["ranked"] else None,
-                    "ranked": [x["id"] for x in r["ranked"][:4]], "cpCap": r["cpCap"], "eliminated": len(r["eliminated"]),
-                    "options": [{"id": x["id"], "name": x["name"], "cp": x["cp"], "score": x["score"]} for x in r["ranked"][:4]],
-                    "cps": obs["cps"]})
-    doc = {"video": video_league, "battles": out}
+        rocket = r.get("rocket") or {"flag": False, "reasons": []}
+        cap = r["cpCap"]
+        best = r["ranked"][0]["id"] if r["ranked"] else None
+        entry = {"start": b.get("start"), "best": best,
+                 "ranked": [x["id"] for x in r["ranked"][:4]], "cpCap": cap, "eliminated": len(r["eliminated"]),
+                 "options": [{"id": x["id"], "name": x["name"], "cp": x["cp"], "score": x["score"]} for x in r["ranked"][:4]],
+                 "cps": obs["cps"], "rocket": rocket["flag"], "rocketReasons": rocket["reasons"]}
+        if rocket["flag"]:
+            entry["battleType"] = "rocket"
+        elif championship:
+            entry["battleType"] = "championship"
+            ccap = L.plausible_cap([m.get("cp") for m in my])   # the creator side's CPs, if readable
+            entry["best"] = L.CHAMPIONSHIP_ID if ccap in (None, 1500) else f"{L.CHAMPIONSHIP_ID}@{ccap}"
+        out.append(entry)
+    doc = {"video": {**video_league, "championship": championship, "possibleChampionship": possible, "screens": screens},
+           "battles": out}
     with open(result_path.replace(".json", ".leagues.json"), "w") as f:
         json.dump(doc, f, indent=1)
     return doc
@@ -1227,7 +1451,11 @@ def parse(argv=None):
     ap.add_argument("--meta-per-min", type=float, default=20, help="metadata requests/min cap (halves on 429)")
     ap.add_argument("--downloads-per-min", type=float, default=3, help="download starts/min cap (halves on 429)")
     ap.add_argument("--download-workers", type=int, default=2)
-    ap.add_argument("--extract-jobs", type=int, default=0, help="parallel Meta Extractor processes (default cores/2)")
+    ap.add_argument("--extract-jobs", type=int, default=0, help="parallel Meta Extractor processes (default 2/3 of the cores)")
+    ap.add_argument("--ffmpeg-threads", type=int, default=1, help="decoder threads per extraction (0 = ffmpeg's auto)")
+    ap.add_argument("--no-probe", action="store_true", help="analyse every video in full (skip the keyframe pre-screen)")
+    ap.add_argument("--max-backlog-hours", type=float, default=2.0,
+                    help="pause downloads while this many hours of extraction work are queued (0 = disk budget only)")
     ap.add_argument("--inbox", default=INBOX, help="validation inbox the site's Validate tab loads ('' = don't write)")
     ap.add_argument("--no-extract", action="store_true", help="don't run the Meta Extractor")
     ap.add_argument("--no-api", action="store_true", help="ignore a YouTube Data API key even if one is configured")

@@ -58,6 +58,73 @@ The prior owner authorization permits non-CC footage for private analysis; permi
   and extraction CP cap. “No footage” informs relevance; “battles are shown” requests reprocessing with a
   local file or a fresh download. Identical feedback retries do not create duplicate requeue requests.
 
+## Throughput, disk and battle types (2026-10-11, second pass)
+
+Takes effect when the harvester is restarted.
+
+- **Keyframe pre-screen** (`tests/meta-benchmark/probe.cjs`). Before the full pass, each video's keyframes
+  (one every ~2–6 s on YouTube) are decoded single-threaded. The phone screen is located on 32 of them
+  (falling back to the extractor's own 16-seek search), and every keyframe is tested for the battle HUD
+  (`core.js` readHud/calibrate). Hits become padded ranges (30 s before, 45 s after, gaps ≤60 s merged).
+  - No HUD: the full pass is skipped and the "No battles found" question says so.
+  - HUD in under 80 % of the video: `run-node.cjs` decodes only those ranges (`RANGES=s-e,…`, one tracker,
+    one output, so no merge step), with `CROP` set to the located box.
+  - Otherwise the whole video is analysed.
+  - A reviewer's "battles are shown" reprocess always analyses the whole video. `--no-probe` disables the
+    pre-screen.
+  Measured numbers are in sources/README.md.
+- **Defaults.** 2/3 of the cores as extraction workers (8 on 12) and `--ffmpeg-threads 1`. A
+  single-threaded decoder uses about 7 % less CPU per video-second than ffmpeg's auto threading, and the
+  CPU is the limit. FPS and HUD_EVERY are unchanged. `bench-workers.cjs` re-measures worker counts on an
+  idle machine.
+- **Disk.**
+  - Downloads pause while more than `--max-backlog-hours` (2) of extraction work is queued. The estimate
+    uses the measured worker rate. The 150 GB budget still applies.
+  - A video is deleted when it is processed, fails, is skipped after metadata or is a duplicate; failed
+    and partial downloads (`<id>.*`) are deleted too.
+  - At startup, the download dir is cleaned of files that the state DB marks processed, deleted,
+    duplicate or partial, and of `<11-char id>.<ext>` files it doesn't know. Each one is logged. Other
+    names, subfolders and symlinks are never touched.
+  - Kept: results, questions, labels, and the state DB plus registry (id, sha256, title, channel,
+    duration). Duplicates now keep their sha256 and `duplicateOf` in the registry. A requeue downloads
+    again on demand.
+- **Relevance** (`policy.py`, learned from 36 footage answers):
+  - Always vetoed: Greek basketball ("STOIXIMAN GBL", score highlights) and Pokémon Champions, the
+    separate game.
+  - Vetoed unless the title also has a PvP marker (league, cup, GBL, PvP, rank words, championship
+    words): Max/Gigantamax battles, raids, Community Day, events, tips, news-like topics, radars,
+    hundos and similar. With a marker they only get a penalty.
+  - Checked against real labels: 19 of 26 "no footage" videos are now refused before download. All 46
+    videos with battles still pass except one Rocket-grunt "EVENT" video.
+- **Team Rocket.**
+  - `league.rocket_evidence` (in `refine_battle_league` output and `<id>.leagues.json`) flags a battle when
+    the opponent's CPs exceed what a player's Pokémon can reach (15/15/15, level 51). It needs two such
+    Pokémon, or one at ≥1.5× (readings above 6× are misreads). It also flags two opponent CPs above the
+    cap the creator's team sits at; truncated CP reads are ignored.
+  - Flagged battles get a "Team Rocket battle?" question. Every league question offers "Team Rocket
+    battle".
+  - Rocket battles still train fast moves, Shadow and outcomes. They are excluded from observed meta
+    (`observed.py`, `observed-core.js`) and from team-training exports (`core.js` eligible).
+- **Championships.**
+  - Strong title or channel evidence (regional/international/world championship, NAIC/EUIC/LAIC/OCIC, top
+    cut, grand final, Play! Pokémon) sets the `championship` format. Battles are `championship[@cp]`,
+    shown as their own "Championship" league in observed meta.
+  - Weaker words, or two phone screens found by the probe, only ask the "perspective" question.
+  - The perspective question offers left / right / single / switches / not a championship. Left or right
+    re-analyses that phone. "Not a championship" returns the video to GBL.
+- **Obscured.** The footage answer "obscured" sets `labels.videoType`. No requeue is created, and later
+  requeue requests are refused (`.obscured`).
+- **New Validate questions:**
+  - Team Rocket confirmation.
+  - Championship perspective.
+  - Opponent lead: at most two per video, for complete, cleanly started teams. A confirmed lead puts that
+    Pokémon first and marks `leadConfirmed` in observed meta.
+  - The "no battles" detail now says whether the probe saw a HUD.
+- **Further question ideas (not built):**
+  - Species check when nameplate OCR confidence is below ~60 (`full[].*.confidence` is saved).
+  - "Is this the same creator team?" for team pooling.
+  - Language of the game UI: Japanese-UI videos show a HUD but the extractor finds no battles.
+
 ## Files and checks
 
 `web/run_app.py`: local-only, same-origin API/server. `service.py`: lifecycle/progress/process locks.
@@ -79,8 +146,8 @@ this is a layout smoke check, not a sustained throughput benchmark.
 No YouTube Data API key is configured; adding one remains the owner's Google Cloud setup task.
 Hosted artifact/shared-store review has no access to local start/stop APIs. Its store still has a 1,000
 question subscription cap, now clearly indicated; import files to review the remainder.
-Team-card OCR, battle-chapter skipping, lower-resolution decode trials, and uncertain schedule gaps
-remain separate experiments. Do not run neural team training concurrently when measuring extraction speed.
+Team-card OCR, lower-resolution decode trials, and uncertain schedule gaps remain separate experiments
+(battle-range skipping is now the probe). Do not run neural team training concurrently when measuring extraction speed.
 
 ## Observed meta browser
 

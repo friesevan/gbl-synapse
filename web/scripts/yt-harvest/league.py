@@ -35,6 +35,18 @@ COMPILATION = re.compile(r"compilation|highlights?|best of|montage|top \d+|funny
 TOURNAMENT = re.compile(r"\bvs\.?\b|draft|championship|regionals?|worlds|internationals?|tournament|"
                         r"play!? ?pok[eé]mon|\bnaic\b|\beuic\b|\blaic\b|\bocic\b|bracket|top cut", re.I)
 TALK = re.compile(r"tier list|rankings?|\bguide\b|explained|\bnews\b|podcast|predictions?", re.I)
+# Championship footage (Play! Pokémon events): both players' screens, invite-only, its own format.
+# STRONG titles/channels settle it; WEAK words (a creator's GBL video "with my regional team") only
+# make the Validate "perspective" question ask, which also offers "not a championship".
+CHAMPIONSHIP_STRONG = re.compile(r"(regional championships?|international championships?|world championships?|"
+                                 r"\bworlds 20\d\d\b|\b(?:laic|naic|euic|ocic)\b|\btop cut\b|grand finals?|"
+                                 r"championship (?:finals?|match|day|top)|(?:finals?|semi-?finals?|quarter-?finals?) .{0,30}(?:regional|championship|worlds)|"
+                                 r"(?:regional|championship|worlds).{0,30}\b(?:finals?|semi-?finals?|swiss|day [12])\b|"
+                                 r"campeonato (?:regional|internacional|mundial)|play!? ?pok[eé]mon (?:regional|international|world)s?\b)", re.I)
+CHAMPIONSHIP_WEAK = re.compile(r"(championships?|campeonato|regionals?\b|\bworlds\b|internationals?|tournament|torneo|tournoi|"
+                               r"turnier|bracket|play!? ?pok[eé]mon)", re.I)
+CHAMPIONSHIP_CHANNEL = re.compile(r"(play!? ?pok[eé]mon|pok[eé]mon go (?:championship|esports)|championship series)", re.I)
+CHAMPIONSHIP_ID = "championship"
 
 
 def load_schedule(path=SCHEDULE_PATH):
@@ -87,6 +99,8 @@ def format_key(fid, cp, cups):
 def get_format(key, cups):
     """Resolve a format key to (cupId, cup dict with the edition's cp) or (key, None)."""
     fid, _, cp = key.partition("@")
+    if fid == CHAMPIONSHIP_ID:   # Play! Pokémon events: separate from GBL cups, Great League CP unless stated
+        return fid, {"name": "Championship", "cp": int(cp) if cp else 1500, "include": [], "exclude": [], "format": "championship"}
     c = cups.get(fid) or ({"name": BASE[fid][0], "cp": BASE[fid][1], "include": [], "exclude": []} if fid in BASE else None)
     if c is None:
         return fid, None
@@ -146,6 +160,27 @@ def guess_kind(title, chapters=(), leagues_in_chapters=0):
     return "set/gameplay"
 
 
+def championship_evidence(meta):
+    """(strong: bool, possible: bool, reasons [str]) from title, channel, tags and description."""
+    title, channel = meta.get("title") or "", meta.get("channel") or ""
+    tags, desc = " ".join(meta.get("tags") or []), (meta.get("description") or "")[:2000]
+    reasons = []
+    if CHAMPIONSHIP_STRONG.search(title):
+        reasons.append("title: " + CHAMPIONSHIP_STRONG.search(title).group(0))
+    if CHAMPIONSHIP_CHANNEL.search(channel):
+        reasons.append("channel: " + channel)
+    strong = bool(reasons)
+    for where, text in (("title", title), ("tags", tags), ("description", desc)):
+        m = CHAMPIONSHIP_STRONG.search(text) if where != "title" else None
+        w = CHAMPIONSHIP_WEAK.search(text)
+        if m:
+            reasons.append(f"{where}: {m.group(0)}")
+        elif w and where == "title":
+            reasons.append(f"{where} (weak): {w.group(0)}")
+    possible = strong or bool(reasons)
+    return strong, possible, reasons[:4]
+
+
 def guess_league(meta, schedule):
     """meta: dict with title, tags, description, chapters [{title}], uploadDate (YYYYMMDD).
 
@@ -193,8 +228,8 @@ def guess_league(meta, schedule):
         top = (today[0], 1.0)
         conf = 0.45 / len(today)  # schedule alone never gives high confidence
     else:
-        return {"leagueGuess": "Unknown", "leagueId": None, "leagueConfidence": 0.0, "leagueEvidence": [],
-                "cupCandidates": [], "kindGuess": kind}
+        return _with_championship({"leagueGuess": "Unknown", "leagueId": None, "leagueConfidence": 0.0, "leagueEvidence": [],
+                                   "cupCandidates": [], "kindGuess": kind}, meta)
     conf = round(min(0.97, conf), 2)
     if kind == "compilation" or len([f for f in chap_leagues]) >= 2:
         kind = "compilation"
@@ -206,9 +241,19 @@ def guess_league(meta, schedule):
         name = sched_name          # e.g. "Great League: Mega Edition"
     elif cup and "@" in top[0]:
         name = f"{name} ({cup['cp']} CP)"
-    return {"leagueGuess": name, "leagueId": top[0], "leagueConfidence": conf,
-            "leagueEvidence": sorted(set(evidence))[:12], "cupCandidates": sorted(sched),
-            "kindGuess": kind}
+    return _with_championship({"leagueGuess": name, "leagueId": top[0], "leagueConfidence": conf,
+                               "leagueEvidence": sorted(set(evidence))[:12], "cupCandidates": sorted(sched),
+                               "kindGuess": kind}, meta)
+
+
+def _with_championship(guess, meta):
+    strong, possible, reasons = championship_evidence(meta)
+    if strong:
+        guess.update(championship=True, kindGuess="tournament")
+    if possible:
+        guess["possibleChampionship"] = True
+        guess["championshipEvidence"] = reasons
+    return guess
 
 
 # ---------------------------------------------------------------- post-analysis refinement
@@ -220,6 +265,57 @@ def cp_cap_for(cps):
         if m <= cap:
             return cap
     return 10000
+
+
+CPM_MAX = 0.84529999   # level 51 (best buddy at level 50): the highest CP multiplier a player's Pokémon reaches
+
+
+def max_player_cp(mon, cpm=CPM_MAX):
+    """Highest CP a player's Pokémon of this species/form can show (15/15/15, level 51)."""
+    b = mon.get("baseStats") or {}
+    if not b:
+        return None
+    return max(10, int((b["atk"] + 15) * (b["def"] + 15) ** 0.5 * (b["hp"] + 15) ** 0.5 * cpm * cpm / 10))
+
+
+def rocket_evidence(my, opponent, gamemaster):
+    """Team Rocket battles: grunts' and leaders' Pokémon often show CPs no player's Pokémon can reach,
+    or far above the league cap that the creator's team fits. my/opponent: [{"species", "cp"}].
+    Conservative against single OCR or species misreads: two impossible CPs, one far above the
+    species maximum (x1.5), or two opponent CPs above the creator's cap. Returns {flag, reasons}."""
+    reasons, over_species, far = [], 0, False
+    for m in opponent or []:
+        sid, cp = m.get("species"), m.get("cp")
+        if not isinstance(cp, (int, float)) or not sid:
+            continue
+        mon = gamemaster.get(sid) or gamemaster.get(re.sub(r"_shadow$", "", sid))
+        top = max_player_cp(mon) if mon else None
+        # >6x the maximum is a misread (an extra digit), not a Rocket Pokémon (seen up to ~4x).
+        if top and top * 1.02 + 10 < cp <= top * 6:
+            over_species += 1
+            far = far or cp >= top * 1.5
+            reasons.append(f"{sid} CP {int(cp)} > player max {top}")
+    my_cps = [m.get("cp") for m in my or [] if isinstance(m.get("cp"), (int, float))]
+    over_cap = 0
+    cap = plausible_cap(my_cps)
+    if cap:
+        if cap < 10000:
+            over = [m.get("cp") for m in opponent or [] if isinstance(m.get("cp"), (int, float)) and m["cp"] > cap * 1.03]
+            over_cap = len(over)
+            if over_cap:
+                reasons.append(f"creator's team fits {cap} CP; opponent CP {', '.join(str(int(c)) for c in over[:3])}")
+    flag = over_species >= 2 or far or over_cap >= 2
+    return {"flag": flag, "reasons": reasons[:4]}
+
+
+def plausible_cap(cps):
+    """The league cap a team sits at, or None when its CPs look truncated (a GBL team is built close
+    to the cap: '148' read from 'CP 1480' would otherwise suggest Little Cup)."""
+    cps = [c for c in cps or [] if isinstance(c, (int, float)) and c > 0]
+    if not cps:
+        return None
+    cap = cp_cap_for(cps)
+    return cap if cap == 10000 or max(cps) >= cap * 0.8 else None
 
 
 def load_gamemaster(path=GAMEMASTER_PATH):
@@ -299,7 +395,8 @@ def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=No
     """Narrow the format of ONE analysed battle.
 
     observed: {"cps": [ints, both teams], "species": [PvPoke speciesIds seen, both teams],
-               "moves": {speciesId: [MOVE_IDS]} optional}
+               "moves": {speciesId: [MOVE_IDS]} optional,
+               "teams": {"my": [{species, cp}], "opponent": [...]} optional -> adds "rocket" {flag, reasons}}
     candidates: format ids to consider (default: schedule formats around battle_date, else all
                 four base leagues). Returns {"ranked": [{id,name,cp,score,reasons}], "eliminated":
                 [{id,reason}], "cpCap": cap}."""
@@ -355,7 +452,11 @@ def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=No
             reasons.append("all species eligible")
         ranked.append({"id": fid, "name": cup.get("name", fid), "cp": ccap, "score": round(score, 2), "reasons": reasons})
     ranked.sort(key=lambda r: (-r["score"], r["cp"], r["id"]))
-    return {"ranked": ranked, "eliminated": eliminated, "cpCap": cap}
+    out = {"ranked": ranked, "eliminated": eliminated, "cpCap": cap}
+    teams = observed.get("teams")
+    if teams:
+        out["rocket"] = rocket_evidence(teams.get("my"), teams.get("opponent"), gamemaster)
+    return out
 
 
 if __name__ == "__main__":

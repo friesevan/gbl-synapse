@@ -1,6 +1,6 @@
 // Shared, deterministic active-review policy. Scores are acquisition heuristics, not confidence.
 (function(root){'use strict';
-const labels={shadow:'Shadow',form:'Form',result:'Battle outcome',fastMove:'Fast move',league:'League / cup',footage:'Battle footage'};
+const labels={shadow:'Shadow',form:'Form',result:'Battle outcome',fastMove:'Fast move',league:'League / cup',footage:'Battle footage',lead:'Opponent lead',perspective:'Championship perspective'};
 const trainable=new Set(['shadow','form','fastMove']);
 const values=x=>x instanceof Map?[...x.values()]:Array.isArray(x)?x:Object.values(x||{});
 const id=q=>q.qid||q.id;
@@ -10,7 +10,7 @@ function priority(q,{answers={},questions=[]}={}){
  const history=values(answers).filter(confirmed),species=q.species||'',n=history.filter(a=>a.kind===q.kind&&a.species===species).length;
  const frequency=Math.min(8,questions.filter(x=>x.species===species&&x.kind===q.kind).length||1);
  const p=Number.isFinite(q.modelP)?Math.max(0,Math.min(1,q.modelP)):.5;
- const uncertainty=1-Math.abs(2*p-1),kind={league:2.5,footage:2.3,form:2.1,fastMove:2,shadow:1.8,result:1.2}[q.kind]||1;
+ const uncertainty=1-Math.abs(2*p-1),kind={league:2.5,perspective:2.4,footage:2.3,form:2.1,fastMove:2,shadow:1.8,lead:1.4,result:1.2}[q.kind]||1;
  return kind*(.5+uncertainty)*Math.sqrt(frequency)/(1+n/8)*(q.allBattles?1.35:1)*(q.audit?1.6:1);
 }
 function orderQuestions(questions,{mode='priority',answers={},resolutions={}}={}){

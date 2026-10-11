@@ -129,6 +129,37 @@ class FeedbackTests(unittest.TestCase):
         self.service.data["learning"]["paramsLabels"] = 24
         self.assertFalse(self.service._params_due())
 
+    def test_rocket_and_perspective_answers_label_the_video(self):
+        self.service._fit = lambda *args: {"learned": {"moves": {}, "shadow": {}}, "predictions": {}, "resolutions": {}, "calibration": {}, "runsRefit": 0, "errors": []}
+        rocket = {"qid": "r1", "kind": "league", "video": {"id": "video"}, "battle": 1,
+                  "options": [{"value": "rocket", "label": "Team Rocket battle"}, {"value": "great", "label": "Great League"}]}
+        self.service.answer_many([{"qid": "r1", "question": rocket, "value": "rocket"}])
+        labels = F.read_json(self.work / "labels/video.json", {})
+        b = next(x for x in labels["battles"] if x["n"] == 2)
+        self.assertEqual(b["battleType"], "rocket")
+        self.assertNotIn("leagueId", b)
+        self.service.answer_many([{"qid": "r1", "value": "great"}])   # a correction makes it a league battle again
+        b = next(x for x in F.read_json(self.work / "labels/video.json", {})["battles"] if x["n"] == 2)
+        self.assertEqual((b.get("leagueId"), b.get("battleType")), ("great", None))
+        allq = dict(rocket, qid="r2", allBattles=True)
+        self.service.answer_many([{"qid": "r2", "question": allq, "value": "rocket"}])
+        labels = F.read_json(self.work / "labels/video.json", {})
+        self.assertEqual(labels["videoType"], "rocket")
+        self.assertNotIn("leagueId", labels)
+        self.assertEqual(F.read_json(self.bench / "sources/registry.json", [])[0]["leagueId"], "great")   # registry league untouched
+        persp = {"qid": "p1", "kind": "perspective", "video": {"id": "video"}, "battle": 0, "allBattles": True,
+                 "options": [{"value": v} for v in ("left", "right", "single", "switches", "gbl")]}
+        self.service.answer_many([{"qid": "p1", "question": persp, "value": "right"}])
+        labels = F.read_json(self.work / "labels/video.json", {})
+        self.assertEqual((labels["perspective"], labels["videoType"], labels["championship"]), ("right", "championship", True))
+        requests = [F.read_json(r, {}) for r in (self.work / "requeue").glob("*.json")]
+        self.assertTrue(any("right screen" in r.get("reason", "") for r in requests))
+        self.service.answer_many([{"qid": "p1", "value": "gbl"}])
+        labels = F.read_json(self.work / "labels/video.json", {})
+        self.assertIs(labels["championship"], False)
+        self.assertNotIn("perspective", labels)
+        self.assertNotEqual(labels.get("videoType"), "championship")
+
     def test_eight_useful_answers_refit_and_reopen_lock_preserves_human_labels(self):
         def fit(questions, answers, version):
             return {"learned": {"moves": {}, "shadow": {"claydol": {"yes": 8, "no": 0}}}, "predictions": {}, "resolutions": {"q0": {"value": False}, "new": {"value": True}}, "calibration": {}, "runsRefit": 1, "errors": []}

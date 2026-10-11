@@ -102,6 +102,32 @@ class ObservedTests(unittest.TestCase):
         self.assertFalse(s['occurrences'][0]['complete']['opponent'])
         self.assertEqual(s['summary']['completeCreatorTeams'], 1)
 
+    def test_rocket_excluded_championship_separate_and_lead_confirmed(self):
+        team = [{'id': s, 'key': s, 'label': s.title(), 'inference': {'shadowP': 0, 'forms': [{'value': s, 'p': 1}]}} for s in ('azumarill', 'medicham', 'lugia')]
+        self.write(self.result, {'battles': [{'start': 10.5, 'opponent': ['Azumarill', 'Medicham', 'Lugia']}, {'start': 200}],
+                                 'full': [{'start': 10.5, 'end': 100, 'my': team, 'opponent': team},
+                                          {'start': 200, 'end': 300, 'my': team, 'opponent': team}]})
+        self.write(self.work / 'results/video123.leagues.json', {'video': {}, 'battles': [{'start': 10.5, 'best': 'great'},
+                   {'start': 200, 'best': 'master', 'rocket': True, 'battleType': 'rocket'}]})
+        state = self.catalog.state()
+        self.assertEqual(len(state['occurrences']), 1)
+        self.assertEqual(state['summary']['excluded']['rocket'], 1)
+        # A reviewer's league answer overrides the automatic Rocket flag; a Rocket answer excludes the battle.
+        self.write(self.work / 'feedback.json', {'answers': {
+            'l': {'kind': 'league', 'battle': 1, 'recording': 'video123.mp4', 'value': 'great', 'source': 'reviewer', 'answeredAt': '1'},
+            'lead': {'kind': 'lead', 'battle': 0, 'recording': 'video123.mp4', 'value': 'Lugia', 'source': 'reviewer', 'answeredAt': '1'}}})
+        state = self.catalog.state()
+        self.assertEqual(len(state['occurrences']), 2)
+        first = next(o for o in state['occurrences'] if o['battleIndex'] == 0)
+        self.assertTrue(first['battle']['leadConfirmed'])
+        self.assertEqual(first['battle']['opponent'][0]['id'], 'lugia')
+        self.write(self.work / 'labels/video123.json', {'videoType': 'championship', 'verified': {}})
+        state = self.catalog.state()
+        leagues = {o['league']['name'] for o in state['occurrences']}
+        self.assertEqual(leagues, {'Championship'})
+        self.assertEqual(state['occurrences'][0]['league']['format'], 'championship')
+        self.assertEqual(state['summary']['championshipBattles'], 2)
+
     def test_corrupt_results_are_not_silent(self):
         self.result.write_text('{')
         s = self.catalog.state()

@@ -237,7 +237,7 @@ class HarvestService:
 
     def start(self, body):
         hours = body.get('hours', 9)
-        workers = body.get('workers', max(1, min(4, (os.cpu_count() or 4) // 2)))
+        workers = body.get('workers', max(1, min(8, (os.cpu_count() or 4) * 2 // 3)))
         if isinstance(hours, bool) or not isinstance(hours, (int, float)) or not math.isfinite(hours) or not .05 <= hours <= 48:
             raise ValueError('hours must be between 0.05 and 48.')
         if isinstance(workers, bool) or not isinstance(workers, int) or not 1 <= workers <= min(16, os.cpu_count() or 4):

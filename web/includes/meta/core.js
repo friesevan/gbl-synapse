@@ -31,7 +31,8 @@ function usageEstimates(battles,{halfLife=0,prior=null,k=10}={}){const reviewed=
 // 10 points below the top is ~7× rarer), capped at 60% per species.
 function rankingPrior(rankings){const list=[...rankings.values()].filter(r=>r.score!=null);if(!list.length)return null;const top=Math.max(...list.map(r=>r.score)),w=list.map(r=>Math.exp((r.score-top)/5)),z=w.reduce((a,x)=>a+x,0);
  return new Map(list.map((r,i)=>[r.speciesId,Math.min(.6,3*w[i]/z)]));}
-function eligible(b){return b.included!==false&&b.reviewed&&b.leadConfirmed&&b.opponent.length===3&&b.opponent.every(p=>p.id)&&new Set(b.opponent.map(p=>p.dex||p.id)).size===3;}
+// Team Rocket battles and championship matches never enter GBL team-training exports or meta usage.
+function eligible(b){return b.included!==false&&!['rocket','championship'].includes(b.context?.battleType||b.battleType)&&b.reviewed&&b.leadConfirmed&&b.opponent.length===3&&b.opponent.every(p=>p.id)&&new Set(b.opponent.map(p=>p.dex||p.id)).size===3;}
 function aggregate(battles){const accepted=battles.filter(b=>b.reviewed&&b.included!==false),counts=new Map(),leads=new Map(),teams=new Map();for(const b of accepted){for(const p of new Map(b.opponent.map(p=>[p.id,p])).values()){if(p.id)counts.set(p.id,(counts.get(p.id)||0)+1);}if(b.leadConfirmed&&b.opponent[0]?.id)leads.set(b.opponent[0].id,(leads.get(b.opponent[0].id)||0)+1);if(eligible(b)){const ids=b.opponent.map(p=>p.id),key=[ids[0],...ids.slice(1).sort()].join('|');if(!teams.has(key))teams.set(key,{members:[ids[0],...ids.slice(1).sort()],count:0});teams.get(key).count++;}}return {accepted:accepted.length,complete:battles.filter(eligible).length,counts,leads,teams:[...teams.values()].sort((a,b)=>b.count-a.count)};}
 // ---- Battle HUD (nameplates) ----
 // Reference geometry from an 886×1920 iPhone portrait recording. Name boxes reach almost to the CP so

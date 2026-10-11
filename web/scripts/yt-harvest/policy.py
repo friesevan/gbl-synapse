@@ -25,6 +25,24 @@ NEGATIVE = re.compile(r"(#shorts?\b|\braids?\b|shiny (?:hunt|check)|community da
                       r"pok[eé]mon sleep|egg hatch|hatching|rocket (?:leader|boss)|giovanni|max battle|dynamax raid|"
                       r"gigantamax|research|spoofing|spoofer|\bnews\b|\bleaks?\b|datamine|catch(?:ing)? (?:every|all)|"
                       r"mewtwo raid|minecraft|palworld|fortnite|roblox)", re.I)
+# Learned from reviewer footage answers (relevance-feedback.json, 2026-10-11): 28 of 36 "no battles
+# found" videos had no battle footage. Greek basketball ("STOIXIMAN GBL") highlights, another game
+# (Pokémon Champions) and these PvE/news topics never showed GBL battles. OTHER_SPORT/OTHER_GAME
+# always veto; NON_PVP vetoes only titles without a PvP marker (a "Color Cup" or "Great League"
+# title with "shiny" or "raid" in it keeps a soft penalty instead).
+OTHER_SPORT = re.compile(r"(stoiximan|basket(?:ball)?|euroleague|\bnba\b|\bfiba\b|\bgbl (?:round|rnd)\b|full highlights|"
+                         r"highlights?\b.{0,40}\b\d{2,3}\s*[-–]\s*\d{2,3}\b|\b\d{2,3}\s*[-–]\s*\d{2,3}\b.{0,40}\bhighlights?)", re.I)
+OTHER_GAME = re.compile(r"(?<!play )(?<!play! )pok[eé]mon champions\b", re.I)   # the separate game; vetoed without "Pokémon GO"
+NON_PVP = re.compile(r"(\braids?\b|raid (?:day|hour|invites?)|max (?:battles?|monday|out)|gigantamax|\bg-?max\b|dynamax|"
+                     r"community day|spotlight hour|costume|lucky trades?|\bhundo\b|\bshundo\b|new shiny|shiny (?:hunt|check|odds)|"
+                     r"guaranteed shiny|\bevent\b|forecast|coming to pok[eé]mon go|this week in|\btips\b|wild area|"
+                     r"rocket radars?|\bradar\b|bottle caps?|stardust|\bsolo(?:ed|ing)?\b|\bduo(?:ed|ing)?\b|go fest|"
+                     r"unboxing|giveaway|\btcg)", re.I)
+PVP_MARKER = re.compile(r"(great league|ultra league|master league|little (?:cup|league)|\bcup\b|copa|coupe|"
+                        r"go battle league|battle league|\bpvp\b|\bgbl\b|liga (?:super|ultra|master|ball)|super ?liga|hyper ?liga|"
+                        r"ligue (?:super|hyper|master)|meisterliga|スーパーリーグ|ハイパーリーグ|マスターリーグ|リトルカップ|バトルリーグ|"
+                        r"\blegend\b|\bveteran\b|\bexpert\b|\belo\b|\branked\b|leaderboard|\bremix\b|\bpremier\b|"
+                        r"regionals?|worlds|internationals?|\bnaic\b|\beuic\b|\blaic\b|\bocic\b|play!? ?pok[eé]mon)", re.I)
 TALK = re.compile(r"(tier list|rankings? update|\bguide\b|explained|\bnews\b|\bpodcast\b|\breaction\b|"
                   r"\bupdate\b|\bpredictions?\b)", re.I)
 NO_BATTLE_FOOTAGE_DURATION_S = 120   # Shorts and teasers
@@ -59,8 +77,15 @@ def relevance(title, duration=None, tags=(), description="", categories=(), chan
         score += 1.5
     elif channel_battle_hits >= 1:
         score += 0.75
+    if OTHER_SPORT.search(title) or (OTHER_GAME.search(title) and not GAME.search(title)):
+        return -5.0, "no"
+    non_pvp = NON_PVP.search(title)
+    if non_pvp and not PVP_MARKER.search(title):
+        return min(score, 0.0) - 3.0, "no"
     if NEGATIVE.search(title):
         score -= 2.5
+    elif non_pvp:
+        score -= 1.0
     if TALK.search(title) and not re.search(r"\b(battles?|gameplay|vs|ranked|legend|set)\b", title, re.I):
         score -= 1
     if categories and "Gaming" not in categories:

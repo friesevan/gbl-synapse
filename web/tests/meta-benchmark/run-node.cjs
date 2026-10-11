@@ -12,6 +12,8 @@
 //   LEAGUE=1500|2500|10000|500
 //   CROP=auto | x0,y0,x1,y1   phone screen inside a wide video (YouTube etc.), scaled to 886 wide
 //   START=s END=s     analyse part of the file (run-batch.cjs splits long files this way)
+//   RANGES=s-e,s-e    analyse only these stretches (probe.cjs battle ranges), one tracker throughout
+//   FFMPEG_THREADS=n  decoder threads (default: ffmpeg's auto)
 //   FPS=10 HUD_EVERY=5
 //   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
@@ -21,6 +23,8 @@ const byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),movesById=new Map(gm.move
 const learned=process.env.LEARNED_PATH?JSON.parse(fs.readFileSync(process.env.LEARNED_PATH,'utf8')):undefined;
 const [video,outPath]=process.argv.slice(2);
 const FPS=Number(process.env.FPS||10),HUD_EVERY=Number(process.env.HUD_EVERY||5),START=Number(process.env.START||0),END=process.env.END?Number(process.env.END):null;
+const RANGES=process.env.RANGES?process.env.RANGES.split(',').map(r=>r.split('-').map(Number)).filter(r=>r.length===2&&r.every(Number.isFinite)&&r[1]>r[0]):null;
+const THREADS=process.env.FFMPEG_THREADS?['-threads',String(process.env.FFMPEG_THREADS)]:[];
 const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'meta-bench-'));
 const metrics={frames:0,hudFrames:0,denseFrames:0,nameReads:0,cpReads:0,cpSkipped:0,resultReads:0,bannerReads:0,cached:0,matchups:0,ms:{decodeWait:0,hud:0,bars:0,ocr:0,fit:0}};
 const now=()=>Number(process.hrtime.bigint())/1e6;
@@ -39,12 +43,16 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const Y0=Math.round(450*W/886),Hh=Math.min(H-Y0,Math.round(900*W/886));
  const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*H*4,frame=Buffer.alloc(frameBytes);
- const args=['-v','error',...(START?['-ss',String(START)]:[]),...(END?['-t',String(END-START)]:[]),'-i',video,'-vf',[`fps=${FPS}`,...pre].join(','),'-f','rawvideo','-pix_fmt','rgba','-'];
+ // RANGES (from probe.cjs): decode only these stretches, in order, with one tracker; frame times stay
+ // video times, so the gap between ranges looks like footage without a HUD.
+ const ranges=RANGES||[[START,END]];let base=START,k0=0,waitFrom=now();
+ for(const [rs,re] of ranges){base=rs||0;k0=k;filled=0;
+ const args=['-v','error',...THREADS,...(rs?['-ss',String(rs)]:[]),...(re!=null?['-t',String(re-(rs||0))]:[]),'-i',video,'-vf',[`fps=${FPS}`,...pre].join(','),'-f','rawvideo','-pix_fmt','rgba','-'];
  // fps first: crop/scale only the frames that are kept (+26% throughput on 60 fps sources).
- const ff=spawn('ffmpeg',args,{stdio:['ignore','pipe','inherit']});let waitFrom=now();
+ const ff=spawn('ffmpeg',args,{stdio:['ignore','pipe','inherit']});
  for await(const chunk of ff.stdout){let off=0;
   while(off<chunk.length){const n=Math.min(chunk.length-off,frameBytes-filled);chunk.copy(frame,filled,off,off+n);filled+=n;off+=n;if(filled<frameBytes)break;filled=0;
-   metrics.ms.decodeWait+=now()-waitFrom;const t=START+k/FPS,isHud=k%HUD_EVERY===0;k++;metrics.frames++;const img={data:frame,width:W,height:H};
+   metrics.ms.decodeWait+=now()-waitFrom;const t=base+(k-k0)/FPS,isHud=k%HUD_EVERY===0;k++;metrics.frames++;const img={data:frame,width:W,height:H};
    if(isHud){const t0=now();metrics.hudFrames++;
     if(dy===null)dy=C.calibrate(img);
     const hud=dy===null?null:C.readHud(img,dy);
@@ -74,7 +82,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=Hp.effectBox(bar,W),e=Hp.effectSig(band,box,Y0);if(e.share<.03||e.share>.45||!Hp.effectShape(e.sig))continue;
      let kind=effCache.get(e.sig);if(kind===undefined&&t-(effRead[side]??-9)<.9)continue;if(kind===undefined){metrics.effectReads=(metrics.effectReads||0)+1;const r=ocr(img,box,{whiteText:true});kind=Hp.effectKind(r.text);if(kind||r.text.replace(/[^A-Za-z]/g,'').length>=6)effRead[side]=t;if(process.env.EFFDEBUG){const g=e.sig;let L=0,T=0;const rows=[];for(let rr=0;rr<12;rr++){let n=0;for(let c=0;c<96;c++)if(g[rr*96+c]){n++;T++;if(c<38)L++;}rows.push(n);}(metrics.effDebug||(metrics.effDebug=[])).push({t:+t.toFixed(1),side,kind,text:r.text.slice(0,30),share:+e.share.toFixed(3),left:+(L/T).toFixed(2),rows:rows.join(',')});}effCache.set(e.sig,kind);}
      if(kind){const last=effects.findLast?.(x=>x.side===side)??[...effects].reverse().find(x=>x.side===side);if(!last||last.kind!==kind||t-last.t>.8)effects.push({t,side,kind});else last.t=t;}}metrics.denseFrames++;metrics.ms.bars+=now()-t0;}
-   waitFrom=now();}}
+   waitFrom=now();}}}
  const finished=tracker.finish(),league=Number(process.env.LEAGUE||1500),rankings=new Map(require(`../../includes/pro/data/league-${league}.json`).overall.map(r=>[r.speciesId,r]));
  const t0=now();
  // Each matchup uses every dense frame between its first and last nameplate sighting (+0.5 s).
@@ -120,7 +128,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
  const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
  const seconds=(Date.now()-started)/1000,videoSeconds=k/FPS;
- const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,calibratedDy:dy,crop,start:START,end:END,battles};
+ const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
  // Matchup fits are kept (compactly) so pooling and priors can be re-evaluated without re-decoding.
  out.full=finished.map(b=>({...b,matchups:b.matchups.map(({result,...g})=>g)}));
  fs.writeFileSync(outPath,JSON.stringify(out));fs.rmSync(tmp,{recursive:true,force:true});
