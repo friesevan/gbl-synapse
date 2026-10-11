@@ -53,7 +53,7 @@ test('answers become learned priors that move the fast-move and Shadow estimates
 test('form prior: identical-looking forms follow PvPoke ranking scores, and reviewer answers move them',()=>{
  const K=require('../includes/meta/combat.js'),P=id=>gm.pokemon.find(p=>p.speciesId===id),c=['dialga','dialga_origin'].map(P);
  const rankings=new Map([['dialga',{score:84}],['dialga_origin',{score:93.8}]]);let fp=K.formPrior(c,null,rankings);assert.ok(fp.get('dialga_origin')>.85);
- fp=K.formPrior(c,{forms:{dialga:20}},rankings);assert.ok(fp.get('dialga')>fp.get('dialga_origin'));
+ fp=K.formPrior(c,{forms:{dialga:200}},rankings);assert.ok(fp.get('dialga')>fp.get('dialga_origin'));
  const flat=K.formPrior(c,null,null);assert.equal(flat.get('dialga'),flat.get('dialga_origin'));
  assert.deepEqual(Q.learnedFromAnswers([{id:'f',kind:'form',species:'weezing'}],new Map([['f',{value:'weezing_galarian'}]])).forms,{weezing_galarian:1});});
 test('a forfeit answer keeps the win/loss result and records how the battle ended',()=>{

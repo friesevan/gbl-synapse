@@ -20,6 +20,8 @@ REPROCESS_VALUES = ("battles", "partial", "rocket", "championship")
 
 TRAINABLE = {"shadow", "form", "fastMove"}
 MINIMUM, TARGET = 8, 24
+# Fast-move/form evidence settings are refitted (movefit-fit.cjs) once this many new labels have arrived.
+PARAM_REFIT_EVERY = 24
 
 
 def now():
@@ -295,10 +297,42 @@ class FeedbackService:
                     self._save()
                     if not self._closing and len(self._pending()) >= MINIMUM:
                         self.requested = True
+                    refit_params = not self._closing and self._params_due()
+                if refit_params:
+                    self._fit_params()
             except Exception as ex:
                 with self.lock:
                     self.data["learning"].update(status="error", error=str(ex)[:500], progress="Answers are saved; retry model refit")
                     self._save()
+
+    def _params_due(self):
+        """True when enough fast-move/form labels arrived since the evidence settings were last fitted."""
+        return self._move_labels() >= int(self.data["learning"].get("paramsLabels") or 0) + PARAM_REFIT_EVERY
+
+    def _move_labels(self):
+        return sum(1 for a in self.data["answers"].values() if confirmed(a) and a.get("kind") in ("fastMove", "form"))
+
+    def _fit_params(self):
+        """Refit the fast-move and form evidence settings from saved evidence (no video); the next model
+        refit applies them as learned.fit. Failures leave the previous settings in place."""
+        with self.lock:
+            labels = self._move_labels()
+        out = self.work / "learning" / "movefit-params.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        env = {**os.environ, "WORK_DIR": str(self.work)}
+        try:
+            for kind in ("fastMove", "form"):
+                subprocess.run(["node", str(self.web / "tests/meta-benchmark/movefit-fit.cjs"), "--kind", kind, "--rounds", "1", "--out", str(out)],
+                               capture_output=True, text=True, timeout=3600, cwd=self.web, env=env, check=True)
+        except (subprocess.SubprocessError, OSError) as ex:
+            with self.lock:
+                self.data["learning"].update(paramsError=str(ex)[:300], paramsLabels=labels)
+                self._save()
+            return
+        with self.lock:
+            self.data["learning"].update(paramsFit=now(), paramsError=None, paramsLabels=labels)
+            self.requested = True
+            self._save()
 
     def _fit(self, questions, answers, version):
         context = self.work / "learning"
@@ -330,13 +364,14 @@ class FeedbackService:
                         gm = str(cached)
                 except ValueError:
                     pass
-            runs.append({"videoId": file.stem, "path": str(file), "league": c.get("league") or cp, "gamemaster": gm})
+            runs.append({"videoId": file.stem, "path": str(file), "league": c.get("league") or cp, "gamemaster": gm, "channel": r.get("channel")})
         with self.lock:
             manual_review = dict(self.data["manualReview"])
         atomic_json(src, {"questions": questions, "answers": answers, "manualReview": manual_review, "version": version,
                           "cupCP": cup_cp, "baseline": read_json(self.work / "baseline-learned.json", {}), "runs": runs, "outputDir": str(context / ("refit-" + str(version))),
                           # Archived human labels train the Shadow classifier only (their priors are in the baseline).
-                          "labelsDir": str(self.work / "labels")})
+                          "labelsDir": str(self.work / "labels"),
+                          "workDir": str(self.work), "fitParams": str(context / "movefit-params.json")})
         proc = subprocess.run(["node", str(self.web / "tests/meta-benchmark/learning-loop.cjs"), str(src), str(dst)],
                               capture_output=True, text=True, timeout=1800, cwd=self.web)
         if proc.returncode:

@@ -31,7 +31,17 @@ The prior owner authorization permits non-CC footage for private analysis; permi
   Only runs with queued or answered questions need reassessment. Legacy human aggregate priors are frozen
   once in `baseline-learned.json`, then combined idempotently with new human labels.
 - Model-resolved questions leave the open queue but remain in a reversible **Model resolved** audit.
-  Human answers always win. Automatic resolution requires at least 98% posterior confidence, a 0.90
+  Human answers always win.
+- **Fast moves and forms (v4):** a fast move or form resolves at the confidence threshold picked by
+  video-grouped held-out checks, over every traceable human label. The threshold must give ≥ 95%
+  right answers on ≥ 30 answers from ≥ 5 videos, with a Wilson lower bound ≥ 0.90. It is never below
+  0.90, and the margin to the runner-up must be ≥ 0.8.
+  - Currently: fast moves resolve at p ≥ 0.90 (80/81 held out). Forms do not qualify yet (21 answers).
+  - The label-free model must agree, and audits stay open.
+  - Evidence settings are refitted every 24 new fast-move/form answers (`movefit-fit.cjs`,
+    `learning/movefit-params.json`).
+  - Details: `includes/meta/README.md`, section *Fast moves and forms from 228 human labels*.
+- **Shadow:** automatic resolution requires at least 98% posterior confidence, a 0.90
   winner margin, four measured hits, eight same-species/type human labels from at least three other videos,
   and 50 high-confidence held-out video checks for that question type with a Wilson lower bound of 90%.
   All labels from the held-out video and untraceable legacy aggregates are excluded from calibration.

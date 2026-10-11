@@ -103,6 +103,8 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
  const source=await gameDataFor($('metaDate').value),game=source.data;metrics.gameData=source.label;status(`Measuring fast moves with ${source.label}…`);
  const byId=new Map(game.pokemon.map(p=>[p.speciesId,p])),entries=p=>(p.candidates||[]).filter(c=>/mega|primal/i.test(p.label||'')||!/_(mega|primal)/.test(c.id)).map(c=>byId.get(c.id)).filter(Boolean);
  for(const b of battles)for(const side of ['my','opponent'])for(const p of b[side])MetaCombat.narrowByRankings(p,rankings);
+ // Type icons as form evidence, with this recording's own icon colours; fitted settings from learned.fit.
+ const fitP={...(window.MetaValidation?.learned()?.fit||{})},icons={...MetaCombat.FIT.icons,...(fitP.icons||{})},iconModel=MetaCombat.iconModel(battles,icons.alpha);if(icons.w)for(const b of battles)for(const side of ['my','opponent'])for(const p of b[side])p.typeLL=MetaCombat.iconLogL(p,iconModel,icons);
  effectCache=new C.NameCache(.05);effectQueue=[];effectsSeen=[];effectQueued={};const todo=battles.flatMap(b=>(b.segments||[]).filter(g=>g.end-g.start>=3).map(g=>[b,g]));let done=0;
  for(const b of battles)b.matchups=[];
  for(const [b,g] of todo){if(stop)break;status(`Measuring fast moves · matchup ${++done} of ${todo.length}`);$('metaProgress').value=done/todo.length;
@@ -118,14 +120,15 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
   for(const e of ev.filter(e=>e.kind==='move'&&e.t>=g.start-1&&e.t<=g.end+1)){const target=e.side==='opponent'&&e.actor===g.opponent?'my':e.side==='my'&&e.actor===g.my?'opponent':null;if(!target||shielded(target,e.t)||fainted(target,e.t))continue;const size=MetaHp.chargedDamage(series[target],e.t);if(size)charged[target==='my'?'onMy':'onOpp'].push({move:e.move,size});}
   // Effectiveness texts during the fast-move window, away from charged attacks (±4 s).
   await readEffects();const fw=[g.start+.3,g.start+.3+12],eff={};for(const [side,k] of [['my','onMy'],['opponent','onOpp']]){const list=effectsIn(side,...fw).filter(x=>!ev.some(e=>e.kind==='move'&&Math.abs(e.t-x.t)<=4));eff[k]={super:list.filter(x=>x.kind==='super').length,notVery:list.filter(x=>x.kind==='notVery').length,hits:d[side].hits.length};}
-  const result=MetaCombat.inferMatchup({opp:{candidates:entries(o),cp:o.cp},my:{candidates:entries(m),cp:m.cp},hitsOnMy:d.my.summary,hitsOnOpp:d.opponent.summary,charged,effects:eff,moves:game.moves,rankings,league,learned:window.MetaValidation?.learned()});
+  const result=MetaCombat.inferMatchup({opp:{candidates:entries(o),cp:o.cp,typeLL:o.typeLL},my:{candidates:entries(m),cp:m.cp,typeLL:m.typeLL},hitsOnMy:d.my.summary,hitsOnOpp:d.opponent.summary,charged,effects:eff,moves:game.moves,rankings,league,learned:window.MetaValidation?.learned()});
   const aura=MetaAura.summarize(frames.map(f=>f.aura));
   b.matchups.push({...g,hitsOnMy:d.my.hits.map(h=>+h.size.toFixed(3)),hitsOnOpp:d.opponent.hits.map(h=>+h.size.toFixed(3)),cadenceOnMy:d.my.summary?.turns,cadenceOnOpp:d.opponent.summary?.turns,auraOpponent:aura.opponent,auraMy:aura.my,effects:eff,series:{ts:frames.map(f=>+f.t.toFixed(2)),my:series.my.map(p=>p?+p.fill.toFixed(3):null),opponent:series.opponent.map(p=>p?+p.fill.toFixed(3):null)},result});}
  // Charged-move evidence (energy accounting, legal movesets) from the banners read during the scan.
  const movesById=new Map(game.moves.map(m=>[m.moveId,m]));
- for(const b of battles){const fight=(side,key,t)=>b.matchups.filter(g=>g[side]===key).reduce((n,g)=>n+(g.visible?.[side]||[]).filter(x=>x<t).length*.1,0);
-  b.evidence=MetaCombat.battleEvidence(b,movesById,fight);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))MetaCombat.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById);}
- const pooled=MetaCombat.poolMine(battles),learned=window.MetaValidation?.learned();for(const b of battles){MetaCombat.attachInference(b,pooled);MetaAura.applyToBattle(b,undefined,learned);}window.MetaShadow?.applyToBattles(battles,undefined,{learned,rankings});for(const b of battles){b.effects=effectsIn('my',b.start,b.end+1).concat(effectsIn('opponent',b.start,b.end+1)).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=MetaHp.hpTimeline(b);}
+ // Clock fighting time: frames with a visible bar undercount where bars are often missed.
+ for(const b of battles){const fight=MetaCombat.clockFight(b,fitP.energy);
+  b.evidence=MetaCombat.battleEvidence(b,movesById,fight);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))MetaCombat.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById,fitP);}
+ const pooled=MetaCombat.poolMine(battles),learned=window.MetaValidation?.learned();for(const b of battles){MetaCombat.attachInference(b,pooled,fitP);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=MetaCombat.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit:fitP});}MetaAura.applyToBattle(b,undefined,learned);}window.MetaShadow?.applyToBattles(battles,undefined,{learned,rankings});for(const b of battles){b.effects=effectsIn('my',b.start,b.end+1).concat(effectsIn('opponent',b.start,b.end+1)).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=MetaHp.hpTimeline(b);}
  for(const b of battles)for(const g of b.matchups){delete g.result;delete g.visible;delete g.series;}}
 // Everything the analysis isn't sure of (below the question thresholds in questions.js) goes to the
 // Validate tab, with the battle's summary and HP timeline; once those questions are answered, Validate

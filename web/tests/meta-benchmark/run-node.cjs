@@ -91,9 +91,12 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
   const changes={my:[],opponent:[]};for(const side of ['my','opponent']){for(const g of b.segments)changes[side].push([g.start,g[side]]);for(const e of b.events.filter(e=>e.kind==='go'))if(b[side].some(p=>p.key===e.actor))changes[side].push([e.t,e.actor]);changes[side].sort((x,y)=>x[0]-y[0]);}
   return (side,key,t)=>{const c=changes[side];let n=0;for(let i=0;i<c.length;i++){if(c[i][1]!==key)continue;const a=c[i][0];if(a>=t)break;const z=Math.min(t,i+1<c.length?c[i+1][0]:b.end+.5);
    for(let j=lower(a);j<dense.length&&dense[j].t<z;j++){const as=Hp.assignBars(dense[j].bars,W);if(as.my||as.opponent)n++;}}return n/FPS;};};
- function battleEvidence(b){return K.battleEvidence(b,movesById,fightUntil(b));}
+ // Energy checks use clock fighting time (K.clockFight): visible-bar frames undercount on video.
+ function battleEvidence(b){return K.battleEvidence(b,movesById,K.clockFight(b,learned?.fit?.energy));}
  const entries=p=>(p.candidates||[]).filter(c=>/mega|primal/i.test(p.label||'')||!/_(mega|primal)/.test(c.id)).map(c=>byId.get(c.id)).filter(Boolean);
  for(const b of finished)for(const side of ['my','opponent'])for(const p of b[side])K.narrowByRankings(p,rankings);
+ // Type icons as form evidence, with this video's own icon colours (K.iconModel).
+ const fit={...(learned?.fit||{})},icons={...K.FIT.icons,...(fit.icons||{})},iconModel=K.iconModel(finished,icons.alpha);if(icons.w)for(const b of finished)for(const side of ['my','opponent'])for(const p of b[side])p.typeLL=K.iconLogL(p,iconModel,icons);
  for(const b of finished){b.matchups=[];
   for(const g of b.segments.filter(g=>g.end-g.start>=3)){const o=b.opponent.find(p=>p.key===g.opponent),m=b.my.find(p=>p.key===g.my);if(!o||!m)continue;metrics.matchups++;
    const d=hitsFor(window(g.start+.3,g.end+.5));
@@ -105,14 +108,14 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
    // Effectiveness texts during this matchup's fast-move window, away from charged attacks (±4 s).
    const fw=[g.start+.3,g.start+.3+FAST_WINDOW],nearCharged=t=>ev.some(e=>e.kind==='move'&&Math.abs(e.t-t)<=4),eff={};
    for(const [side,key] of [['my','onMy'],['opponent','onOpp']]){const list=effects.filter(x=>x.side===side&&x.t>=fw[0]&&x.t<=fw[1]&&!nearCharged(x.t));eff[key]={super:list.filter(x=>x.kind==='super').length,notVery:list.filter(x=>x.kind==='notVery').length,hits:d[side].hits.length};}
-   const r=K.inferMatchup({opp:{candidates:entries(o),cp:o.cp},my:{candidates:entries(m),cp:m.cp},hitsOnMy:d.my.summary,hitsOnOpp:d.opponent.summary,charged,effects:eff,moves:gm.moves,rankings,league,learned});
+   const r=K.inferMatchup({opp:{candidates:entries(o),cp:o.cp,typeLL:o.typeLL},my:{candidates:entries(m),cp:m.cp,typeLL:m.typeLL},hitsOnMy:d.my.summary,hitsOnOpp:d.opponent.summary,charged,effects:eff,moves:gm.moves,rankings,league,learned});
    const fit=r&&r.all.map(h=>({opp:h.opp,oppMove:h.oppMove,my:h.my,myMove:h.myMove,evidence:+h.evidence.toFixed(4),oppPrior:+h.oppPrior.toFixed(4),myPrior:+h.myPrior.toFixed(4)}));
    b.matchups.push({...g,hitsOnMy:d.my.hits.map(h=>+h.size.toFixed(3)),hitsOnOpp:d.opponent.hits.map(h=>+h.size.toFixed(3)),hitTimesOnMy:d.my.hits.map(h=>+h.t.toFixed(1)),hitTimesOnOpp:d.opponent.hits.map(h=>+h.t.toFixed(1)),cadenceOnMy:d.my.summary?.turns,cadenceOnOpp:d.opponent.summary?.turns,auraOpponent:d.aura.opponent,auraMy:d.aura.my,chargedOnMy:charged.onMy,chargedOnOpp:charged.onOpp,effects:eff,
     // Compact HP series (10/s, fill fraction or null) so fits can be re-run without decoding video.
     series:{t0:d.t0!=null?+d.t0.toFixed(2):null,fps:FPS,my:d.series.my.map(p=>p?+p.fill.toFixed(3):null),opponent:d.series.opponent.map(p=>p?+p.fill.toFixed(3):null)},fit,result:r});}
-  b.evidence=battleEvidence(b);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))K.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById);}
+  b.evidence=battleEvidence(b);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))K.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById,fit);}
  for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);}
- const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled);Aura.applyToBattle(b,undefined,learned);}Shadow.applyToBattles(finished,undefined,{learned,rankings});
+ const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled,fit);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=K.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit});}Aura.applyToBattle(b,undefined,learned);}Shadow.applyToBattles(finished,undefined,{learned,rankings});
  metrics.ms.fit=now()-t0;
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
  const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));

@@ -224,7 +224,7 @@ node tests/meta-benchmark/score.cjs tests/meta-benchmark/labels/10min.json run.j
 ## Forms, fast moves, Shadow status and review questions
 
 ### Regional forms from type icons
-Two type icons sit above each nameplate (yours at x 37/81, the opponent’s at 801/850 of an 886-wide frame; a single type sits in the outer slot). `core.js` reads each disc’s colour from its lower half (the phone status bar can cover the top) and matches it to 18 fitted type colours, rejecting anything more than 40 apart. Icons lag a switch by up to a second, so votes are only taken once a name has held for two samples. On 368 icon samples from the benchmark recordings, colour alone was right 357 times; all 11 misses were sampling the previous Pokémon’s icons or a frame without icons, which the stable-name rule removes. The majority type set keeps only matching forms (e.g. ghost → Galarian Corsola; ground/electric → regular Stunfisk). Shadow and regular forms share types, so Shadow is decided separately.
+Two type icons sit above each nameplate (yours at x 37/81, the opponent’s at 801/850 of an 886-wide frame; a single type sits in the outer slot). `core.js` reads each disc’s colour from its lower half (the phone status bar can cover the top) and matches it to 18 fitted type colours, rejecting anything more than 40 apart. Icons lag a switch by up to a second, so votes are only taken once a name has held for two samples. On 368 icon samples from the benchmark recordings, colour alone was right 357 times; all 11 misses were sampling the previous Pokémon’s icons or a frame without icons, which the stable-name rule removes. The majority type set keeps only matching forms (e.g. ghost → Galarian Corsola; ground/electric → regular Stunfisk). Shadow and regular forms share types, so Shadow is decided separately. Since v4 the icons also enter as a likelihood. A confusion model allows for missed icons and for colour shifts within a video, so a reading that matches no form still counts as evidence (see *Fast moves and forms from 228 human labels* below).
 
 ### Fast moves from HP bars (`hp.js`, `combat.js`)
 Each matchup (the same two Pokémon facing each other for ≥ 3 s) is sampled ~10 times per second. HP bars are found from their fill (teal, yellow or red), a solid rectangle 9–18 rows tall with straight edges, because the outline is thin and translucent and bars bob with flying Pokémon. Your bar starts near the left edge; the opponent’s mid-screen; the bar whose left edge recurs through the window is kept. HP never rises within a matchup, so the fill is read as a descending staircase: upward readings (attack glow sweeping over a bar) are ignored and a step counts once two readings confirm it. The orange trail that appears with a hit equals the HP lost and gives the size when no earlier trail remains. Damage that appears after the bars were hidden for more than 1.2 s is a charged attack and is excluded.
@@ -332,6 +332,167 @@ encodings) were added to the 76 from your own recordings. Every figure below is 
 - **Still wrong: 14 of 99 fast moves.** Half come from the two edited highlight reels, whose cuts break
   HP tracking. The rest are pairs the damage can't settle with few hits (Morpeko Thunder Shock/Bite,
   Golurk Mud Slap/Astonish, Steelix Thunder Fang/Dragon Tail).
+
+### Fast moves and forms from 228 human labels (v4, 2026-10-11)
+
+**Data.** 197 confirmed fast moves and 31 confirmed forms on 37 videos. 89 fast moves and 25 forms come
+from `feedback.json`; 108 and 6 come from the archived legacy labels in the work directory's `labels/`.
+Each label is joined to the saved evidence in `results/<video>.json`
+(`tests/meta-benchmark/movefit-data.cjs`). Game data is chosen by battle date:
+- the run's `learningContext`;
+- otherwise the cached PvPoke file for the upload or recording date. The four 2025 dates were added to
+  `~/.cache/gbl-synapse/gamemaster/` from the local PvPoke clone and a Dec 2025 copy.
+
+Every number below comes from cross-validation grouped by video (`movefit-eval.cjs`). Each labelled
+video is refit from saved evidence, with priors learned only from the other videos. Shadow answers are
+used as priors but not scored here.
+
+**Where the old model failed** (`movefit-diagnose.cjs`). Baseline: 153/197 fast moves (62/89 on
+feedback answers) and 15/31 forms.
+
+1. **Energy checks counted visible-bar frames as fighting time.** On YouTube footage the HP bars are
+   found in a median of 24% of matchup frames (both bars; 0.5 on your own recordings). Fighting time was
+   therefore underestimated, and 41 of 265 energy checks (15%) said the *true* move couldn't have
+   earned the energy. Each of those multiplied the true move by 0.05. With clock time on the field
+   (entry to next switch, minus 5 s per charged-attack cutscene), 3 of 265 still fail.
+2. **Damage noise was far too tight for large hits.** The model used a fixed σ of 0.65% of HP, with no
+   part proportional to the hit. Under the true move, measured/predicted damage has a median of 0.96 and an
+   IQR of 0.85–1.18, because the CP leaves a stat range and steps merge. A 14% Incinerate measured
+   at 13% scored as a stray reading, and cadence then picked Bite. The fitted noise is σ 1.3% + 8% of the
+   hit, 15% stray readings and a ×0.92 scale.
+3. **Cadence was a single mode with hand-set penalties.** It is now a per-gap likelihood. Each gap
+   between hits is a whole number of moves (later moves may be missed, with probability 0.35 each), a
+   pause, or a stray detection, with 0.12 s timing jitter. Only 46 of 197 labels had a gap mode equal to
+   the true move's duration, so the old mode test often pointed the wrong way.
+4. **Too few hits.** 84 of 197 labels have fewer than two measured hits on the relevant bar. This comes
+   from the same low bar coverage, so the answer rests on priors, energy and icons. The fitted PvPoke
+   prior is worth 1 human label, not 4: species-level human answers are the better guide.
+5. **Wrong league.** Legacy and some harvested runs had no league, which defaulted to Great League
+   rankings for Master League battles. As a result, Dialga was called with p = 1.00 when the truth was
+   Dialga Origin, three times. The league now comes from the nameplate CPs when they rule out the
+   video's league (`refit.cjs battleLeague`).
+6. **Type icons.** On 1,589 Pokémon whose species fixes their types, the majority icon reading matched
+   the types only 946 times (60%). Two reasons:
+   - a dual type is read as a single type in 47% of frames;
+   - some videos shift colours (fire read as ground 10% of the time; 0/9 right in the worst video).
+
+   The old rule only filtered forms on an exact match, so these readings carried no evidence. Ranking
+   priors with temperature 4 then decided, sometimes at p ≈ 1.
+7. **Unmeasured Pokémon got no answer.** 3 of 31 forms had no prediction at all because they had no matchup.
+
+**What changed** (`combat.js`, with parameters in `FIT`; `movefit-fit.cjs` fits them by coordinate
+search on the grouped-CV log-loss):
+
+| Change (ablation: turning only it off) | Fast moves | log-loss |
+| --- | --- | --- |
+| v4, all changes | **162/197** | **0.426** |
+| without gap likelihood (old cadence) | 156 | 0.474 |
+| with the old damage noise | 158 | 0.465 |
+| without energy (impossible totals not penalised) | 158 | 0.458 |
+| PvPoke prior worth 4 labels | 162 | 0.450 |
+| without icon evidence | 160 | 0.451 |
+
+For forms, the new evidence sources are:
+- **Icon confusion model.** P(read type | true type), fitted on the 1,589 Pokémon above, scores every
+  form. Missing icons and colour shifts are allowed, and the model adapts to each video's own
+  unambiguous Pokémon (weight 200 votes).
+- **Tempering.** Frames repeat the same misreading, so the icon evidence counts as 2 independent reads.
+- **Ranking temperature.** It drops from 4 to 2.
+- **League from CP.**
+- **Prior-only answers** for Pokémon without matchups.
+
+Forms ablations: without icons 22/31 (log-loss 0.50); ranking temperature 4: 24/31 (0.30); without the
+CP league: 21/31 (1.15).
+
+`inferMatchup` now computes the per-hit likelihood of each move once per stat combination and then
+multiplies, instead of scoring every (move, move, combination) triple. The results are identical
+(tested), and a refit of all 37 labelled videos takes 5 s instead of 21 s.
+
+**Before → after** (video-grouped CV, same labels):
+
+| | Fast moves | log-loss | ECE | Forms | log-loss | ECE |
+| --- | --- | --- | --- | --- | --- | --- |
+| Old (HEAD 41b11f2) | 153/197 (feedback 62/89) | 0.575 | 0.048 | 15/31 (13/25) | 1.93 | 0.26 |
+| v4 | **162/197 (68/89)** | **0.426** | **0.033** | **25/31 (19/25)** | **0.263** | 0.09 |
+| v4 + Shadow classifier (merged) | 161/197 (67/89) | 0.428 | 0.039 | 23/31 (17/25) | 0.352 | 0.13 |
+
+The Shadow classifier (`shadow-model.js setShadowP`) rescales each Pokémon's Shadow rows to its own
+probability. When only one form has a Shadow variant, this also moves probability between forms. Two
+of your forms flipped this way:
+- Hisuian Typhlosion read as regular (p 0.68);
+- Palkia Origin read as Palkia (p 0.67).
+
+Treating the classifier's output as a likelihood ratio within each form would avoid that. That change
+belongs with the Shadow work.
+
+**Overfitting check.** The parameters were refitted on three quarters of the videos and scored on the
+remaining quarter, for each quarter (`movefit-fit.cjs --nested 4`, one search round from the fitted
+values). This gave 160/197 fast moves (log-loss 0.441), against 162/197 (0.426) with the parameters
+fitted on all videos, so the gain is not an artefact of tuning.
+
+**Calibration and auto-resolution.** The old model was overconfident: at p ≥ 0.98 it was right on
+23/25 fast moves and 6/9 forms. v4 held-out accuracy by threshold:
+
+| Threshold | Fast moves | Forms |
+| --- | --- | --- |
+| p ≥ 0.80 | 110/115 | 22/24 |
+| p ≥ 0.90 | **80/81** (Wilson lower bound 0.93) | **19/19** |
+| p ≥ 0.95 | 44/44 | 18/18 |
+
+With the Shadow classifier merged, the learning loop's own held-out check gives:
+- fast moves: 79/80 at p ≥ 0.90 (21 videos at p ≥ 0.80);
+- forms: 16/16 at p ≥ 0.90.
+
+How the learning loop resolves fast moves and forms (`learning-loop.cjs moveCalibration`):
+- Every refit repeats this held-out check over all traceable human labels (feedback answers and legacy
+  labels).
+- It picks the lowest threshold whose resolved answers are ≥ 95% right at that threshold and every
+  higher one. A higher threshold with fewer than 20 answers can't veto the pick.
+- The pick must also cover ≥ 30 answers from ≥ 5 videos with a Wilson lower bound ≥ 0.90. The threshold
+  is never below 0.90, and the margin to the runner-up must be ≥ 0.8.
+
+Gates dropped for these two kinds, on this evidence:
+- the 98% / four-hit / eight-same-species-labels gates. Confident prior-only calls were 24/24 right and
+  1–3-hit calls 28/29. The old gates were unreachable in any case: calibration counted one answer per
+  video and needed 50.
+
+Gates kept:
+- the label-free (new-labels-only) model must agree;
+- audit spot checks stay open;
+- human answers win.
+
+Shadow keeps its previous gates.
+
+Forms do not yet qualify: there are 21 held-out answers at the threshold, below the 30 required, so
+none are auto-resolved.
+
+On the open queue of 2026-10-11, a dry run of the learning loop resolves 19 of the 270 open fast-move
+questions:
+- 48 have p ≥ 0.90;
+- the rest of those are audit spot checks, or the label-free model disagrees.
+
+The app applies this at its next refit once it runs this code.
+
+**Keeps improving.**
+- `feedback.py` passes the work directory, channel and `learning/movefit-params.json` to the learning
+  loop.
+- After every 24 new fast-move/form answers, it reruns `movefit-fit.cjs` for both kinds from saved
+  evidence (no video). The next refit applies the result as `learned.fit`, which the extractor and the
+  browser also read.
+- `learned.channels` holds your side's confirmed moves per channel, since a creator's team repeats. Its
+  weight is fitted, and is currently 0: there are too few repeat channels to measure it.
+
+**Remaining failures** (35 fast moves, 6 forms):
+- Fast moves with fewer than two measured hits: 18 of 84 wrong (prior and energy only). The root cause
+  is HP-bar detection on YouTube crops (24% frame coverage). This is an extraction problem that needs
+  video to fix.
+- Fast moves with 4+ hits: 13 of 70 wrong, mostly pairs that hit equally hard on the same turns, such
+  as Psywave/Tackle on Inkay and Shadow Claw/Metal Claw on Necrozma, or moves with mixed stray steps.
+- Forms with identical types and no deciding move or icon:
+  - Kyurem Black read as White (3, p 0.59–0.81);
+  - Mega Mewtwo Y, whose nameplate OCR read X and whose icons weren't read (3, p 0.50).
+
+  None of them reach the resolution threshold.
 
 ### Visual Shadow detector (`aura.js`)
 Shadow Pokémon carry dark violet flames. During the HP-bar pass, each side’s Pokémon is located just below its bar (the opponent’s in a box under its bar; yours in the larger foreground area under yours), and each frame gives the share of aura-violet pixels (hue 262–305°, saturation ≥ 0.38, value 0.22–0.85). A matchup is summarized by the median over frames, so one-off Shadow Ball or Psychic effects don’t dominate.

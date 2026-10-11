@@ -117,6 +117,18 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(r["leagueId"], "great")
         self.assertNotIn("leagueId", F.read_json(self.work / "labels/video.json", {}))
 
+    def test_evidence_settings_refit_is_due_every_24_human_move_labels(self):
+        answers = self.service.data["answers"]
+        for i in range(23):
+            answers["m" + str(i)] = {"qid": "m" + str(i), "kind": "fastMove", "value": "MUD_SLAP"}
+        answers["model"] = {"qid": "model", "kind": "fastMove", "value": "MUD_SLAP", "source": "model"}
+        answers["unsure"] = {"qid": "unsure", "kind": "form", "value": None}
+        self.assertFalse(self.service._params_due())
+        answers["m23"] = {"qid": "m23", "kind": "form", "value": "weezing_galarian"}
+        self.assertTrue(self.service._params_due())
+        self.service.data["learning"]["paramsLabels"] = 24
+        self.assertFalse(self.service._params_due())
+
     def test_eight_useful_answers_refit_and_reopen_lock_preserves_human_labels(self):
         def fit(questions, answers, version):
             return {"learned": {"moves": {}, "shadow": {"claydol": {"yes": 8, "no": 0}}}, "predictions": {}, "resolutions": {"q0": {"value": False}, "new": {"value": True}}, "calibration": {}, "runsRefit": 1, "errors": []}
