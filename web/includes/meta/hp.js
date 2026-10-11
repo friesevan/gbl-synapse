@@ -64,6 +64,9 @@ function effectBox(bar,width){const s=width/REF_W;return [Math.max(0,Math.round(
 function effectSig(img,box,yOffset=0){const [x0,y0,x1,y1]=box,sig=new Uint8Array(96*12),d=img.data;let n=0;
  for(let r=0;r<12;r++)for(let c=0;c<96;c++){const x=Math.floor(x0+(c+.5)*(x1-x0)/96),y=Math.floor(y0+(r+.5)*(y1-y0)/12)-yOffset;if(y<0||y>=img.height||x<0||x>=img.width)continue;const i=(y*img.width+x)*4;if(Math.min(d[i],d[i+1],d[i+2])>215){sig[r*96+c]=1;n++;}}
  return {sig,share:n/sig.length};}
+// The words sit in the strip's top five rows (of 12), with ink in every one of rows 1–4; arena glare,
+// the bar's own edge and move effects light the lower rows instead. Only text-shaped strips are read.
+function effectShape(sig){const row=r=>{let n=0;for(let c=0;c<96;c++)n+=sig[r*96+c];return n;};let top=0;for(let r=0;r<6;r++)top+=row(r);for(let r=1;r<5;r++)if(row(r)<8)return false;return top>=50;}
 // OCR text → 'super' | 'notVery' | null (tolerates a misread letter or two).
 const effectKind=text=>{const t=String(text).toLowerCase().replace(/[^a-z ]/g,'');return /\bnot\b|v[ae]ry\s*eff/.test(t)&&/eff|v[ae]ry/.test(t)?'notVery':/sup[ae]r|eff[ei]ct/.test(t)?'super':null;};
 // HP of every Pokémon in a battle at every turn (fraction of max HP, step 0.5 s), from the HP-bar series
@@ -97,5 +100,5 @@ function track(frames,width){const s=width/REF_W,out={my:[],opponent:[]};
   if(!xs.size){out[side]=frames.map(()=>null);continue;}const best=[...xs].sort((a,b)=>b[1]-a[1])[0][0]*3*s;let lastY=null;
   out[side]=frames.map(f=>{const c=f.bars.filter(b=>Math.abs(b.x0-best)<=4*s).sort((a,b)=>(lastY===null?0:Math.abs(a.y0-lastY)-Math.abs(b.y0-lastY))||(b.y1-b.y0)-(a.y1-a.y0));const b=c[0];if(!b)return null;lastY=b.y0;return {t:f.t,fill:b.fill,trail:b.trail};});}
  return out;}
-const api={hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
+const api={hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
 })(typeof window==='undefined'?globalThis:window);

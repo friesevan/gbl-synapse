@@ -23,7 +23,7 @@ function render(s,{width=720}={}){const pad={l:40,r:12,t:12},ph=110,gap=34,axis=
   svg.append(make('rect',{x:pad.l,y:top,width:iw,height:ph,class:'meta-tl-panel'}));
   for(const v of [0,50,100]){svg.append(make('line',{x1:pad.l,x2:pad.l+iw,y1:y(v),y2:y(v),class:'meta-tl-grid'}));svg.append(make('text',{x:pad.l-6,y:y(v)+4,'text-anchor':'end',class:'meta-tl-tick'},`${v}%`));}
   svg.append(make('text',{x:pad.l+4,y:top-2,class:'meta-tl-label'},name));
-  (s[side]||[]).forEach((p,i)=>{const series=s.hp?.[side]?.[p.key];if(!series)return;let d='';series.forEach((v,k)=>{if(v<0){return;}const px=x(k*s.hp.step),py=y(v);d+=(d&&series[k-1]>=0?'L':'M')+px.toFixed(1)+' '+py.toFixed(1);});
+  (s[side]||[]).forEach((p,i)=>{const series=s.hp?.[side]?.[p.key];if(!series)return;let d='',ended=false;series.forEach((v,k)=>{if(v<0||ended){return;}if(v===0)ended=true;const px=x(k*s.hp.step),py=y(v);d+=(d&&series[k-1]>=0?'L':'M')+px.toFixed(1)+' '+py.toFixed(1);});
    if(d){const path=make('path',{d,class:'meta-tl-hp',stroke:COLORS[i%3]});path.append(make('title',{},`${p.label}${p.fastMoveName?` · ${p.fastMoveName}`:''}`));svg.append(path);}});
   // events on this side
   for(const e of s.events.filter(e=>e.side===side||(e.kind==='go'&&(s[side]||[]).some(p=>p.key===e.actor)))){const ex=x(e.t);
@@ -31,10 +31,10 @@ function render(s,{width=720}={}){const pad={l:40,r:12,t:12},ph=110,gap=34,axis=
    else if(e.kind==='shield'){const m=make('rect',{x:ex-4,y:top+ph-12,width:8,height:10,rx:2,class:'meta-tl-shield'});m.append(make('title',{},`${clock(e.t)} · Shield used`));svg.append(m);}
    else if(e.kind==='faint'){const m=make('path',{d:`M${ex-4} ${top+ph-4}l8 -8M${ex-4} ${top+ph-12}l8 8`,class:'meta-tl-faint'});m.append(make('title',{},`${clock(e.t)} · Fainted`));svg.append(m);}
    else if(e.kind==='go'){svg.append(make('line',{x1:ex,x2:ex,y1:top,y2:top+ph,class:'meta-tl-switch'}));}
-   else if(e.kind==='effect'){const m=make('circle',{cx:ex,cy:top+ph+6,r:2.5,class:e.effect==='super'?'meta-tl-super':'meta-tl-weak'});m.append(make('title',{},`${clock(e.t)} · ${e.effect==='super'?'Super effective':'Not very effective'} hit`));svg.append(m);}}}
+   else if(e.kind==='effect'){const m=make('circle',{cx:ex,cy:top+16,r:3,class:e.effect==='super'?'meta-tl-super':'meta-tl-weak'});m.append(make('title',{},`${clock(e.t)} · ${e.effect==='super'?'Super effective':'Not very effective'} hit`));svg.append(m);}}}
  // time axis
  const ay=pad.t+ph*2+gap+4,step=dur>150?30:dur>60?15:10;for(let t=0;t<=dur;t+=step){svg.append(make('text',{x:x(t),y:ay+12,'text-anchor':'middle',class:'meta-tl-tick'},clock(t)));}
- const res=s.result&&s.result!=='Unknown'?`${s.result}${s.ending&&s.ending!=='normal'?` (${s.ending==='you-forfeit'?'you forfeited':'opponent forfeited'})`:''}`:null;if(res)svg.append(make('text',{x:pad.l+iw,y:ay+12,'text-anchor':'end',class:'meta-tl-result'},res));
+ const res=s.result&&s.result!=='Unknown'?`${s.result}${s.ending&&s.ending!=='normal'?` (${s.ending==='you-forfeit'?'you forfeited':'opponent forfeited'})`:''}`:null;if(res)svg.append(make('text',{x:pad.l+iw,y:pad.t+ph+gap-4,'text-anchor':'end',class:'meta-tl-result'},res));
  return svg;}
 function legend(s){const box=document.createElement('div');box.className='meta-tl-legend';for(const [side,name] of [['my','You'],['opponent','Opponent']]){const row=document.createElement('div');row.append(Object.assign(document.createElement('strong'),{textContent:name+': '}));(s[side]||[]).forEach((p,i)=>{const sw=document.createElement('span');sw.className='meta-tl-swatch';sw.style.background=COLORS[i%3];const t=document.createElement('span');const bits=[p.label];if(p.fastMoveName)bits.push(p.fastMoveName);if(p.shadowP!=null&&p.shadowP>=.5)bits.push('Shadow');t.textContent=bits.join(' · ');row.append(sw,t);});box.append(row);}
  const key=document.createElement('p');key.className='hint';key.textContent='▼ charged attack · ▮ shield · ✕ faint · │ switch · ● super effective / ○ not very effective';box.append(key);return box;}

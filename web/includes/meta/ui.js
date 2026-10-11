@@ -72,10 +72,12 @@ const denseCanvas=document.createElement('canvas');const bannerCanvas=document.c
 // "SUPER EFFECTIVE!" / "NOT VERY EFFECTIVE…" above a bar names how the last attack on that Pokémon
 // landed. Each distinct look of the text is read once: new ones are copied out here and read after the
 // sampling pass (effectQueue), repeats reuse the answer.
-let effectCache=new C.NameCache(.05),effectQueue=[],effectsSeen=[];
+let effectCache=new C.NameCache(.05),effectQueue=[],effectsSeen=[],effectQueued={};
 function denseFrame(t){const s=SW()/886,y0=Math.round(450*s),img=grab(denseCanvas,y0,Math.min(SH(),1500*s)),bars=MetaHp.findBars(img,y0),as=MetaHp.assignBars(bars,SW());
- for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=MetaHp.effectBox(bar,SW()),e=MetaHp.effectSig(img,box,y0);if(e.share<.03||e.share>.45)continue;
+ for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=MetaHp.effectBox(bar,SW()),e=MetaHp.effectSig(img,box,y0);if(e.share<.03||e.share>.45||!MetaHp.effectShape(e.sig))continue;
   const entry=effectCache.find(e.sig);if(entry){if(entry.value?.kind)effectsSeen.push({t,side,kind:entry.value.kind});else if(entry.value?.pending)entry.value.pending.push({t,side});continue;}
+  // A new look of the text appears every few frames while it animates: queue at most one per 0.3 s per side.
+  if(t-(effectQueued[side]??-9)<.3)continue;effectQueued[side]=t;
   const w=box[2]-box[0],h=box[3]-box[1],c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').putImageData(img,-box[0],-(box[1]-y0),box[0],box[1]-y0,w,h);
   const value={pending:[{t,side}],canvas:c};effectCache.set(e.sig,value);if(effectCache.find(e.sig))effectQueue.push(value);}
  return {t,bars,aura:MetaAura.measure(img,as,y0)};}
@@ -101,7 +103,7 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
  const source=await gameDataFor($('metaDate').value),game=source.data;metrics.gameData=source.label;status(`Measuring fast moves with ${source.label}…`);
  const byId=new Map(game.pokemon.map(p=>[p.speciesId,p])),entries=p=>(p.candidates||[]).filter(c=>/mega|primal/i.test(p.label||'')||!/_(mega|primal)/.test(c.id)).map(c=>byId.get(c.id)).filter(Boolean);
  for(const b of battles)for(const side of ['my','opponent'])for(const p of b[side])MetaCombat.narrowByRankings(p,rankings);
- effectCache=new C.NameCache(.05);effectQueue=[];effectsSeen=[];const todo=battles.flatMap(b=>(b.segments||[]).filter(g=>g.end-g.start>=3).map(g=>[b,g]));let done=0;
+ effectCache=new C.NameCache(.05);effectQueue=[];effectsSeen=[];effectQueued={};const todo=battles.flatMap(b=>(b.segments||[]).filter(g=>g.end-g.start>=3).map(g=>[b,g]));let done=0;
  for(const b of battles)b.matchups=[];
  for(const [b,g] of todo){if(stop)break;status(`Measuring fast moves · matchup ${++done} of ${todo.length}`);$('metaProgress').value=done/todo.length;
   const o=b.opponent.find(p=>p.key===g.opponent),m=b.my.find(p=>p.key===g.my);if(!o||!m)continue;

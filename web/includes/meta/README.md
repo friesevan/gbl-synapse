@@ -233,6 +233,45 @@ Each hit is compared with PvPoke’s formula, `⌊power × STAB × attack/defens
 
 Measured on the benchmark recordings (no fast-move labels yet): your team’s fast moves were consistent across battles (Azumarill Bubble, Galarian Corsola Astonish, Registeel Lock-On, Corviknight Sand Attack, Electivire Thunder Shock in 17 of 19 battles, Scrafty Counter in 15 of 18, Ferroseed Metal Claw in 14 of 16). Confirming them with the contributor is the next validation step.
 
+### Effectiveness text (`hp.js` effectBox/effectSig/effectKind, `combat.js` effectLogL)
+When a fast attack lands, the game flashes **SUPER EFFECTIVE!** or **NOT VERY EFFECTIVE…** in white just above the target's HP bar. Every sampled frame checks that strip (from 6 px left of the bar to 320 px right, 3–50 px above it, at the 886 px reference width) with a 96×12 fingerprint of near-white pixels. The strip is read only when it looks like text:
+- 3–45% of it is lit;
+- every one of rows 1–4 (of 12) has ink, since the words sit in the top five rows (arena glare and the bar's own edge light the lower rows).
+
+Each distinct look is read by OCR once and cached. After a successful read, that side isn't read again for 0.9 s (0.3 s between queued reads in the browser). Repeats within 0.8 s count once. On a 150 s test clip this cut OCR reads from 257 to 50 with the same detections. Per matchup, texts in the fast-move window (the first 12 s) are counted, ignoring any within 4 s of a charged-attack banner, which has its own effectiveness. Every candidate fast move then gets a likelihood term from the effectiveness that move would have against the target's types:
+
+| Move vs target | P(super text) | P(not-very text) | P(no text) |
+| --- | --- | --- | --- |
+| Super effective | .80 | .03 | .17 |
+| Not very effective | .03 | .80 | .17 |
+| Neutral | .03 | .03 | .94 |
+
+The text is sometimes shown in error, and sometimes missed (it overlaps the bar animation and arena effects), so no reading is treated as certain. The term is scaled by 0.5 and added to the damage, cadence and energy evidence. It separates moves with equal damage but different types, such as Water Gun and Peck on Cramorant against a Fire type. `NOEFFECTS=1` turns it off in `tune-learned.cjs` for comparison.
+
+### HP at every turn (`hp.js` hpTimeline)
+Each battle gets an HP timeline: every Pokémon's remaining HP (0–1) at every half-second turn from the battle start. The readings are the dense HP-bar samples of every matchup that Pokémon was in. Processing:
+1. Readings are smoothed with a median of 5.
+2. They are fitted with the best non-increasing curve (pool-adjacent-violators). HP never rises within a battle, so a single misread low value is averaged away instead of becoming a floor.
+
+How the timeline fills each stretch:
+- **Before entry:** empty (`null`); on the field without readings yet: full.
+- **Between readings:** the last value is held.
+- **After its faint:** 0.
+
+Runner outputs carry it as `full[i].hp` and stored summaries as whole percents (`-1` = not on the field yet).
+
+### Battle timeline graph (`timeline.js`)
+`MetaTimeline.render(summary)` draws the battle as an SVG:
+- **Panels:** two stacked panels, your team above and the opponent below, sharing one time axis.
+- **Lines:** one HP line per Pokémon, ending at its faint.
+- **Markers:**
+  - ▼ charged attacks (hover for the move);
+  - ▮ shields; ✕ faints; dashed lines at switches;
+  - ● super-effective and ○ not-very-effective hits;
+  - the result.
+
+The graph appears in each battle card after an analysis (**HP timeline**) and in the Validate tab once a video is validated.
+
 ### Move data from the battle date
 Fast moves are rebalanced over time (28 fast moves changed between March 2025 and October 2026, e.g. Charm 15 → 12 power, Mud Slap 12 → 11). Damage is therefore fitted with PvPoke’s game data as of the **battle date**: the browser fetches `gamemaster.min.json` at the last PvPoke commit on or before that date (through the GitHub connector on claude.ai) and falls back to current data, saying so, if it can’t. Benchmark scripts take `GAMEMASTER=path`. With current data, the March 2025 Claydol looked 53% Shadow (its Mud Slap hits seemed 9% too strong); with March 2025 data it is 0% Shadow, matching the reviewer’s answer.
 
@@ -300,6 +339,22 @@ The **Validate** tab lists every open question, whether it came from a video you
 - **Learning.** Answers become per-species learned priors (`MetaQuestions.learnedFromAnswers`): confirmed fast moves blend with PvPoke’s prior (which counts as 4 observations), and confirmed Shadow answers set that species’ Shadow share. Every new analysis in the browser uses them. Claude’s benchmark exports can use the same answers (`export-questions.cjs … learned.json`).
 - **Accuracy.** Each answer is compared with the model’s pick, and the view reports how often the model was right per question kind, so improvements (or regressions) are visible.
 - **Claude’s test runs.** After a benchmark run, `node tests/meta-benchmark/export-questions.cjs RUN.json VIDEO OUTDIR` writes one question document per open question, which Claude uploads to the artifact’s store. Answers are read back from `answers` (saved to a folder) and folded in with `node tests/meta-benchmark/fold-answers.cjs FOLDER`, which writes `learned.json` for refits/exports and records each answer under `verified` in the matching benchmark label.
+
+### Validate only what the model is unsure of
+After a browser analysis finishes, everything below the question thresholds is sent to the Validate tab automatically, so nobody has to rewatch whole battles. The thresholds are the same as in the review pane:
+- a fast move below 85%;
+- a Shadow estimate between 15% and 85%;
+- an unsettled regional form;
+- an unread result.
+
+Each question carries its clip times, so answering only plays those few seconds of the recording. The checkbox **Send uncertain detections to the Validate tab** (on by default) controls this.
+
+With the questions, each battle's summary is stored at `analyses/<recording>#<n>`. The summary holds:
+- the teams, the fast moves with confidence, and Shadow estimates;
+- the events, relative to the battle start;
+- the HP timeline as whole percents.
+
+No video, frames or trainer names are stored. Under **Your analyses**, each recording shows how many questions are left. Once none are left it is **Validated**, and **View analysis** shows every battle's timeline graph with the answers applied: confirmed fast moves, Shadow status, forms and results.
 
 ## Contributor workflow
 

@@ -35,7 +35,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const W=crop?886:W0,H=crop?Math.round((crop[3]-crop[1])*886/(crop[2]-crop[0])/2)*2:H0;
  // Bars and aura live in the middle band of the screen (reference y 450–1350).
  const Y0=Math.round(450*W/886),Hh=Math.min(H-Y0,Math.round(900*W/886));
- const effects=[],effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
+ const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*H*4,frame=Buffer.alloc(frameBytes);
  const args=['-v','error',...(START?['-ss',String(START)]:[]),...(END?['-t',String(END-START)]:[]),'-i',video,'-vf',[`fps=${FPS}`,...pre].join(','),'-f','rawvideo','-pix_fmt','rgba','-'];
  // fps first: crop/scale only the frames that are kept (+26% throughput on 60 fps sources).
@@ -69,8 +69,8 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
    if(tracker.current&&t-tracker.lastHud<30){const t0=now(),band={data:frame.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0),as=Hp.assignBars(bars,W);dense.push({t,bars,aura:Aura.measure(band,as,Y0)});
     // "SUPER EFFECTIVE!" / "NOT VERY EFFECTIVE…" above a bar: the attack on that Pokémon. Each distinct
     // look of the text is read once (fingerprint cache); repeats within 0.8 s count once.
-    for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=Hp.effectBox(bar,W),e=Hp.effectSig(band,box,Y0);if(e.share<.03||e.share>.45)continue;
-     let kind=effCache.get(e.sig);if(kind===undefined){metrics.effectReads=(metrics.effectReads||0)+1;const r=ocr(img,box,{whiteText:true});kind=Hp.effectKind(r.text);effCache.set(e.sig,kind);}
+    for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=Hp.effectBox(bar,W),e=Hp.effectSig(band,box,Y0);if(e.share<.03||e.share>.45||!Hp.effectShape(e.sig))continue;
+     let kind=effCache.get(e.sig);if(kind===undefined&&t-(effRead[side]??-9)<.9)continue;if(kind===undefined){metrics.effectReads=(metrics.effectReads||0)+1;const r=ocr(img,box,{whiteText:true});kind=Hp.effectKind(r.text);if(kind||r.text.replace(/[^A-Za-z]/g,'').length>=6)effRead[side]=t;if(process.env.EFFDEBUG){const g=e.sig;let L=0,T=0;const rows=[];for(let rr=0;rr<12;rr++){let n=0;for(let c=0;c<96;c++)if(g[rr*96+c]){n++;T++;if(c<38)L++;}rows.push(n);}(metrics.effDebug||(metrics.effDebug=[])).push({t:+t.toFixed(1),side,kind,text:r.text.slice(0,30),share:+e.share.toFixed(3),left:+(L/T).toFixed(2),rows:rows.join(',')});}effCache.set(e.sig,kind);}
      if(kind){const last=effects.findLast?.(x=>x.side===side)??[...effects].reverse().find(x=>x.side===side);if(!last||last.kind!==kind||t-last.t>.8)effects.push({t,side,kind});else last.t=t;}}metrics.denseFrames++;metrics.ms.bars+=now()-t0;}
    waitFrom=now();}}
  const finished=tracker.finish(),league=Number(process.env.LEAGUE||1500),rankings=new Map(require(`../../includes/pro/data/league-${league}.json`).overall.map(r=>[r.speciesId,r]));
