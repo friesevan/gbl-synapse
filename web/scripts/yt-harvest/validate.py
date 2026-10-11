@@ -13,7 +13,19 @@ import os
 import re
 
 SOURCE = "youtube-harvest"
-CLOSE = 1.0   # league candidates within this score of the best are still in question
+CLOSE = 1.0
+# Footage answers. "rocket" and "championship" battles look like GBL and train the extractor (fast
+# moves, Shadow, outcomes) but never count toward the GBL meta; championships get their own format.
+# "obscured": real battles, but an overlay hides part of the screen, so the video can't be analysed.
+FOOTAGE_OPTIONS = [
+    {"value": "battles", "label": "Yes, GBL battles are shown", "hint": "The detector missed them"},
+    {"value": "rocket", "label": "Team Rocket battles", "hint": "Training only, not meta. Opponent CPs often exceed the league cap"},
+    {"value": "championship", "label": "Championship / tournament", "hint": "Invite-only event; often both players' screens"},
+    {"value": "obscured", "label": "Battles, but the screen is obscured", "hint": "Overlay or facecam covers the HUD"},
+    {"value": "partial", "label": "Only short clips or replays"},
+    {"value": "none", "label": "No battle footage"},
+]
+REPROCESS = ("battles", "partial", "rocket", "championship")   # league candidates within this score of the best are still in question
 
 
 def safe_id(s):
@@ -60,9 +72,7 @@ def harvest_questions(vid, result, meta, video_league, refined, schedule=None):
         out.append(_q(vid, "footage", "footage", "No battles found: does this video show Pokémon GO battles?",
                       "The Meta Extractor found no battle in this video. Either the phone screen wasn’t located "
                       "(unusual layout, overlays) or the video has no battle footage. Scrub through the video.",
-                      [{"value": "battles", "label": "Yes, battles are shown", "hint": "The detector missed them"},
-                       {"value": "partial", "label": "Only short clips or replays"},
-                       {"value": "none", "label": "No battle footage"}], [t, t + 20], allBattles=True))
+                      FOOTAGE_OPTIONS, [t, t + 20], allBattles=True))
         return out
     rb = (refined or {}).get("battles") or []
     vguess, vconf = video_league.get("leagueGuess", "Unknown"), float(video_league.get("leagueConfidence") or 0)

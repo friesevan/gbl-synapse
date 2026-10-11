@@ -15,6 +15,9 @@ import threading
 import time
 import uuid
 
+# Footage answers that mean the video has battle footage worth analysing (validate.REPROCESS).
+REPROCESS_VALUES = ("battles", "partial", "rocket", "championship")
+
 TRAINABLE = {"shadow", "form", "fastMove"}
 MINIMUM, TARGET = 8, 24
 
@@ -377,11 +380,17 @@ class FeedbackService:
             else:
                 feedback["videos"].pop(vid, None)
             atomic_json(fpath, feedback)
-            if a["value"] not in ("battles", "partial"):
+            if confirmed(a) and a["value"] in ("rocket", "championship", "obscured"):
+                labels["videoType"] = a["value"]   # observed meta excludes rocket; championship is its own format
+                atomic_json(labels_path, labels)
+            elif confirmed(a):
+                labels.pop("videoType", None)
+                atomic_json(labels_path, labels)
+            if a["value"] not in REPROCESS_VALUES:
                 for request in (self.work / "requeue").glob("*.json"):
                     if read_json(request, {}).get("videoId") == vid:
                         request.unlink(missing_ok=True)
-            if a["value"] in ("battles", "partial"):
+            if a["value"] in REPROCESS_VALUES:
                 # Immutable request per revision; consumer claims each file atomically.
                 token = hashlib.sha256((a["qid"] + signature(a)).encode()).hexdigest()[:24]
                 atomic_json(self.work / "requeue" / (token + ".json"), {"videoId": vid, "reason": "Reviewer confirmed missed battle footage", "requestedAt": now()})
