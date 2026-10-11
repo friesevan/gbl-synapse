@@ -279,6 +279,148 @@ Held out by video, with the models' parameters unchanged:
 
 Measured on the benchmark recordings (no fast-move labels yet): your team’s fast moves were consistent across battles (Azumarill Bubble, Galarian Corsola Astonish, Registeel Lock-On, Corviknight Sand Attack, Electivire Thunder Shock in 17 of 19 battles, Scrafty Counter in 15 of 18, Ferroseed Metal Claw in 14 of 16). Confirming them with the contributor is the next validation step.
 
+### Battles from zero-battle videos (2026-10-11)
+
+52 harvested videos showed the battle HUD on the probe's keyframes (more than 20 keyframes in 46) but gave
+0 battles. Where they were lost, from the saved results plus 10 re-downloaded and 12 cached videos:
+
+| Cause | Videos | Stage that drops the battle |
+| --- | --- | --- |
+| Game UI in Japanese (26), Korean (16) or Chinese (1) | 43 of 52 | Nameplate OCR and dictionary: no name matches the English list, and the HUD tracker keeps only battles with a species. Over all 462 saved analyses, 101 of 102 Japanese-titled, 39 of 41 Korean and 20 of 20 Chinese videos had no battle. |
+| Wrong first calibration | 3c8JZ4pQq50 | Calibration dy: set once, on a team card (−20 instead of 7); 37 of 2,479 HUD frames read. |
+| Phone top cropped into the nameplates | L2Iyrc06j00 (Japanese) | Calibration dy: ≈ −128, below the −120 limit; never calibrated. |
+| Wrong screen: static art passes the HUD test | u2jAMngLVBw | Screen locate: a facecam panel with a palette of red dots read "balls" on 29 of 32 frames (the phone 24). |
+| Screen box 1–11% too wide (frame borders) | GMF7uTFAyHM; afvH9iu5WsE (with a language) | Screen locate: the opponent's third ball reads '?', so no fresh HUD is seen and battles merge, or calibration fails. |
+| Stream chat over the nameplates | c-aCjcD7OxQ | Not recoverable: names are covered. |
+| No battles (PvPoke rankings page) | DxiBdcqzQME | Correct: 0 battles, before and after. |
+| Other English videos with ≤ 14 HUD keyframes (Rocket, events, raids) | 4 | Not examined. |
+
+The same causes cost battles in videos that did produce some:
+- German UIs read 1.39 opponent species per battle (English 2.49).
+- No German, Spanish or Portuguese result screen was ever read (0 of 464 battles).
+- 17 videos had a "battle" longer than 330 s: merged battles, mostly bordered screens.
+- maw_a7oKYMM (Chinese, unprobed before) changes its nameplate offset between battles (22 and 37), and a
+  bezel line 1% outside the screen hid the HUD from the locator.
+- 24 saved battles were the first 0–18 s of a battle split off (a shield or ball misread while the HUD
+  settled), and 8 were a single HUD frame.
+
+**Fixes**
+- **Other UI languages** (`core.js` LOCALES, `species-names.json`). Species names in Japanese, Korean,
+  Chinese (traditional and simplified), German, French, Spanish and Italian come from PokeAPI's CSV data
+  (`tests/meta-benchmark/build-species-names.cjs`, BSD-3-Clause), keyed by Pokédex number and mapped to
+  the same PvPoke entries as the English name; Mega and Primal forms carry the language's prefix.
+  - Latin-script names are matched on the English OCR text. CJK plates are read again with Tesseract's
+    `jpn`, `kor`, `chi_tra`, `chi_sim` fast models (`~/.cache/gbl-synapse/tessdata`, `TESSDATA_LOCALES`;
+    run-node uses only the models present). Japanese OCR look-alikes (一/ー, 口/ロ, hiragana, small kana)
+    and a stray digit or letter at either end are folded.
+  - `NameLanguage` decides the video's language from exact matches of distinct species: it switches once,
+    after two exact matches (or one long one while English has none). Until then the other languages are
+    only consulted, so English videos keep their results. CJK reads stop after English has 3 species or
+    40 unread plates. Plates cached as unreadable are read again after the switch.
+  - Result screens: DU HAST GEWONNEN! / GUT GEKÄMPFT!, ¡GANASTE! / ¡HAS GANADO! / ¡BUEN INTENTO!,
+    VOCÊ VENCEU! / ÓTIMA TENTATIVA! (read from harvested videos). The CJK videos examined cut their result
+    screens, so CJK results come only from the Poké Ball count.
+  - The browser reads the Latin-script languages; CJK needs the Node runner (no bundled CJK models).
+- **Recalibration** (`core.js` HudOffset, run-node and the browser).
+  - A frame whose HUD doesn't read is calibrated again: every 4th such frame until the offset has named a
+    species, then every 20th. A new offset (> 4 px from every proven one) is kept only if its nameplates
+    name a species on that frame.
+  - Proven offsets are tried before calibrating, since some videos change the offset between battles
+    (maw_a7oKYMM: 22 and 37). Videos with one offset are unchanged.
+  - `calibrate` tries offsets below −120 (down to −150) only when the usual range finds nothing, and boxes
+    are clipped at the frame top: uploads that crop the phone's top can leave the names at the edge
+    (L2Iyrc06j00: dy ≈ −128).
+- **Screen locate** (`screen.js`, probe and browser).
+  - A frame counts for a candidate box only if both name boxes hold text (≥ 12 ink cells; real names
+    100–200), which rejects static art.
+  - `refine`: the six Poké Ball centres on the ball row give the screen's true left edge and width (least
+    squares, median over ≥ 3 frames); applied when the box is off by ≥ 0.8% or its width by ≥ 1.2%, and only
+    if the HUD reads on at least as many frames.
+  - When nothing is found, strong-edge candidates are tried with each side moved in by 1–3% (a bezel line
+    just outside the screen: maw_a7oKYMM). This costs about 12 s more on videos without a HUD.
+- **Split starts and one-frame battles** (`core.js` HudTracker).
+  - A fresh HUD within 20 s of a battle's start, with the nameplates on screen throughout (gaps < 8 s) and
+    nobody fainted, continues the battle; the misread "used" shields are cleared.
+  - A battle seen on a single HUD frame that opened mid-battle is dropped when a later HUD closes it (kept at
+    the end of a recording).
+- **Wide, tablet-shaped screens** (`hp.js` barSettings/assignBars/track, run-node and the browser). After
+  cropping, phones measure 0.39–0.57 (width/height), tablets 0.62–0.75. Bar positions on 5 wide and 4 phone
+  videos:
+  - Your bar starts at x ≈ 110–145 of 886 on wide screens (phones 50–80), outside the phone window, so your
+    HP series was empty.
+  - In a charged-attack cutscene the attacker's bar is drawn centred (x ≈ 320) on every screen, whoever
+    attacks. That is inside the opponent's window, so your cutscene bar was read as the opponent's (aura,
+    effect text).
+  - Screens ≥ 0.6 now use x 30–230 for your bar and skip centred bars. Phone screens keep the old rule: there
+    a centred bar can be the opponent's, which is why the earlier guard changed normal videos.
+  - Outline colour isn't used: the opponent's outline is bluer (b − r +13…+50 against −29…+5 for yours), but
+    the ranges depend on the video and encoding.
+  - S67R41DZFuY: matchups with hits on your bar 6 → 18 of 23 (7 → 72 hits); ORyJbp1_81k: 8 → 18 of 28
+    (9 → 50). Opponent hits are unchanged except two single hits (0.33, 0.05) from centred bars. 50 harvested
+    videos measure ≥ 0.55; they had hits on your bar in 11–43% of matchups (phones 64–68%).
+
+**Battles recovered.** Harvest path (probe → plan → run-node) with the final code; German and wide videos
+with their saved crop. Before = the saved harvest result.
+
+| Video | UI | Battles | Opp. species | Results | Full teams | What fixed it |
+| --- | --- | --- | --- | --- | --- | --- |
+| afvH9iu5WsE | ja | 0 → 5 | 0 → 14 | 0 → 0 | 0 → 4 | language, box refit (2.4%) |
+| lC6aiKQuZ5c | ja | 0 → 7 | 0 → 20 | 0 → 0 | 0 → 6 | language |
+| stLd7OkIg3Y | ja | 0 → 4 | 0 → 12 | 0 → 0 | 0 → 4 | language |
+| L2Iyrc06j00 | ja | 0 → 6 | 0 → 8 | 0 → 0 | 0 → 0 | language, offset −129 |
+| -mROfxnNVBk | ko | 0 → 5 | 0 → 12 | 0 → 3 | 0 → 3 | language (288 × 640 source; your names are nicknames) |
+| maw_a7oKYMM | zh-Hant | 0 → 6 | 0 → 16 | 0 → 0 | 0 → 4 | language, inset locate, second offset |
+| 3c8JZ4pQq50 | en | 0 → 12 | 0 → 36 | 0 → 2 | 0 → 12 | recalibration (−20 → 8) |
+| u2jAMngLVBw | en | 0 → 10 | 0 → 30 | 0 → 1 | 0 → 10 | name-text guard (phone instead of facecam art) |
+| c-aCjcD7OxQ | en | 0 → 0 | | | | covered by stream chat |
+| DxiBdcqzQME | en | 0 → 0 | | | | no battles (PvPoke page) |
+| GMF7uTFAyHM | en | 1 → 9 | 1 → 24 | 1 → 2 | 0 → 6 | box refit (11%) |
+| cVMJbsB5l9c | en | 1 → 10 | 3 → 29 | 0 → 0 | 1 → 9 | box refit (7%) |
+| vPjKop__xf0 | en | 4 → 10 | 12 → 30 | 1 → 2 | 4 → 10 | box refit (2.7%) |
+| glOZKkCcUq0 | en | 12 → 18 | 35 → 54 | 6 → 6 | 11 → 18 | box refit (1.9%) |
+| khxysRLr8AE | es | 1 → 4 | 3 → 10 | 0 → 1 | 1 → 3 | box refit (1.3%) |
+| eEO7b_y_u4c | es | 1 → 5 | 3 → 15 | 0 → 0 | 1 → 5 | today's locator already finds this box (stale saved crop) |
+| ktg6J7if8Rc | de | 8 → 16 | 10 → 44 | 0 → 15 | 0 → 13 | language, result text |
+| aOHJSU0dVok | de | 6 → 10 | 9 → 29 | 0 → 10 | 1 → 9 | language, result text |
+| cGATSvEItIM | de | 15 → 14 | 12 → 36 | 0 → 10 | 0 → 9 | language, result text; a 2-s split start merged |
+
+The sampled videos that gave no battle went from 0 to 55 battles (8 of 10 videos), including 33 in the 6 sampled from
+the 52. In an earlier run, the German creators' Master League videos (PbzVRPgmBQY, ftCqcw8_b2U: same names
+as English) went from 0 to 10 results each.
+
+**Checks**
+- **Labelled benchmark** (HEAD vs this code, same crops): all 9 recordings (10min, hour-gl, hour and the 6 CC
+  videos) produce identical JSON (timings aside), so the scores are unchanged: every battle found with 0
+  extra, and 100% opponent species (194/194 in the seven battle-labelled recordings plus 39/39 in the two
+  species-labelled reels).
+- **parity.cjs** (7 stretches, HEAD vs this code): 5 identical. ptxHuMJ5XuE (a wide screen) and PbzVRPgmBQY
+  (German UI, wide) differ only in HP-based inference, plus PbzVRPgmBQY gains a "GUT GEKÄMPFT" loss. A
+  structural run (boundaries, species, results) on those two and on S67R41DZFuY and ORyJbp1_81k (whole
+  videos) found every battle unchanged.
+- **Box refit on working videos** (13 of 74 cached videos get a refit box): 5bUC_RoKQZU, EEnbQKeE0hQ,
+  GT2HaKrxyDc and NW3GlL5ayBI keep their battles and species (5, 5, 17, 10); two gain a result. The other
+  located boxes are unchanged.
+- **Team Rocket**: 4xAdR0ReAsc (Rocket grunts) keeps its 11 battles, and all 11 are still flagged
+  (`league.rocket_evidence`).
+- **No false battles**: a PvPoke rankings page full of Pokémon names (DxiBdcqzQME) and nameplates covered by
+  stream chat (c-aCjcD7OxQ) still give 0. English videos never switched language. Battles under 30 s among the
+  results: one split start in khxysRLr8AE, 3 + 1 tracker splits in cGATSvEItIM and ktg6J7if8Rc (the same kind
+  as in the saved results), and the Rocket battles of 4xAdR0ReAsc (short in both runs).
+- Removed by the tracker rules, all noise: the one-frame battle in ktg6J7if8Rc at 1751.5 s (the real battle
+  starts 0.5 s later) and a 2-s start in cGATSvEItIM.
+
+**Left**
+- Result screens, "Go, X!" and "X used Y!" banners and effectiveness text in CJK languages; French and
+  Italian result texts (no sample yet). "NO MUY EFICAZ" and similar aren't read.
+- The browser has no CJK models.
+- Re-extraction needs the videos: 101 + 39 + 20 earlier zero-battle runs with Japanese, Korean or Chinese
+  titles, and the German, Spanish and Portuguese videos (results).
+- Splits longer than 20 s and merged battles remain in some edited videos (khxysRLr8AE: its first battle is
+  split at 31 s).
+- Not examined: the 4 English videos with ≤ 14 HUD keyframes (Rocket, events).
+- The no-HUD probe is about 12 s slower (inset search).
+- `aura-features.cjs` (the Shadow agent's) still assigns bars with the phone windows.
+
 ### Effectiveness text (`hp.js` effectBox/effectSig/effectKind, `combat.js` effectLogL)
 When a fast attack lands, the game flashes **SUPER EFFECTIVE!** or **NOT VERY EFFECTIVE…** in white just above the target's HP bar. Every sampled frame checks that strip (from 6 px left of the bar to 320 px right, 3–50 px above it, at the 886 px reference width) with a 96×12 fingerprint of near-white pixels. The strip is read only when it looks like text:
 - 3–45% of it is lit;
@@ -715,7 +857,7 @@ No video, frames or trainer names are stored. Under **Your analyses**, each reco
 
 ## Contributor workflow
 
-1. Select an English-language battle recording. Portrait screen recordings work best; browser codec support determines which MP4/MOV/WebM files can be decoded. iPhone recordings are HEVC (H.265): Chrome, Edge and Safari on macOS decode them, Firefox does not. H.264 MP4 is the most portable choice.
+1. Select a battle recording. English, German, French, Spanish, Portuguese and Italian game UIs are read in the browser; Japanese, Korean and Chinese ones need the Node runner, which has their OCR models (*Battles from zero-battle videos*). Portrait screen recordings work best; browser codec support determines which MP4/MOV/WebM files can be decoded. iPhone recordings are HEVC (H.265): Chrome, Edge and Safari on macOS decode them, Firefox does not. H.264 MP4 is the most portable choice.
 2. Set the actual **recording date**, league, cup and rating bracket. The recording date deliberately does not default to today: old recordings must not masquerade as current usage.
 3. Optional: pause during a normal battle and use **Read this frame** to check the nameplate reading (names, Poké Balls, shields). The layout is found automatically; only the charged-attack banner box is adjustable.
 4. Select a start/end range and sampling (keyframes by default), then analyze. Cancel preserves partial detections. First use loads a local English OCR model; subsequent sessions reuse its browser cache.
@@ -746,7 +888,7 @@ The result and banner reads normally occur when nameplate OCR is absent, with a 
 
 Tesseract.js 6.0.1 / core 6.0.0 run in a persistent Web Worker, using the English `tessdata_fast` model and line segmentation (PSM 7). Crops below 48 pixels high are upscaled 2× before OCR. Assets are served from this site, avoiding runtime OCR CDN dependencies. A single worker bounds CPU/memory demand; separate contributors parallelize computation on their own devices.
 
-Names use the bundled PvPoke Game Master (snapshot already used by PvPoke Pro). Normalization removes case, accents and punctuation and strips a CP token. Full lines are matched, supporting names such as Mr. Mime and Tapu Fini. Exact visible-name matches can map to several species IDs (regular / Shadow / region / special form). These remain **unresolved**. An edit-distance-one match for strings at least five characters long is a **suggestion only**, never an automatic form assignment. Arbitrary nicknames and other languages are not resolved.
+Names use the bundled PvPoke Game Master (snapshot already used by PvPoke Pro). Normalization removes case, accents and punctuation and strips a CP token. Full lines are matched, supporting names such as Mr. Mime and Tapu Fini. Exact visible-name matches can map to several species IDs (regular / Shadow / region / special form). These remain **unresolved**. An edit-distance-one match for strings at least five characters long is a **suggestion only**, never an automatic form assignment. Arbitrary nicknames are not resolved. Other game languages: see *Battles from zero-battle videos* below.
 
 OCR confidence is Tesseract’s score, not a calibrated probability of species correctness. Confidence must be at least 45 for a name observation, and two matching observations less than five seconds apart are needed to confirm a sighting. Per-battle duplicate base-name sightings are merged. This cannot automatically distinguish two forms of the same base species; review is necessary, and standard GBL species-duplication rules constrain legitimate teams.
 
@@ -844,7 +986,8 @@ No benchmark currently establishes global extraction accuracy or a speedup over 
 - Original prototype: https://github.com/evanjfries/PoGoAnalyzer (user-owned local source)
 - Pokémon/move data: https://github.com/pvpoke/pvpoke (existing bundled Game Master)
 - Browser OCR: https://github.com/naptha/tesseract.js, https://github.com/naptha/tesseract.js-core
-- English fast LSTM data: https://github.com/tesseract-ocr/tessdata_fast
+- English fast LSTM data: https://github.com/tesseract-ocr/tessdata_fast (the Node runner also uses its `jpn`, `kor`, `chi_tra` and `chi_sim` models, Apache-2.0, kept in `~/.cache/gbl-synapse/tessdata`, not in the project)
+- Species names in other languages (`species-names.json`): https://github.com/PokeAPI/pokeapi, `data/v2/csv/pokemon_species_names.csv` (BSD-3-Clause)
 - OCR dependency license texts are retained in `vendor/`.
 
 Final full-recording check before the last speed refinements: 650 seconds processed in **154.4 seconds**, with **1,694 OCR reads**, four battle candidates and three revealed Pokémon per side for each candidate. Two Wins were confirmed; the third result was missed and the fourth battle ended without a result in the file. “Quwilfish” remained a fuzzy, unresolved suggestion. This demonstrates why review remains mandatory. Later refinements add a pale-nameplate gate, tighter thresholded charged-banner crop, and a 0.15-second result confirmation sample. The full timing does not establish a speedup over the native prototype.

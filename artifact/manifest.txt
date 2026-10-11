@@ -20,6 +20,7 @@ includes/meta/observed.js
 includes/meta/questions.js
 includes/meta/screen.js
 includes/meta/shadow-model.js
+includes/meta/species-names.json
 includes/meta/timeline.js
 includes/meta/ui.js
 includes/meta/validation.js

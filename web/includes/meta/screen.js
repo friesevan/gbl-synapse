@@ -18,7 +18,12 @@ function peaks(profiles,min=.25,keep=8){const n=profiles[0].length,med=new Float
  cand.sort((x,y)=>y[1]-x[1]);const out=[0,n];for(const [a] of cand){if(out.length>=keep+2)break;if(out.every(b=>Math.abs(b-a)>6))out.push(a);}return out.sort((x,y)=>x-y);}
 function crop(img,[x0,y0,x1,y1]){const w=x1-x0,h=y1-y0,data=new Uint8ClampedArray(w*h*4);for(let y=0;y<h;y++)data.set(img.data.subarray(((y0+y)*img.width+x0)*4,((y0+y)*img.width+x1)*4),y*w*4);return {data,width:w,height:h};}
 // How many frames show a readable HUD inside the box (balls on both sides after calibration).
-function hudScore(frames,box){let ok=0,dys=[];for(const f of frames){const c=crop(f,box),dy=C.calibrate(c);if(dy!==null){ok++;dys.push(dy);}}return {ok,dy:dys.sort((a,b)=>a-b)[dys.length>>1]??null};}
+// Static art can pass the ball test on every frame: u2jAMngLVBw's facecam panel (a pale wall beside a palette
+// of red and orange dots) read on 29 of 32 frames, more than the phone (24), and won the screen. Its "opponent
+// nameplate" never held text. A frame only counts when both name boxes show text (≥ 12 ink cells of the
+// 64×12 fingerprint; real names have 100–200).
+const inked=s=>{let n=0;for(let i=0;i<s.bits.length;i++)n+=s.bits[i];return n>=12;};
+function hudScore(frames,box){let ok=0,dys=[];for(const f of frames){const c=crop(f,box),dy=C.calibrate(c);if(dy===null)continue;const h=C.readHud(c,dy);if(h&&!(inked(h.my)&&inked(h.opponent)))continue;ok++;dys.push(dy);}return {ok,dy:dys.sort((a,b)=>a-b)[dys.length>>1]??null};}
 // frames: several RGBA images ({data,width,height}) spread over the video, ideally mid-battle.
 // Returns {box:[x0,y0,x1,y1] in frame pixels, score, frames, dy, aspect} or null when no HUD is found.
 // Phones run from about 9:16 to 9:21; letterboxed or cropped uploads may lose some height, so
@@ -37,8 +42,37 @@ function locate(frames,{minAspect=.38,maxAspect=.75}={}){if(!frames.length)retur
  // Branded layouts may have one phone edge against a background of similar brightness. Try
  // weaker persistent boundaries only after the cheap pass fails; require repeated HUD evidence
  // so a pale team card cannot stand in for the actual battle screen.
- if(!best)check(candidates(peaks(xp,.12,16),peaks(yp,.18,6)),Math.min(frames.length,Math.max(2,Math.ceil(frames.length*.2))));
- if(!best)return null;best.box=snap(frames,best.box);return {...best,frames:frames.length,aspect:+((best.box[2]-best.box[0])/(best.box[3]-best.box[1])).toFixed(3)};}
+ const weak=best?[]:candidates(peaks(xp,.12,16),peaks(yp,.18,6));
+ if(!best)check(weak,Math.min(frames.length,Math.max(2,Math.ceil(frames.length*.2))));
+ // A bezel or frame line just outside the screen can be the strongest edge: a box 1% too wide on one side
+ // already reads no HUD at all (maw_a7oKYMM: 0 of 32 frames at x 337, 19 at x 340 of 960). Last resort:
+ // every strong-edge candidate with its sides moved inward by 1–3% of its width, screened on 8 frames first.
+ if(!best){const few=frames.filter((_,i)=>i%Math.max(1,Math.floor(frames.length/8))===0).slice(0,8),seen=new Set(),inset=[];
+  for(const box of tried){const w=box[2]-box[0];for(const l of [0,1,2,3])for(const r of [0,1,2,3]){if(!l&&!r)continue;const b=[box[0]+Math.round(w*l/100),box[1],box[2]-Math.round(w*r/100),box[3]],key=b.join();if(seen.has(key)||checked.has(key))continue;seen.add(key);if(hudScore(few,b).ok>=2)inset.push(b);}}
+  check(inset,Math.min(frames.length,Math.max(2,Math.ceil(frames.length*.2))));}
+ if(!best)return null;best.box=snap(frames,best.box);const fixed=refine(frames,best.box);if(fixed){const s=hudScore(frames,fixed.box);if(s.ok>=best.score){best.box=fixed.box;best.score=s.ok;best.dy=s.dy;best.refined=fixed.fit;}}
+ return {...best,frames:frames.length,aspect:+((best.box[2]-best.box[0])/(best.box[3]-best.box[1])).toFixed(3)};}
+// Horizontal fit from the Poké Balls (2026-10-11). Branded layouts frame the phone with borders that the
+// edge search can take for the screen's edge: a box 1–8% too wide or shifted reads the nameplates off
+// target (the opponent's third ball reads '?', names are cut), so no fresh HUD is ever seen, battles merge
+// (GMF7uTFAyHM: 1 battle of 12 minutes) or none is found. The six balls' centres on the ball row give the
+// screen's true left edge and width: centre = left + width × reference x / 886.
+const BALL_X=[46,93,142,743,791,840];
+function ballCentres(c,dy){const s=c.width/886,y=Math.round((173+dy)*s),w=c.width,d=c.data;if(y<0||y>=c.height)return null;
+ const plain=x=>{const i=(y*w+x)*4,mn=Math.min(d[i],d[i+1],d[i+2]),mx=Math.max(d[i],d[i+1],d[i+2]);return mn>=170&&mx-mn<60;};
+ const runs=[];let a=-1;for(let x=0;x<=w;x++){const on=x<w&&!plain(x);if(on&&a<0)a=x;if(!on&&a>=0){runs.push([a,x-1]);a=-1;}}
+ // Balls: icon-sized runs with nameplate on both sides; yours are the first three, the opponent's the last three.
+ const icons=runs.filter(([p,q])=>p>0&&q<w-1&&q-p+1>=18*s&&q-p+1<=40*s),mid=w/2,left=icons.filter(r=>r[1]<mid).slice(0,3),right=icons.filter(r=>r[0]>mid).slice(-3);
+ if(left.length<3||right.length<3)return null;return [...left,...right].map(([p,q])=>(p+q)/2);}
+function refine(frames,box,{minShift=.008,minScale=.012}={}){const fits=[];
+ for(const f of frames){const c=crop(f,box),dy=C.calibrate(c);if(dy===null)continue;const xs=ballCentres(c,dy);if(!xs)continue;const s=c.width/886,u=BALL_X.map(x=>x*s);
+  // Least squares: xs = o + k·u.
+  const n=6,mu=u.reduce((p,q)=>p+q,0)/n,mx=xs.reduce((p,q)=>p+q,0)/n;let num=0,den=0;for(let i=0;i<n;i++){num+=(u[i]-mu)*(xs[i]-mx);den+=(u[i]-mu)**2;}const k=num/den,o=mx-k*mu;
+  if(Math.max(...xs.map((x,i)=>Math.abs(o+k*u[i]-x)))<=3*s&&k>.85&&k<1.15)fits.push({o,k});}
+ if(fits.length<3)return null;const med=a=>[...a].sort((p,q)=>p-q)[a.length>>1],o=med(fits.map(f=>f.o)),k=med(fits.map(f=>f.k)),w=box[2]-box[0];
+ if(Math.abs(o)<minShift*w&&Math.abs(k-1)<minScale&&Math.abs(o+k*w-w)<minShift*w)return null;
+ const W=frames[0].width,x0=Math.max(0,Math.round(box[0]+o)),x1=Math.min(W,Math.round(box[0]+o+k*w));if(x1-x0<w*.8)return null;
+ return {box:[x0,box[1],x1,box[3]],fit:{shift:+o.toFixed(1),scale:+k.toFixed(3),frames:fits.length}};}
 // A scaled border usually smears over two columns; the screen starts after the last strong column on
 // its left side and ends before the first on its right (same for rows).
 function snap(frames,box){const out=[...box];for(const [axis,lo,hi] of [['x',0,2],['y',1,3]]){const P=frames.map(f=>edgeProfile(f,axis)),n=P[0].length,med=a=>{const v=P.map(p=>p[a]).sort((x,y)=>x-y);return v[v.length>>1];};
@@ -46,5 +80,5 @@ function snap(frames,box){const out=[...box];for(const [axis,lo,hi] of [['x',0,2
   if(out[lo]>0){let a=out[lo];while(strong(a+1)&&a+1-out[lo]<=2)a++;out[lo]=a;}
   if(out[hi]<n){let a=out[hi];while(strong(a-1)&&out[hi]-(a-1)<=2)a--;if(strong(a))out[hi]=a;}}
  return out;}
-const api={locate,snap,edgeProfile,peaks,crop,hudScore};if(typeof module!=='undefined')module.exports=api;root.MetaScreen=api;
+const api={locate,snap,refine,ballCentres,edgeProfile,peaks,crop,hudScore};if(typeof module!=='undefined')module.exports=api;root.MetaScreen=api;
 })(typeof window==='undefined'?globalThis:window);

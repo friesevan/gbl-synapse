@@ -73,7 +73,9 @@ test('the phone screen is found inside a wide frame by its edges and a readable 
  const S=require('../includes/meta/screen.js');
  // A 443-wide phone frame (half the reference) with white nameplates and red Poké Balls on a green field.
  const phone=(w=443,h=900)=>{const d=new Uint8ClampedArray(w*h*4),s=w/886,fill=(box,c)=>{const [x0,y0,x1,y1]=box.map(v=>Math.round(v*s));for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)d.set([...c,255],(y*w+x)*4);};
-  for(let i=0;i<d.length;i+=4)d.set([70,140,80,255],i);for(const side of ['my','opponent']){fill(C.HUD.panel[side],[250,250,250]);for(const b of C.HUD.balls[side])fill(b,[230,40,40]);}return {data:d,width:w,height:h};};
+  for(let i=0;i<d.length;i+=4)d.set([70,140,80,255],i);for(const side of ['my','opponent']){fill(C.HUD.panel[side],[250,250,250]);for(const b of C.HUD.balls[side])fill(b,[230,40,40]);
+   // Name text (dark strokes): a HUD without a name is static art, not a battle (screen.js hudScore).
+   const [n0,,n1]=C.HUD.name[side];for(let x=n0+2;x<n1-4;x+=8)fill([x,132,x+4,148],[30,30,30]);}return {data:d,width:w,height:h};};
  const wide=(x0,seed)=>{const W=1200,H=900,d=new Uint8ClampedArray(W*H*4),p=phone();let r=seed;for(let i=0;i<d.length;i+=4){r=(r*1103515245+12345)&0x7fffffff;const v=40+(r>>16)%30;d.set([v,v+10,v+40,255],i);}
   for(let y=0;y<H;y++)d.set(p.data.subarray(y*p.width*4,(y+1)*p.width*4),(y*W+x0)*4);return {data:d,width:W,height:H};};
  const r=S.locate([1,2,3,4].map(k=>wide(500,k)));assert.deepEqual(r.box,[500,0,943,900]);

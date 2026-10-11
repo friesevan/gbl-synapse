@@ -1,6 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const S=require('../includes/meta/screen.js'),C=require('../includes/meta/core.js');
+// Dark letter strokes across a nameplate's name box (real nameplates always show a name).
+function text(fill,box,side){const [x0,,x1]=box(C.HUD.name[side]),[,y0]=box([0,132,0,0]),[,y1]=box([0,148,0,0]);for(let x=x0+1;x<x1-1;x+=3)fill([x,y0,x+1,y1],[40,40,40]);}
 function overlay(seed=0){
  const W=960,H=540,x0=355,w=250,data=new Uint8ClampedArray(W*H*4);
  for(let i=0;i<data.length;i+=4)data.set([95,110,150,255],i);
@@ -13,6 +15,7 @@ function overlay(seed=0){
   const box=b=>b.map((v,i)=>Math.round(v*scale)+(i%2===0?x0:0));
   fill(box(C.HUD.panel[side]),[250,250,250]);
   for(const b of C.HUD.balls[side])fill(box(b),[230,40,40]);
+  text(fill,box,side);
  }
  return {width:W,height:H,data};
 }
@@ -35,5 +38,12 @@ test('probe plan: skip without HUD, whole video when mostly battles, ranges othe
  assert.deepEqual(P.plan(p),{CROP:'1,2,3,4',RANGES:'0-10'});assert.deepEqual(P.plan({...p,keyInterval:30,ranges:[]}),{CROP:'1,2,3,4'});assert.deepEqual(P.plan(null),{});});
 test('a second phone screen of the same size is found beside the first (championship broadcasts)',()=>{const frames=[0,1,2].map(()=>{const f=overlay(0),W=f.width,x0=650,w=250,scale=w/886;
   const fill=(box,c)=>{const [a,b,z,d]=box;for(let y=b;y<d;y++)for(let x=a;x<z;x++)f.data.set([...c,255],(y*W+x)*4);};fill([x0,0,x0+w,f.height],[70,140,80]);
-  for(const side of ['my','opponent']){const box=b=>b.map((v,i)=>Math.round(v*scale)+(i%2===0?x0:0));fill(box(C.HUD.panel[side]),[250,250,250]);for(const b of C.HUD.balls[side])fill(box(b),[230,40,40]);}return f;});
+  for(const side of ['my','opponent']){const box=b=>b.map((v,i)=>Math.round(v*scale)+(i%2===0?x0:0));fill(box(C.HUD.panel[side]),[250,250,250]);for(const b of C.HUD.balls[side])fill(box(b),[230,40,40]);text(fill,box,side);}return f;});
  const s=P.secondScreen(frames,[355,0,605,540],3);assert.ok(s&&Math.abs(s.box[0]-650)<=32,'second screen near x=650');assert.equal(P.secondScreen([overlay(0)],[355,0,605,540],1),null);});
+test('static art with red dots on a pale card but no name text never counts as a battle HUD',()=>{
+ const frames=[0,1,2,3].map(()=>{const f=overlay(0),W=f.width,x0=650,w=250,scale=w/886,fill=(box,c)=>{const [a,b,z,d]=box;for(let y=b;y<d;y++)for(let x=a;x<z;x++)f.data.set([...c,255],(y*W+x)*4);};
+  fill([x0,0,x0+w,f.height],[70,140,80]);for(const side of ['my','opponent']){const box=b=>b.map((v,i)=>Math.round(v*scale)+(i%2===0?x0:0));fill(box(C.HUD.panel[side]),[250,250,250]);for(const b of C.HUD.balls[side])fill(box(b),[230,40,40]);}return f;});
+ assert.equal(S.hudScore(frames,[650,0,900,540]).ok,0);assert.equal(S.hudScore(frames,[355,0,605,540]).ok,4);});
+test('a box a little too wide is refitted to the screen from the Poké Ball centres',()=>{
+ const frames=[0,1,2,3].map(overlay),fixed=S.refine(frames,[351,0,605,540]);assert.ok(fixed,'refitted');
+ assert.ok(Math.abs(fixed.box[0]-355)<=1&&Math.abs(fixed.box[2]-605)<=1,JSON.stringify(fixed));assert.equal(S.refine(frames,[355,0,605,540]),null,'a correct box is kept');});

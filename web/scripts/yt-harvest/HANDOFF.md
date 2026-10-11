@@ -125,7 +125,7 @@ Takes effect when the harvester is restarted.
 - **Further question ideas (not built):**
   - Species check when nameplate OCR confidence is below ~60 (`full[].*.confidence` is saved).
   - "Is this the same creator team?" for team pooling.
-  - Language of the game UI: Japanese-UI videos show a HUD but the extractor finds no battles.
+  - Language of the game UI: no longer needed; the extractor recognises it (status 2026-10-11 ~19:00 below).
 
 ## Files and checks
 
@@ -191,7 +191,7 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
   the battle stretches of 14 more. That's about 1.5× fewer worker-hours. The default is now 8 workers.
 - Open items:
   - worker-count benchmark on an idle machine (`tests/meta-benchmark/bench-workers.cjs`);
-  - Japanese-UI videos give 0 battles (extractor);
+  - Japanese-UI videos give 0 battles (extractor): done, see the status of ~19:00 below;
   - a nameplate species-check question;
   - HP bars on low-resolution YouTube crops: done (next section);
   - ~~the Shadow classifier flips two forms~~ fixed (likelihood ratio within each form).
@@ -218,7 +218,7 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
     own schedule.
   - Restart the harvester so new videos use the new detector.
   - Wide, tablet-shaped screens (`S67R41DZFuY`, `ORyJbp1_81k`) can put your bar mid-screen, where it is
-    read as the opponent's. A layout-aware side assignment is still open.
+    read as the opponent's: done (status of ~19:00 below).
   - YouTube asked "confirm you're not a bot" until 14:30 today; downloads then worked.
 - No "Is the HP bar here?" Validate question was added. The outline score separates bars from look-alikes
   cleanly (real ≥ 0.9, others < 0.1), and a visual check found no false bars, so labelled ground truth
@@ -271,3 +271,31 @@ private. Details are in `scripts/freellm/README.md`.
   refit 51 has held-out metrics. The learning loop now also reports fast-move and form log-loss,
   calibration bins and the effective resolution threshold.
 - **Restart the app** to load it. The backfill runs once on start-up and writes only `metrics-history.json`.
+
+## Status 2026-10-11 ~19:00 (battles from zero-battle videos)
+
+Details and numbers: `includes/meta/README.md`, *Battles from zero-battle videos*. Takes effect on the next
+harvester start (not restarted).
+
+- Root causes of the 52 probed "HUD seen, 0 battles" runs: 43 had a Japanese (26), Korean (16) or Chinese (1)
+  game UI; the rest were a wrong first calibration, a facecam panel taken for the screen, screen boxes a few
+  percent too wide, stream chat over the nameplates, and a PvPoke-rankings video without battles.
+- Fixed: nameplates in Japanese, Korean, Chinese, German, French, Spanish and Italian (PokeAPI names in
+  `includes/meta/species-names.json`; CJK OCR needs Tesseract's `jpn`, `kor`, `chi_tra` and `chi_sim` fast models in
+  `~/.cache/gbl-synapse/tessdata`, downloaded from github.com/tesseract-ocr/tessdata_fast, Apache-2.0); German,
+  Spanish and Portuguese result screens; recalibration after a wrong first offset; Poké-Ball refit of the
+  screen box; a name-text requirement against static art; offsets down to −150 for cropped tops; split battle
+  starts and one-frame battles in the tracker; wide-screen HP-bar sides. The 10 re-downloaded videos are in
+  `relabel-cache/` (afvH9iu5WsE, lC6aiKQuZ5c, stLd7OkIg3Y, L2Iyrc06j00, -mROfxnNVBk, maw_a7oKYMM,
+  3c8JZ4pQq50, u2jAMngLVBw, c-aCjcD7OxQ, DxiBdcqzQME).
+- Sample results (before → after): 10 re-downloaded zero-battle videos 0 → 55 battles (Japanese 0 → 22 in
+  4 videos, Korean 0 → 5, Chinese 0 → 6, English 0 → 22; a PvPoke-page video and one with chat over the
+  nameplates stay at 0); merged-battle videos GMF7uTFAyHM 1 → 9, cVMJbsB5l9c 1 → 10, vPjKop__xf0 4 → 10,
+  glOZKkCcUq0 12 → 18; German ktg6J7if8Rc 8 → 16 battles (results 0 → 15). Benchmark and parity unchanged;
+  Rocket flags unchanged.
+- Requeue: the earlier zero-battle runs with Japanese, Korean or Chinese titles (101 + 39 + 20 videos; most
+  videos were deleted) and the German, Spanish and Portuguese videos (results, German species) would gain from a
+  re-extraction. Only Validate's "battles are shown" requeue downloads again; nothing was requeued.
+- Open: CJK result screens and "Go"/charged-move banners in other languages (the examined CJK videos cut
+  their result screens); French and Italian result texts (no sample); the browser has no CJK OCR models;
+  `aura-features.cjs` still uses the phone bar windows (Shadow agent's file).

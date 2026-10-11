@@ -77,7 +77,7 @@ async function probe(video,opts={}){const started=Date.now(),info=probeInfo(vide
  const times=scan.times.slice(0,scan.count);
  const gaps=times.slice(1).map((t,i)=>t-times[i]).filter(x=>x>0).sort((a,b)=>a-b),keyInterval=gaps.length?gaps[gaps.length>>1]:null;
  const ranges=rangesFrom(times,hits,info.duration,{pre,post,gap}),covered=ranges.reduce((a,r)=>a+r.end-r.start,0);
- return {...base,box,screens,dy:found.dy,locateScore:found.score,locateMethod,locateFrames:L.frames.length,scanHeight:scanH,scanFullHeight:h,scanBytes:scan.count*SCAN_W*scanH*4,scanMode:'hud-band-v1',samples:scan.count,keyInterval:keyInterval&&+keyInterval.toFixed(2),
+ return {...base,box,screens,dy:found.dy,locateScore:found.score,locateMethod,...(found.refined?{refined:found.refined}:{}),locateFrames:L.frames.length,scanHeight:scanH,scanFullHeight:h,scanBytes:scan.count*SCAN_W*scanH*4,scanMode:'hud-band-v1',samples:scan.count,keyInterval:keyInterval&&+keyInterval.toFixed(2),
   hits:hits.filter(Boolean).length,hitTimes:times.filter((_,i)=>hits[i]).map(t=>+t.toFixed(1)),ranges,coverage:info.duration?+(covered/info.duration).toFixed(3):0,seconds:+((Date.now()-started)/1000).toFixed(1)};}
 
 // How run-node.cjs should be called for a probe: null = skip (no battle HUD), {} = whole video,

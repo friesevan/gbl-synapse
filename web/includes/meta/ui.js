@@ -1,7 +1,7 @@
 (function(){'use strict';
 const $=id=>document.getElementById(id),C=MetaExtractorCore;
 const defaults={move:[8,30.2,84,3.8]};
-let crops=JSON.parse(JSON.stringify(defaults)),gm,dict,byId,worker,workerPromise,url,file,fingerprint,run=[],records=[],busy=false,stop=false,example=false,metrics={},sessionId=crypto.randomUUID(),hudDy=null,screen=null;
+let crops=JSON.parse(JSON.stringify(defaults)),gm,dict,locales={},nameLanguage=new C.NameLanguage(),byId,worker,workerPromise,url,file,fingerprint,run=[],records=[],busy=false,stop=false,example=false,metrics={},sessionId=crypto.randomUUID(),hudDy=null,screen=null;
 // The phone screen inside the video, [x0,y0,x1,y1] in video pixels (null: the whole frame). Wide uploads
 // (YouTube, streams) embed the phone beside a facecam or overlay; it is found by MetaScreen before a run.
 const SX=()=>screen?screen[0]:0,SY=()=>screen?screen[1]:0,SW=()=>screen?screen[2]-screen[0]:$('metaVideo').videoWidth,SH=()=>screen?screen[3]-screen[1]:$('metaVideo').videoHeight;
@@ -9,7 +9,10 @@ const storageKey='pvp-meta-records-v1';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const time=t=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
 function status(text){$('metaStatus').textContent=text;}
-async function data(){if(!gm){gm=await fetch('includes/pro/data/gamemaster.json').then(r=>{if(!r.ok)throw Error('Could not load Pokémon data.');return r.json();});dict=C.dictionary(gm.pokemon);byId=new Map(gm.pokemon.map(p=>[p.speciesId,p]));const list=el('datalist');list.id='metaSpeciesOptions';for(const p of gm.pokemon.filter(p=>!p.speciesId.includes('_mega')&&!p.speciesId.includes('_primal')).sort((a,b)=>a.speciesName.localeCompare(b.speciesName))){const o=el('option');o.value=p.speciesName;list.append(o);}$('metaPanel').append(list);}return gm;}
+async function data(){if(!gm){gm=await fetch('includes/pro/data/gamemaster.json').then(r=>{if(!r.ok)throw Error('Could not load Pokémon data.');return r.json();});dict=C.dictionary(gm.pokemon);
+// Latin-script UI languages (German, French, Spanish, Italian) are read with the English OCR model; CJK nameplates need
+// language models the browser doesn't bundle yet (run-node.cjs reads them).
+const localNames=await fetch('includes/meta/species-names.json').then(r=>r.ok?r.json():null).catch(()=>null);locales=Object.fromEntries(Object.keys(C.LOCALES).filter(l=>!C.LOCALES[l].script).map(l=>[l,C.localeDictionary(gm.pokemon,localNames?.names,l,dict)]));byId=new Map(gm.pokemon.map(p=>[p.speciesId,p]));const list=el('datalist');list.id='metaSpeciesOptions';for(const p of gm.pokemon.filter(p=>!p.speciesId.includes('_mega')&&!p.speciesId.includes('_primal')).sort((a,b)=>a.speciesName.localeCompare(b.speciesName))){const o=el('option');o.value=p.speciesName;list.append(o);}$('metaPanel').append(list);}return gm;}
 function context(){return {cp:Number($('metaLeague').value),cup:$('metaCup').value.trim()||'all',collectedAt:$('metaDate').value,rank:$('metaRating').value.trim(),sessionId,source:'Meta Extractor / reviewed video',example};}
 function view(which){$('metaAnalysisPane').hidden=which!=='analyze';$('metaDataPane').hidden=which!=='data';$('metaValidatePane').hidden=which!=='validate';for(const [id,v] of [['metaAnalyzeView','analyze'],['metaDatasetView','data'],['metaValidateView','validate']]){$(id).setAttribute('aria-pressed',which===v);$(id).classList.toggle('secondary',which!==v);}if(which==='data')renderDataset();if(which==='validate')window.MetaValidation?.render();}
 $('metaAnalyzeView').onclick=()=>view('analyze');$('metaValidateView').onclick=()=>view('validate');if(location.hash==='#validate')view('validate');$('metaDatasetView').onclick=()=>view('data');
@@ -49,7 +52,11 @@ $('metaSeek').onclick=()=>seek(Math.min(Math.max(0,Number($('metaPreviewSecond')
 // ---- HUD sampling ----
 const hudCanvas=document.createElement('canvas'),bandCanvas=document.createElement('canvas');
 function grab(canvas,y0,y1){const video=$('metaVideo'),w=SW();y0=Math.max(0,Math.round(y0));y1=Math.min(SH(),Math.round(y1));canvas.width=w;canvas.height=y1-y0;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,SX(),SY()+y0,w,y1-y0,0,0,w,y1-y0);return ctx.getImageData(0,0,w,y1-y0);}
-function sampleHud(){const w=SW();if(hudDy===null){const img=grab(hudCanvas,0,C.hudBand(w,160));const dy=C.calibrate(img);if(dy===null)return null;hudDy=dy;overlay();}return C.readHud(grab(hudCanvas,0,C.hudBand(w,hudDy)),hudDy);}
+// The first calibration can land on a menu's offset (core.js HudOffset); sampleHud reports a retry offset in
+// hudRetry, which the caller keeps only if its nameplates name a species (readNames).
+let hudOffset=new C.HudOffset(),hudRetry=null;
+function sampleHud(){const w=SW();hudRetry=null;if(hudDy===null){const img=grab(hudCanvas,0,C.hudBand(w,160));const dy=C.calibrate(img);if(dy===null)return null;hudDy=dy;hudOffset=new C.HudOffset(dy);overlay();}const hud=C.readHud(grab(hudCanvas,0,C.hudBand(w,hudDy)),hudDy);if(hud)return hud;
+ const img=grab(hudCanvas,0,C.hudBand(w,160));for(const d of hudOffset.others()){const h=C.readHud(img,d);if(h){hudDy=d;hudOffset.use(d);return h;}}const d2=hudOffset.retry(img),h2=d2===null?null:C.readHud(img,d2);if(h2)hudRetry=d2;return h2;}
 // OCR a region of `source` (canvas). whiteText: binarize white glyphs to black on white first.
 async function ocrRegion(source,box,{whiteText=false,lines=1}={}){const w=await ocrWorker(),[x0,y0,x1,y1]=box,bw=x1-x0,bh=y1-y0,scale=bh<48?2:1;ocrCanvas.width=bw*scale;ocrCanvas.height=bh*scale;const ctx=ocrCanvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,x0,y0,bw,bh,0,0,ocrCanvas.width,ocrCanvas.height);if(whiteText){const image=ctx.getImageData(0,0,ocrCanvas.width,ocrCanvas.height);for(let i=0;i<image.data.length;i+=4){const white=Math.min(image.data[i],image.data[i+1],image.data[i+2])>215;image.data[i]=image.data[i+1]=image.data[i+2]=white?0:255;}ctx.putImageData(image,0,0);}
  if(lines>1)await w.setParameters({tessedit_pageseg_mode:'6'});const result=await w.recognize(ocrCanvas);if(lines>1)await w.setParameters({tessedit_pageseg_mode:'7'});metrics.ocr=(metrics.ocr||0)+1;return {text:result.data.text.trim(),confidence:result.data.confidence};}
@@ -62,7 +69,7 @@ async function readResult(){metrics.resultReads=(metrics.resultReads||0)+1;const
 const cpKnown=new Map();
 async function readNames(hud,cache,cpCache){for(const side of ['my','opponent']){const s=hud[side];
   const known=s.bits&&cache.get(s.bits),ck=side+':'+(known?.key||''),settled=known&&cpKnown.get(ck);if(cpCache&&settled?.n>=2&&difference(s.cpBits,settled.bits)<=.03){s.cp=settled.cp;metrics.cpSkipped=(metrics.cpSkipped||0)+1;}
-  else if(cpCache){let cp=cpCache.get(s.cpBits);if(cp===undefined){const r=await ocrRegion(hudCanvas,s.cpBox);metrics.cpReads=(metrics.cpReads||0)+1;const m=/(\d{2,5})/.exec(r.text.replace(/[oO]/g,'0'));cp=m?Number(m[1]):null;cpCache.set(s.cpBits,cp);}s.cp=cp;}let hit=cache.get(s.bits);if(hit===undefined){const r=await ocrRegion(hudCanvas,s.nameBox);metrics.nameReads=(metrics.nameReads||0)+1;const m=C.match(r.text,dict);hit=m&&r.confidence>=45?{...m,confidence:r.confidence,raw:r.text}:null;cache.set(s.bits,hit);}else metrics.cached=(metrics.cached||0)+1;s.hit=hit;if(cpCache&&hit&&s.cp){const k=side+':'+hit.key,c=cpKnown.get(k);cpKnown.set(k,c&&c.cp===s.cp?{cp:s.cp,n:c.n+1,bits:s.cpBits}:{cp:s.cp,n:1,bits:s.cpBits});}}}
+  else if(cpCache){let cp=cpCache.get(s.cpBits);if(cp===undefined){const r=await ocrRegion(hudCanvas,s.cpBox);metrics.cpReads=(metrics.cpReads||0)+1;const m=/(\d{2,5})/.exec(r.text.replace(/[oO]/g,'0'));cp=m?Number(m[1]):null;cpCache.set(s.cpBits,cp);}s.cp=cp;}let hit=cache.get(s.bits);if(hit===undefined){const r=await ocrRegion(hudCanvas,s.nameBox);metrics.nameReads=(metrics.nameReads||0)+1;const res=C.readName(r,{dict,locales,language:nameLanguage});hit=res.hit;cache.set(s.bits,hit);if(res.switched)cache.forgetUnread();}else metrics.cached=(metrics.cached||0)+1;s.hit=hit;if(cpCache&&hit&&s.cp){const k=side+':'+hit.key,c=cpKnown.get(k);cpKnown.set(k,c&&c.cp===s.cp?{cp:s.cp,n:c.n+1,bits:s.cpBits}:{cp:s.cp,n:1,bits:s.cpBits});}}}
 $('metaTestCrops').onclick=async()=>{configureBusy(true);try{await data();await ocrWorker();const v=$('metaVideo');if(!screen&&v.videoWidth>v.videoHeight*.8){const t=v.currentTime;screen=await findScreen(0,v.duration);hudDy=null;await seek(t);overlay();}const hud=sampleHud();if(!hud){$('metaReadout').textContent='No battle nameplates found on this frame. Pause on a frame where both nameplates are visible.';return;}await readNames(hud,new C.NameCache());const label=s=>`${s.hit?.label||'unreadable'} · ${s.balls.map(b=>({alive:'●',fainted:'○'})[b]||'?').join('')} · ${s.shields} shield${s.shields===1?'':'s'}`;$('metaReadout').textContent=`You: ${label(hud.my)} — Opponent: ${label(hud.opponent)}`;status('Frame read. If a name or Poké Ball looks wrong, tell us which phone recorded the video.');}catch(e){status(e.message);}finally{configureBusy(false);}};
 // ---- Fast moves and Shadow status from HP bars ----
 // Each matchup is played at 2× and its HP bars sampled ~10 times per video second; hits and their
@@ -73,14 +80,14 @@ const denseCanvas=document.createElement('canvas');const bannerCanvas=document.c
 // landed. Each distinct look of the text is read once: new ones are copied out here and read after the
 // sampling pass (effectQueue), repeats reuse the answer.
 let effectCache=new C.NameCache(.05),effectQueue=[],effectsSeen=[],effectQueued={};
-function denseFrame(t){const s=SW()/886,y0=Math.round(MetaHp.BAND[0]*s),img=grab(denseCanvas,y0,Math.min(SH(),MetaHp.BAND[1]*s)),bars=MetaHp.findBars(img,y0),as=MetaHp.assignBars(bars,SW());
+function denseFrame(t){const s=SW()/886,y0=Math.round(MetaHp.BAND[0]*s),img=grab(denseCanvas,y0,Math.min(SH(),MetaHp.BAND[1]*s)),bars=MetaHp.findBars(img,y0,MetaHp.barSettings(SW(),SH())),as=MetaHp.assignBars(bars,SW(),SH());
  for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=MetaHp.effectBox(bar,SW()),e=MetaHp.effectSig(img,box,y0);if(e.share<.03||e.share>.45||!MetaHp.effectShape(e.sig))continue;
   const entry=effectCache.find(e.sig);if(entry){if(entry.value?.kind)effectsSeen.push({t,side,kind:entry.value.kind});else if(entry.value?.pending)entry.value.pending.push({t,side});continue;}
   // A new look of the text appears every few frames while it animates: queue at most one per 0.3 s per side.
   if(t-(effectQueued[side]??-9)<.3)continue;effectQueued[side]=t;
   const w=box[2]-box[0],h=box[3]-box[1],c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').putImageData(img,-box[0],-(box[1]-y0),box[0],box[1]-y0,w,h);
   const value={pending:[{t,side}],canvas:c};effectCache.set(e.sig,value);if(effectCache.find(e.sig))effectQueue.push(value);}
- return {t,bars,aura:MetaAura.measure(img,as,y0),focus:MetaAura.measureFocus(img,bars,y0)};}
+ return {t,bars,aura:MetaAura.measure(img,as,y0),focus:MetaAura.measureFocus(img,MetaHp.barSettings(SW(),SH())===MetaHp.BAR?bars:MetaHp.phoneBars(bars,SW()),y0)};}
 async function readEffects(){while(effectQueue.length&&!stop){const v=effectQueue.shift();const r=await ocrRegion(v.canvas,[0,0,v.canvas.width,v.canvas.height],{whiteText:true});metrics.effectReads=(metrics.effectReads||0)+1;v.kind=MetaHp.effectKind(r.text);if(v.kind)for(const x of v.pending)effectsSeen.push({...x,kind:v.kind});delete v.pending;delete v.canvas;}}
 // Effect texts stay up for about a second: count each once per side.
 function effectsIn(side,a,z){const list=effectsSeen.filter(x=>x.side===side&&x.t>=a&&x.t<=z).sort((x,y)=>x.t-y.t),out=[];for(const x of list){const last=out.at(-1);if(last&&last.kind===x.kind&&x.t-last.t<=.8){last.t=x.t;continue;}out.push({...x});}return out;}
@@ -110,8 +117,8 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
  for(const [b,g] of todo){if(stop)break;status(`Measuring fast moves · matchup ${++done} of ${todo.length}`);$('metaProgress').value=done/todo.length;
   const o=b.opponent.find(p=>p.key===g.opponent),m=b.my.find(p=>p.key===g.my);if(!o||!m)continue;
   // Up to 30 s per matchup: fast-move hits use the first 12 s; charged hits and the aura use it all.
-  const frames=await denseSample(g.start+.3,Math.min(30,g.end-g.start+.5)),series=MetaHp.track(frames,SW()),d={};
-  g.visible={my:frames.filter(f=>MetaHp.assignBars(f.bars,SW()).my).map(f=>f.t),opponent:frames.filter(f=>MetaHp.assignBars(f.bars,SW()).opponent).map(f=>f.t)};
+  const frames=await denseSample(g.start+.3,Math.min(30,g.end-g.start+.5)),series=MetaHp.track(frames,SW(),SH()),d={};
+  g.visible={my:frames.filter(f=>MetaHp.assignBars(f.bars,SW(),SH()).my).map(f=>f.t),opponent:frames.filter(f=>MetaHp.assignBars(f.bars,SW(),SH()).opponent).map(f=>f.t)};
   // Fast-move hits from the matchup's first 12 s (later readings add noise); charged hits and the aura use it all.
   for(const side of ['my','opponent']){let h=MetaHp.hits(series[side].map(p=>p&&p.t<=g.start+.3+12?p:null));if(h.length>=3){const med=h.map(x=>x.size).sort((a,c)=>a-c)[h.length>>1];h=h.filter(x=>x.size<=med*2.2);}d[side]={hits:h,summary:MetaCombat.summarizeHits(h,MetaHp.cadence(h))};}
   // Charged attacks named by banners in this matchup, measured on the target's bar (skipped when the
@@ -121,7 +128,7 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
   // Effectiveness texts during the fast-move window, away from charged attacks (±4 s).
   await readEffects();const fw=[g.start+.3,g.start+.3+12],eff={};for(const [side,k] of [['my','onMy'],['opponent','onOpp']]){const list=effectsIn(side,...fw).filter(x=>!ev.some(e=>e.kind==='move'&&Math.abs(e.t-x.t)<=4));eff[k]={super:list.filter(x=>x.kind==='super').length,notVery:list.filter(x=>x.kind==='notVery').length,hits:d[side].hits.length};}
   const result=MetaCombat.inferMatchup({opp:{candidates:entries(o),cp:o.cp,typeLL:o.typeLL},my:{candidates:entries(m),cp:m.cp,typeLL:m.typeLL},hitsOnMy:d.my.summary,hitsOnOpp:d.opponent.summary,charged,effects:eff,moves:game.moves,rankings,league,learned:window.MetaValidation?.learned()});
-  const aura=MetaAura.summarize(frames.map(f=>f.aura));(b.focusFrames=b.focusFrames||[]).push(...frames.map(f=>({t:f.t,bars:f.bars,focus:f.focus})));
+  const aura=MetaAura.summarize(frames.map(f=>f.aura));(b.focusFrames=b.focusFrames||[]).push(...frames.map(f=>({t:f.t,bars:MetaHp.barSettings(SW(),SH())===MetaHp.BAR?f.bars:MetaHp.phoneBars(f.bars,SW()),focus:f.focus})));
   b.matchups.push({...g,hitsOnMy:d.my.hits.map(h=>+h.size.toFixed(3)),hitsOnOpp:d.opponent.hits.map(h=>+h.size.toFixed(3)),cadenceOnMy:d.my.summary?.turns,cadenceOnOpp:d.opponent.summary?.turns,auraOpponent:aura.opponent,auraMy:aura.my,effects:eff,series:{ts:frames.map(f=>+f.t.toFixed(2)),my:series.my.map(p=>p?+p.fill.toFixed(3):null),opponent:series.opponent.map(p=>p?+p.fill.toFixed(3):null)},result});}
  // Charged-move evidence (energy accounting, legal movesets) from the banners read during the scan.
  const movesById=new Map(game.moves.map(m=>[m.moveId,m]));
@@ -142,7 +149,7 @@ async function findScreen(start,end,n=12){const v=$('metaVideo'),k=Math.min(1,96
  for(let i=0;i<n&&!stop;i++){if(!await seek(start+(end-start)*(i+.5)/n).then(()=>true,()=>false))continue;ctx.drawImage(v,0,0,w,h);frames.push(ctx.getImageData(0,0,w,h));}
  const r=window.MetaScreen?.locate(frames);if(!r||r.box.join()===[0,0,w,h].join())return null;return r.box.map((x,i)=>Math.round(x/k));}
 $('metaRun').onclick=async()=>{if(!file||!$('metaVideo').videoWidth||busy)return;const video=$('metaVideo'),start=Number($('metaStart').value),end=Math.min(Number($('metaEnd').value),video.duration-.05),mode=$('metaSampling').value;if(!(start>=0&&end>start)){status('Choose an end time after the start, within the video.');return;}
- configureBusy(true);stop=false;example=false;run=[];metrics={frames:0,ocr:0,cached:0,start:performance.now()};cpKnown.clear();const tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),moves=$('metaCaptureMoves').checked;let previousMove=null,times=null,lastSurrender=-Infinity,seekFails=0;video.pause();
+ configureBusy(true);stop=false;example=false;run=[];metrics={frames:0,ocr:0,cached:0,start:performance.now()};cpKnown.clear();nameLanguage=new C.NameLanguage();const tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),moves=$('metaCaptureMoves').checked;let previousMove=null,times=null,lastSurrender=-Infinity,seekFails=0;video.pause();
  const finish=()=>tracker.finish().map(b=>({...b,id:`${fingerprint}:${Math.round(b.start*2)}`,context:{...context(),videoFingerprint:fingerprint}}));
  try{await data();await videoFingerprint();await ocrWorker();
   if(!screen&&video.videoWidth>video.videoHeight*.8){status('Finding the phone screen in this wide video…');screen=await findScreen(start,end);hudDy=null;overlay();if(screen)metrics.screen=screen;else status('No battle screen found in this video; reading the whole frame.');}
@@ -153,8 +160,8 @@ $('metaRun').onclick=async()=>{if(!file||!$('metaVideo').videoWidth||busy)return
   for(const [k,t] of times.entries()){if(stop)break;
    // Land just after the keyframe so the decoder never has to rebuild the previous group of frames.
    try{await seek(Math.min(t+.02,end));seekFails=0;}catch(e){if(e.code!=='seek-timeout')throw e;metrics.skipped=(metrics.skipped||0)+1;if(++seekFails>=4)throw seekError(t);continue;}
-   metrics.frames++;const hud=sampleHud();
-   if(hud){await readNames(hud,names,cps);tracker.observe(t,hud);}
+   metrics.frames++;let hud=sampleHud();
+   if(hud){await readNames(hud,names,cps);const named=!!(hud.my.hit||hud.opponent.hit);if(hudRetry!==null){if(named){hudOffset.accept(hudRetry,t);hudDy=hudRetry;overlay();}else hud=null;}else if(named)hudOffset.trust();if(hud)tracker.observe(t,hud);}
    else{const band=resultBand();if(band.black>.9)tracker.blackout(t);if(tracker.awaitingResult(t)&&C.resultCandidate(band)){let r=await readResult();
      // The banner animates in; with sparse sampling, look again half a second later before moving on.
      if(!r.value&&!r.matchmaking&&t+.5<end&&await seek(t+.52).then(()=>true,()=>false)){const b2=resultBand();if(C.resultCandidate(b2))r=await readResult();}

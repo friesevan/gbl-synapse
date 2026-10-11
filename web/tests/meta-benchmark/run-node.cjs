@@ -17,6 +17,8 @@
 //   FPS=10 HUD_EVERY=5
 //   DECODE_ROWS=full  also decode the rows below the last one the analysis reads (default: cropped)
 //   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
+//   NAME_LOCALES=de,ja,… | off   nameplate languages tried besides English (default: all; CJK ones need
+//                     their Tesseract model in TESSDATA_LOCALES, default ~/.cache/gbl-synapse/tessdata)
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
 const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs'),Dialog=require('./surrender-cache.cjs'),Calibration=require('./calibration-cache.cjs');
 const Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),C=require('../../includes/meta/core.js'),K=require('../../includes/meta/combat.js'),Hp=require('../../includes/meta/hp.js');
@@ -30,6 +32,12 @@ if(rangePlan.mode==='empty')throw Error('No planned ranges intersect START/END; 
 // FFMPEG_THREADS also caps the filter graph's threads: with 1, ffmpeg spends ~7% less CPU on the same bytes.
 const THREADS=process.env.FFMPEG_THREADS?['-threads',String(process.env.FFMPEG_THREADS),'-filter_threads',String(process.env.FFMPEG_THREADS)]:[];
 const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'meta-bench-'));
+// Other UI languages (core.js LOCALES): Latin-script names come from the English OCR text; Japanese, Korean and
+// Chinese plates are read again with that language's model, only while the video's language is undecided
+// or once it has been recognised (core.js NameLanguage).
+const TESSDATA_LOCALES=process.env.TESSDATA_LOCALES||path.join(os.homedir(),'.cache/gbl-synapse/tessdata'),wantLocales=process.env.NAME_LOCALES==='off'?[]:process.env.NAME_LOCALES?process.env.NAME_LOCALES.split(','):Object.keys(C.LOCALES);
+const localNames=require('../../includes/meta/species-names.json').names,locales=Object.fromEntries(wantLocales.filter(l=>C.LOCALES[l]&&(!C.LOCALES[l].script||fs.existsSync(path.join(TESSDATA_LOCALES,C.LOCALES[l].ocr+'.traineddata')))).map(l=>[l,C.localeDictionary(gm.pokemon,localNames,l,dict)]));
+const nameLanguage=new C.NameLanguage();
 const ocrDirectory=process.env.OCR_CACHE_DIR??path.join(os.homedir(),'.cache/gbl-synapse/ocr-v1'),ocrEngine=Ocr.createTesseractOcr({directory:ocrDirectory,enabled:ocrDirectory!=='off'});
 const exactCacheEnabled=process.env.VIDEO_EXACT_CACHE!=='off',targetGateEnabled=process.env.SURRENDER_TARGET_GATE!=='off';
 const calibrationCache=Calibration.createCalibrationCache({enabled:exactCacheEnabled});
@@ -37,6 +45,10 @@ const surrenderCache=Dialog.createSurrenderCache({isSurrender:C.isSurrender,sett
 const metrics={frames:0,hudFrames:0,denseFrames:0,nameReads:0,cpReads:0,cpSkipped:0,resultReads:0,bannerReads:0,cached:0,matchups:0,ms:{decodeWait:0,hud:0,bars:0,ocr:0,fit:0}};
 const now=()=>Number(process.hrtime.bigint())/1e6;
 function recognizePgm(pgm,{lines=1}={}){return ocrEngine.recognize(pgm,{inputPath:path.join(tmp,'crop.pgm'),args:['-','--psm',lines>1?'6':'7','tsv']});}
+// A nameplate read with a CJK language model (core.js LOCALES[lang].ocr). TSV is requested by variable, not the
+// "tsv" config file, which a separate tessdata directory lacks.
+function ocrLocale(img,box,lang){const t0=now(),pgm=Dialog.grayscalePgm(img,box),r=ocrEngine.recognize(pgm,{inputPath:path.join(tmp,'crop.pgm'),args:['-','-l',C.LOCALES[lang].ocr,'--tessdata-dir',TESSDATA_LOCALES,'--psm','7','-c','tessedit_create_tsv=1']});
+ metrics.localeReads=(metrics.localeReads||0)+1;metrics.ms.ocr+=now()-t0;return r;}
 function ocr(img,box,{whiteText=false,lines=1}={}){const t0=now(),pgm=Dialog.grayscalePgm(img,box,{whiteText}),result=recognizePgm(pgm,{lines});
  metrics.ms.ocr+=now()-t0;return result;}
 const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i]!==b[i];return n/a.length;};
@@ -46,11 +58,16 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const decodeFull=Decode.plan({width:W0,height:H0,crop,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),W=decodeFull.width,H=decodeFull.height;
  // Bars and aura use the classifier's current reference band.
  const Y0=Math.round(Hp.BAND[0]*W/886),Hh=Math.min(H-Y0,Math.round((Hp.BAND[1]-Hp.BAND[0])*W/886));
+ // Wide, tablet-shaped screens put your bar further right and skip centred cutscene bars (hp.js assignBars).
+ const barP=Hp.barSettings(W,H),forFocus=bars=>barP===Hp.BAR?bars:Hp.phoneBars(bars,W);
  // Every pixel read sits above the bottom of the HP-bar band (bars, aura, effect texts), the result and
  // surrender band (700–1180 of 1920) or the top half (HUD, banners at any calibrated offset). Lower rows
  // aren't decoded into the frame (they stay 0); DECODE_ROWS=full restores them.
  const rowsUsed=process.env.DECODE_ROWS==='full'?H:Math.min(H,Math.max(Y0+Hh,Math.ceil(H*1180/1920)+1,Math.ceil(H/2))),decode=Decode.keepRows(decodeFull,rowsUsed);
  const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
+ const hudOffset=new C.HudOffset();
+ // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
+ function nameOf(img,s,t){let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;const r=ocr(img,s.nameBox),box=s.nameBox,res=C.readName(r,{dict,locales,language:nameLanguage,alt:lang=>ocrLocale(img,box,lang)});hit=res.hit;names.set(s.bits,hit);if(res.switched){names.forgetUnread();metrics.nameLanguageAt=t;}}else metrics.cached++;return hit;}
  let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*rowsUsed*4,frame=Buffer.alloc(W*H*4);
  function readSurrender(t,img,box){
   metrics.surrenderCandidates=(metrics.surrenderCandidates||0)+1;
@@ -71,15 +88,20 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
   while(off<chunk.length){const n=Math.min(chunk.length-off,frameBytes-filled);chunk.copy(frame,filled,off,off+n);filled+=n;off+=n;if(filled<frameBytes)break;filled=0;
    metrics.ms.decodeWait+=now()-waitFrom;const t=base+(k-k0)/FPS,isHud=k%HUD_EVERY===0;k++;metrics.frames++;const img={data:frame,width:W,height:H};
    if(isHud){const t0=now();metrics.hudFrames++;
-    if(dy===null)dy=calibrationCache.run(img,()=>C.calibrate(img));
-    const hud=dy===null?null:C.readHud(img,dy);
-    if(hud){for(const side of ['my','opponent']){const s=hud[side];let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;const r=ocr(img,s.nameBox);const m=C.match(r.text,dict);hit=m&&r.confidence>=45?{...m,confidence:r.confidence,raw:r.text}:null;names.set(s.bits,hit);}else metrics.cached++;s.hit=hit;
+    if(dy===null){dy=calibrationCache.run(img,()=>C.calibrate(img));hudOffset.dy=dy;}
+    let hud=dy===null?null:C.readHud(img,dy);
+    // Other offsets already proven by a species name, then a fresh calibration kept only if its nameplates name
+    // a species (core.js HudOffset: a wrong first calibration, or an offset that changes between battles).
+    if(!hud&&dy!==null)for(const d of hudOffset.others()){const h=C.readHud(img,d);if(h){hud=h;dy=d;hudOffset.use(d);break;}}
+    if(!hud&&dy!==null){const d2=hudOffset.retry(img),h2=d2===null?null:C.readHud(img,d2);if(h2&&['my','opponent'].some(side=>nameOf(img,h2[side],t))){hudOffset.accept(d2,t);dy=d2;hud=h2;metrics.recalibrated=hudOffset.changes;}}
+    if(hud){for(const side of ['my','opponent']){const s=hud[side];let hit=nameOf(img,s,t);s.hit=hit;
       // CP: a CP read the same twice for this side and species is reused while the CP digits look the
       // same (≤3% of fingerprint cells differ). Another battle's Pokémon of the same species shows a
       // different number, so it is read again.
       const ck=side+':'+(hit?.key||''),known=hit&&cpKnown.get(ck);if(known&&known.n>=2&&diffShare(s.cpBits,known.bits)<=.03){s.cp=known.cp;metrics.cpSkipped++;}
       else{let cp=cps.get(s.cpBits);if(cp===undefined){metrics.cpReads++;const r=ocr(img,s.cpBox);const m=/(\d{2,5})/.exec(r.text.replace(/[oO]/g,'0'));cp=m?Number(m[1]):null;cps.set(s.cpBits,cp);}s.cp=cp;
        if(hit&&cp){const c=cpKnown.get(ck);cpKnown.set(ck,c&&c.cp===cp?{cp,n:c.n+1,bits:s.cpBits}:{cp,n:1,bits:s.cpBits});}}}
+     if(!hudOffset.trusted&&(hud.my.hit||hud.opponent.hit))hudOffset.trust();
      tracker.observe(t,hud);}
     else{const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});if(band.black>.9)tracker.blackout(t);
      if(tracker.awaitingResult(t)&&C.resultCandidate(band)){metrics.resultReads++;const r=ocr(img,[0,y0,W,y1],{whiteText:true,lines:2});const value=C.outcome(r.text.replace(/\s+/g,' '));if(value)tracker.result(t,value);else if(/finding opponent|battle starting/i.test(r.text))tracker.matchmaking();}
@@ -93,7 +115,8 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
    if(!isHud&&tracker.current&&t-lastSurrender>4&&t-lastSurrenderCheck>=.3){const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});
     if(C.surrenderCandidate(band)){lastSurrenderCheck=t;readSurrender(t,img,[0,y0,W,y1]);}}
    // HP bars + aura on every frame of a battle (and briefly after the nameplates go, for faints).
-   if(tracker.current&&t-tracker.lastHud<30){const t0=now(),band={data:frame.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0),as=Hp.assignBars(bars,W);dense.push({t,bars,aura:Aura.measure(band,as,Y0),focus:Aura.measureFocus(band,bars,Y0)});
+   // Focus shots (aura.js measureFocus, the Shadow classifier) keep the phone bar windows on every screen.
+   if(tracker.current&&t-tracker.lastHud<30){const t0=now(),band={data:frame.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0,barP),as=Hp.assignBars(bars,W,H);dense.push({t,bars,aura:Aura.measure(band,as,Y0),focus:Aura.measureFocus(band,forFocus(bars),Y0)});
     // "SUPER EFFECTIVE!" / "NOT VERY EFFECTIVE…" above a bar: the attack on that Pokémon. Each distinct
     // look of the text is read once (fingerprint cache); repeats within 0.8 s count once.
     for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=Hp.effectBox(bar,W),e=Hp.effectSig(band,box,Y0);if(e.share<.03||e.share>.45||!Hp.effectShape(e.sig))continue;
@@ -110,13 +133,13 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // add noise. Leave-one-out over 99 answered fast moves: 87/99 with the first 8–18 s vs 79/99 with the
  // whole matchup. Charged hits and the aura still use the whole matchup.
  const FAST_WINDOW=12;
- function hitsFor(frames){const series=Hp.track(frames,W),out={},t0=frames[0]?.t??0;for(const side of ['my','opponent']){let h=Hp.hits(series[side].map(p=>p&&p.t<=t0+FAST_WINDOW?p:null));if(h.length>=3){const med=h.map(x=>x.size).sort((a,b)=>a-b)[h.length>>1];h=h.filter(x=>x.size<=med*2.2);}out[side]={hits:h,summary:K.summarizeHits(h,Hp.cadence(h))};}out.aura=Aura.summarize(frames.map(f=>f.aura));out.series=series;out.t0=frames[0]?.t;return out;}
+ function hitsFor(frames){const series=Hp.track(frames,W,H),out={},t0=frames[0]?.t??0;for(const side of ['my','opponent']){let h=Hp.hits(series[side].map(p=>p&&p.t<=t0+FAST_WINDOW?p:null));if(h.length>=3){const med=h.map(x=>x.size).sort((a,b)=>a-b)[h.length>>1];h=h.filter(x=>x.size<=med*2.2);}out[side]={hits:h,summary:K.summarizeHits(h,Hp.cadence(h))};}out.aura=Aura.summarize(frames.map(f=>f.aura));out.series=series;out.t0=frames[0]?.t;return out;}
  // Fighting time for the charged-move evidence: frames with that side's HP bar visible while the
  // Pokémon is on the field (its matchup windows), up to time t.
  const fightUntil=b=>{// Who is on the field per side: nameplate segments plus "Go, X!" banners, in time order.
   const changes={my:[],opponent:[]};for(const side of ['my','opponent']){for(const g of b.segments)changes[side].push([g.start,g[side]]);for(const e of b.events.filter(e=>e.kind==='go'))if(b[side].some(p=>p.key===e.actor))changes[side].push([e.t,e.actor]);changes[side].sort((x,y)=>x[0]-y[0]);}
   return (side,key,t)=>{const c=changes[side];let n=0;for(let i=0;i<c.length;i++){if(c[i][1]!==key)continue;const a=c[i][0];if(a>=t)break;const z=Math.min(t,i+1<c.length?c[i+1][0]:b.end+.5);
-   for(let j=lower(a);j<dense.length&&dense[j].t<z;j++){const as=Hp.assignBars(dense[j].bars,W);if(as.my||as.opponent)n++;}}return n/FPS;};};
+   for(let j=lower(a);j<dense.length&&dense[j].t<z;j++){const as=Hp.assignBars(dense[j].bars,W,H);if(as.my||as.opponent)n++;}}return n/FPS;};};
  // Energy checks use clock fighting time (K.clockFight): visible-bar frames undercount on video.
  function battleEvidence(b){return K.battleEvidence(b,movesById,K.clockFight(b,learned?.fit?.energy));}
  const entries=p=>(p.candidates||[]).filter(c=>/mega|primal/i.test(p.label||'')||!/_(mega|primal)/.test(c.id)).map(c=>byId.get(c.id)).filter(Boolean);
@@ -141,17 +164,19 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     series:{t0:d.t0!=null?+d.t0.toFixed(2):null,fps:FPS,my:d.series.my.map(p=>p?+p.fill.toFixed(3):null),opponent:d.series.opponent.map(p=>p?+p.fill.toFixed(3):null)},fit,result:r});}
   b.evidence=battleEvidence(b);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))K.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById,fit);}
  // Focus shots during charged attacks (camera on one Pokémon) for the Shadow classifier (aura.js focusMoments).
- for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);b.focus=Aura.focusMoments(b,window(b.start-2,b.end+8),W);}
+ for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);b.focus=Aura.focusMoments(b,window(b.start-2,b.end+8).map(f=>barP===Hp.BAR?f:{...f,bars:forFocus(f.bars)}),W);}
  const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled,fit);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=K.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit});}Aura.applyToBattle(b,undefined,learned);}Shadow.applyToBattles(finished,undefined,{learned,rankings,moveTypes:new Map(gm.moves.map(m=>[m.moveId,m.type]))});
  metrics.ms.fit=now()-t0;
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
  const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
  metrics.ocrCache={...ocrEngine.metrics};metrics.ocrCalls=metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads+(metrics.effectReads||0)+(metrics.surrenderReads||0);
- metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};
+ metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};metrics.nameLanguage={lang:nameLanguage.lang,votes:Object.fromEntries(Object.entries(nameLanguage.votes).map(([l,v])=>[l,v.size])),tries:nameLanguage.tries};
  const seconds=(Date.now()-started)/1000,videoSeconds=k/FPS;
  const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,decoding:{width:W,height:H,rows:rowsUsed,fps:FPS,hudEvery:HUD_EVERY,hwaccel:decode.hwaccel,experimental:!!(process.env.ANALYSIS_WIDTH||process.env.FFMPEG_HWACCEL)},calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
  // Matchup fits are kept (compactly) so pooling and priors can be re-evaluated without re-decoding.
  out.full=finished.map(b=>({...b,matchups:b.matchups.map(({result,...g})=>g)}));
+ // The nameplate language, when it isn't English (absent = English).
+ if(nameLanguage.lang!=='en')out.nameLanguage=nameLanguage.lang;
  fs.writeFileSync(outPath,JSON.stringify(out));fs.rmSync(tmp,{recursive:true,force:true});
  const ms=metrics.ms;console.log(`${out.recording}: ${battles.length} battles, ${videoSeconds.toFixed(0)} s video in ${seconds.toFixed(1)} s (${out.realtime}× real time) · ${out.ocrReads} OCR reads · decode wait ${(ms.decodeWait/1000).toFixed(1)} s, HUD ${(ms.hud/1000).toFixed(1)} s (OCR ${(ms.ocr/1000).toFixed(1)} s), bars ${(ms.bars/1000).toFixed(1)} s, fit ${(ms.fit/1000).toFixed(1)} s`);
 })();

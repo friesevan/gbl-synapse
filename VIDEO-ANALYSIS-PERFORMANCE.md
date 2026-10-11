@@ -44,6 +44,7 @@ Measured and rejected:
 Zero-battle screening, checked on 850 saved analyses:
 - Zero-battle runs are still 54% of recorded extraction time, but 441 of those 493 runs (28.6 of 35 worker-hours) predate the keyframe probe. They have no `probe` record.
 - The 52 probed zero-battle full passes (6.3 worker-hours) all had HUD hits: 46 had more than 20 keyframes with the battle HUD, and the median was 116 for full-coverage runs. A no-HUD screen therefore can't drop them. They look like detection failures or non-GBL battles, and need review with footage answers rather than a cheaper skip.
+  - Follow-up (2026-10-11): 43 of the 52 had a Japanese, Korean or Chinese game UI; the others a wrong first calibration, a wrong or slightly too wide screen box, or covered nameplates. Fixed in the extractor; see `web/includes/meta/README.md`, *Battles from zero-battle videos*.
 - These runs averaged a median 106 surrender OCR reads each. The exact surrender-pixel cache (fa57ad7) already reuses identical reads. Approximate negative caching still needs short-dialog recall fixtures, so no change was made.
 
 ## What was measured

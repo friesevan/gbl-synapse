@@ -65,7 +65,24 @@ function outline(img,x0,y0,y1,s,P=BAR){const w=img.width,h=img.height,d=img.data
 const measureBar=(img,bar)=>({fill:bar.fill,trail:bar.trail});
 // Your bar starts near the left edge (x ≈ 50 of 886); the opponent's starts mid-screen (x ≈ 300–500).
 // Bench tiles and buttons carry small bars elsewhere and are ignored. The clearest outline wins.
-function assignBars(bars,width){const s=width/REF_W,pick=list=>list.sort((a,b)=>(b.frame??0)-(a.frame??0)||(b.y1-b.y0)-(a.y1-a.y0)||b.fill-a.fill)[0]||null,[m,o]=[BAR.sides.my,BAR.sides.opponent];
+// Wide, tablet-shaped screens (width/height ≥ 0.6 after cropping; phones measure 0.39–0.57) lay the
+// battle out differently (2026-10-11, bar positions on 5 wide and 4 phone videos): your bar starts at
+// x ≈ 110–145 instead of 50–80, outside the phone window, so your HP was lost; and in a charged-attack
+// cutscene the attacker's bar is drawn centred (x ≈ 320, as on phones) whoever attacks, inside the
+// opponent's window, so your cutscene bar was read as the opponent's (aura and HP). On wide screens your
+// window is x 30–230 and a centred bar belongs to neither side. Phone screens keep the original rule.
+// Outline colour was measured too (white vs light blue) but differs by video and encoding, so it isn't used.
+const WIDE_ASPECT=.6,BAR_WIDE={...BAR,sides:{my:[30,230],opponent:[230,600]}};
+const isWide=(width,height)=>height>0&&width/height>=WIDE_ASPECT;
+// findBars settings for a frame of this size (height = the analysed screen's full height).
+const barSettings=(width,height)=>isWide(width,height)?BAR_WIDE:BAR;
+// The bars findBars returns with the phone settings (the Shadow classifier's focus shots keep using these).
+const phoneBars=(bars,width)=>{const s=width/REF_W;return bars.filter(b=>Object.values(BAR.sides).some(([lo,hi])=>b.x0>=(lo-5)*s&&b.x0<=(hi+5)*s));};
+const centred=(b,width)=>Math.abs(b.x0+FILL_W*width/REF_W/2-width/2)<=10*width/REF_W;
+function assignBars(bars,width,height=0){const s=width/REF_W,pick=list=>list.sort((a,b)=>(b.frame??0)-(a.frame??0)||(b.y1-b.y0)-(a.y1-a.y0)||b.fill-a.fill)[0]||null;
+ if(isWide(width,height)){const [m,o]=[BAR_WIDE.sides.my,BAR_WIDE.sides.opponent],ok=bars.filter(b=>!centred(b,width));
+  return {my:pick(ok.filter(b=>b.x0>=m[0]*s&&b.x0<m[1]*s)),opponent:pick(ok.filter(b=>b.x0>=o[0]*s&&b.x0<=o[1]*s))};}
+ const [m,o]=[BAR.sides.my,BAR.sides.opponent];
  return {my:pick(bars.filter(b=>b.x0>=m[0]*s&&b.x0<=m[1]*s)),opponent:pick(bars.filter(b=>b.x0>=o[0]*s&&b.x0<=o[1]*s))};}
 // series: [{t, fill, trail}] for one side (null when the bar is hidden; bars often vanish for a frame
 // as a hit lands). HP never rises during a matchup, so the bar is read as a descending staircase:
@@ -135,10 +152,11 @@ function cadence(list){const gaps=[];for(let i=1;i<list.length;i++){const g=list
  const [turns,repeats]=[...counts].sort((a,b)=>b[1]-a[1]||a[0]-b[0])[0];return {turns,repeats,gaps};}
 // Follows each side's bar through a window of frames: the real bar keeps the same left edge, while
 // effects and scenery that happen to match come and go. frames: [{t, bars}] from findBars.
-function track(frames,width){const s=width/REF_W,out={my:[],opponent:[]};
- for(const [side,lo,hi] of [['my',30,80],['opponent',230,600]]){const xs=new Map();for(const f of frames)for(const b of f.bars)if(b.x0>=lo*s&&b.x0<=hi*s){const k=Math.round(b.x0/(3*s));xs.set(k,(xs.get(k)||0)+1);}
+// Wide screens (assignBars): your window is x 30–230 and centred cutscene bars are skipped.
+function track(frames,width,height=0){const s=width/REF_W,out={my:[],opponent:[]},wide=isWide(width,height),use=b=>!wide||!centred(b,width);
+ for(const [side,lo,hi] of wide?[['my',30,229.99],['opponent',230,600]]:[['my',30,80],['opponent',230,600]]){const xs=new Map();for(const f of frames)for(const b of f.bars)if(use(b)&&b.x0>=lo*s&&b.x0<=hi*s){const k=Math.round(b.x0/(3*s));xs.set(k,(xs.get(k)||0)+1);}
   if(!xs.size){out[side]=frames.map(()=>null);continue;}const best=[...xs].sort((a,b)=>b[1]-a[1])[0][0]*3*s;let lastY=null;
-  out[side]=frames.map(f=>{const c=f.bars.filter(b=>Math.abs(b.x0-best)<=4*s).sort((a,b)=>(lastY===null?0:Math.abs(a.y0-lastY)-Math.abs(b.y0-lastY))||(b.y1-b.y0)-(a.y1-a.y0));const b=c[0];if(!b)return null;lastY=b.y0;return {t:f.t,fill:b.fill,trail:b.trail};});}
+  out[side]=frames.map(f=>{const c=f.bars.filter(b=>use(b)&&Math.abs(b.x0-best)<=4*s).sort((a,b)=>(lastY===null?0:Math.abs(a.y0-lastY)-Math.abs(b.y0-lastY))||(b.y1-b.y0)-(a.y1-a.y0));const b=c[0];if(!b)return null;lastY=b.y0;return {t:f.t,fill:b.fill,trail:b.trail};});}
  return out;}
-const api={BAR,BAND,cls,outline,hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
+const api={BAR,BAR_WIDE,WIDE_ASPECT,barSettings,phoneBars,BAND,cls,outline,hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
 })(typeof window==='undefined'?globalThis:window);
