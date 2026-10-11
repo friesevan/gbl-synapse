@@ -260,14 +260,22 @@ Results (the same 223 frames; valid = outline present):
 | Old | 94 (85) | 139 (62) | 9 + 77 |
 | New | 139 | 131 | 0 in a 40-frame visual check |
 
-Re-extracting the 9 labelled videos available locally (6 YouTube, 3 of yours), with the same crops,
-ranges and battle structure (`reextract-labelled.cjs`): matchup frames with a bar 40% → 48% (yours) and
-36% → 39% (opponent; the old count included false bars); hits on labelled Pokémon 353 → 701; fast-move
-labels with < 2 hits 45 → 19 of 108. Per-hit measured/predicted damage for the true move: IQR 0.83–1.25 →
-0.79–1.17, stray readings (< 0.6 or > 1.5) 21% → 20%; no matchup has more hits than the true move allows.
-Held out by video, all labels, only these 9 videos changed: fast moves 161 → 160/197 (log-loss 0.428 →
-0.425), forms 23 → 23/31 (0.352 → 0.362), Shadow classifier 157 → 161/208 (log-loss 0.495 → 0.465, AUC
-0.823 → 0.846). The other 28 labelled videos (all 89 feedback fast-move answers) await a re-download.
+All 37 labelled videos were re-extracted with their saved crops, ranges, league and game data; every
+battle structure was unchanged (`reextract-labelled.cjs`). Results:
+- **Coverage.** Matchup frames with a bar: 31% → 41% (yours), 31% → 37% (opponent). The old count
+  included false bars.
+- **Hits.** Fast-move labels with < 2 hits: 84 → 43 of 197 (no hits: 56 → 20). Shadow labels whose
+  Pokémon has no hits: 56 → 35 of 210.
+- **Damage noise.** Measured/predicted damage per hit for the true move: IQR 0.79–1.22 → 0.76–1.15. Stray
+  readings (< 0.6 or > 1.5): 23% → 24%. No matchup has more hits than the true move allows.
+
+Held out by video, with the models' parameters unchanged:
+
+| | Before | After |
+| --- | --- | --- |
+| Fast moves | 161/197, log-loss 0.428 | **165/197, 0.393** (feedback 67 → 72/89) |
+| Forms | 23/31, 0.352 | **26/31**, 0.380 |
+| Shadow classifier | 157/208, 0.495, AUC 0.823 | **171/208, 0.356, AUC 0.917** |
 
 Measured on the benchmark recordings (no fast-move labels yet): your team’s fast moves were consistent across battles (Azumarill Bubble, Galarian Corsola Astonish, Registeel Lock-On, Corviknight Sand Attack, Electivire Thunder Shock in 17 of 19 battles, Scrafty Counter in 15 of 18, Ferroseed Metal Claw in 14 of 16). Confirming them with the contributor is the next validation step.
 
@@ -522,8 +530,8 @@ The app applies this at its next refit once it runs this code.
 
 **Remaining failures** (35 fast moves, 6 forms):
 - Fast moves with fewer than two measured hits: 18 of 84 wrong (prior and energy only). The root cause
-  is HP-bar detection on YouTube crops (24% frame coverage). Fixed in `hp.js` (see *HP bars on YouTube
-  footage*); 28 labelled videos still need re-extraction with `reextract-labelled.cjs`.
+  is HP-bar detection on YouTube crops (24% frame coverage). Fixed in `hp.js` and all 37 videos
+  re-extracted (see *HP bars on YouTube footage*).
 - Fast moves with 4+ hits: 13 of 70 wrong, mostly pairs that hit equally hard on the same turns, such
   as Psywave/Tackle on Inkay and Shadow Claw/Metal Claw on Necrozma, or moves with mixed stray steps.
 - Forms with identical types and no deciding move or icon:
