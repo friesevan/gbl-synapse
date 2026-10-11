@@ -192,7 +192,7 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
   - Japanese-UI videos give 0 battles (extractor);
   - a nameplate species-check question;
   - HP bars on low-resolution YouTube crops: done (next section);
-  - the Shadow classifier flips two forms (Hisuian Typhlosion, Palkia Origin); see the README note.
+  - ~~the Shadow classifier flips two forms~~ fixed (likelihood ratio within each form).
 
 ## Status 2026-10-11 ~16:00 (HP-bar detection)
 - `hp.js` findBars now uses hue-based fill/trail classes, tolerant row linking and an outline check on
@@ -221,6 +221,20 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
 - No "Is the HP bar here?" Validate question was added. The outline score separates bars from look-alikes
   cleanly (real ≥ 0.9, others < 0.1), and a visual check found no false bars, so labelled ground truth
   wasn't needed.
+
+## Status 2026-10-11 ~17:30 (Shadow focus shots)
+- 412 human Shadow labels (338 in feedback.json, 74 archived), 410 joined to evidence, 125 videos.
+- New feature: aura-purple measured in charged-attack focus shots (camera on one Pokémon), README "Focus shots".
+  Recorded by run-node.cjs and the browser from now on (`b.focus`); old runs via sidecars in `WORK/focus/`.
+- Held out by video: 299 → 323/410, log-loss 0.504 → 0.461, AUC 0.829 → 0.870; opponents facing your Shadow
+  88 → 98/120. Both Shadow directions now pass the gate; a dry run resolves 383 of 993 open Shadow questions.
+- **After pulling:** restart the web app, then refit (POST /api/validation/retrain from the same origin) so
+  the new classifier and resolutions apply.
+- 46 labelled videos are still missing from `relabel-cache` (YouTube bot checks); their labels have no focus
+  features. A polite downloader may still be adding them. When more arrive, rerun from `web/tests/meta-benchmark`:
+  `node focus-backfill.cjs --shard 0/3` (and 1/3, 2/3 in parallel; skips finished sidecars), then
+  `node shadow-dataset.cjs` and `node shadow-cv.cjs --write-default` (prints the before/after splits and gates);
+  the app's next refit also retrains from the sidecars on its own.
 
 ## Offline retest speed follow-up
 

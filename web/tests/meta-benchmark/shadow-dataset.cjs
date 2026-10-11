@@ -5,7 +5,7 @@
 // that video, so rows can be cross-validated by video without leakage. Reads only; writes one JSON.
 //   node shadow-dataset.cjs [OUT]          WORK=harvest work dir (default ~/Desktop/Projects/PoGo Recorder/src/yt-harvest)
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
-const {refitRun,loadGameMaster}=require('./refit.cjs'),Q=require('../../includes/meta/questions.js'),Shadow=require('../../includes/meta/shadow-model.js');
+const {refitRun,loadGameMaster}=require('./refit.cjs'),Focus=require('./focus-backfill.cjs'),Q=require('../../includes/meta/questions.js'),Shadow=require('../../includes/meta/shadow-model.js');
 const WORK=process.env.WORK||path.join(os.homedir(),'Desktop/Projects/PoGo Recorder/src/yt-harvest');
 const video=a=>a.video?.id||String(a.recording||'').replace(/\.mp4$/,'');
 const readJSON=(f,d)=>{try{return JSON.parse(fs.readFileSync(f,'utf8'));}catch{return d;}};
@@ -29,14 +29,18 @@ function build({work=WORK,log=()=>{}}={}){
  const auraRuns=new Map();for(const f of runFiles){const r=readJSON(path.join(resDir,f),null);if(r?.full)auraRuns.set(f.replace(/\.json$/,''),{full:r.full.map(b=>({matchups:(b.matchups||[]).map(g=>({my:g.my,opponent:g.opponent,auraMy:g.auraMy,auraOpponent:g.auraOpponent}))}))});}
  const gmCache=new Map(),gmFor=f=>{if(!gmCache.has(f||''))gmCache.set(f||'',loadGameMaster(f));return gmCache.get(f||'');};
  const rows=[],missing=[];const byVid=new Map();for(const a of shadow){const v=video(a);if(!byVid.has(v))byVid.set(v,[]);byVid.get(v).push(a);}
- for(const [vid,list] of byVid){const raw=readJSON(path.join(resDir,vid+'.json'),null);if(!raw?.full){missing.push(...list.map(a=>a.qid));continue;}
+ for(const [vid,list] of byVid){const raw=Focus.attach(readJSON(path.join(resDir,vid+'.json'),null),vid,work);if(!raw?.full){missing.push(...list.map(a=>a.qid));continue;}
   const reg=registry.get(vid),learned=learnedExcept(answers,vid),speciesPurple=Shadow.speciesPurple([...auraRuns].filter(([k])=>k!==vid).map(([,r])=>r));
   const run=refitRun(raw,{learned,league:raw.learningContext?.league||LEAGUE[reg?.leagueId]||1500,gm:gmFor(gamemasterFor(raw,reg)),shadowModel:false,speciesPurple});
   const scr=raw.metrics?.screen||{},crop=raw.crop||[];
   for(const a of list){const battle=a.side==='my'?null:a.battle,bs=battle==null?run.full.filter(b=>(b.my||[]).some(p=>p.key===a.key)):[run.full[battle]].filter(Boolean);
    const m=bs.map(b=>(b[a.side]||[]).find(p=>p.key===a.key)).find(p=>p?.shadowModel);
    if(!m){missing.push(a.qid);continue;}
-   rows.push({qid:a.qid,video:vid,channel:reg?.channel||a.video?.channel||(a.origin==='labels'&&!reg?'phone':''),species:a.species,side:a.side,y:a.value?1:0,origin:a.origin,
+   // Spill-over case: an opponent that faced one of your Pokémon that is a Shadow (by answer, else by the
+   // held-out estimate > 0.5).
+   const mine=k=>{const l=shadow.find(x=>video(x)===vid&&x.side==='my'&&x.key===k);if(l)return l.value?1:0;const p=run.full.flatMap(b=>b.my||[]).find(p=>p.key===k);return (p?.inference?.shadowPOld??p?.inference?.shadowP??0)>.5?1:0;};
+   const otherShadow=a.side==='opponent'?+(m.shadowModel.info.faced||[]).some(k=>mine(k)):null;
+   rows.push({qid:a.qid,otherShadow,video:vid,channel:reg?.channel||a.video?.channel||(a.origin==='labels'&&!reg?'phone':''),species:a.species,side:a.side,y:a.value?1:0,origin:a.origin,
     x:m.shadowModel.x,info:m.shadowModel.info,oldP:m.inference?m.inference.shadowPOld:Shadow.sigmoid(m.shadowModel.x.priorLogit),askedP:a.modelP??null,askedTop:a.modelTop??null,
     titleShadow:new RegExp('shadow\\s+'+String(a.species||'').split('_')[0],'i').test(reg?.title||a.video?.title||'')?1:0,
     layout:{W:scr.W||raw.width||null,H:scr.H||raw.height||null,cropW:crop[2]?crop[2]-crop[0]:null,cropH:crop[3]?crop[3]-crop[1]:null}});}

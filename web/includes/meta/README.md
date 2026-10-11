@@ -468,8 +468,8 @@ of your forms flipped this way:
 - Hisuian Typhlosion read as regular (p 0.68);
 - Palkia Origin read as Palkia (p 0.67).
 
-Treating the classifier's output as a likelihood ratio within each form would avoid that. That change
-belongs with the Shadow work.
+Fixed 2026-10-11: `setShadowP` now applies the classifier's change as a likelihood ratio within each form, so
+form probabilities stay as the form model left them.
 
 **Overfitting check.** The parameters were refitted on three quarters of the videos and scored on the
 remaining quarter, for each quarter (`movefit-fit.cjs --nested 4`, one search round from the fitted
@@ -577,7 +577,8 @@ training mean, so they move nothing. Features:
 - the share of matchups with ≥ 0.5% purple;
 - damage evidence conditioned on the other side's estimate;
 - the species' high-purple rate in unlabelled footage;
-- PvPoke's Shadow-minus-regular ranking score.
+- PvPoke's Shadow-minus-regular ranking score;
+- focus-shot purple (`focusT`, `focusHi`, `focusN`; "Focus shots" below).
 
 It runs after `MetaAura.applyToBattle` in `run-node.cjs`, the browser (`ui.js`) and `refit.cjs`. It rescales each
 Pokémon's Shadow rows to the new probability, so forms and moves stay consistent; the old value is kept as
@@ -595,6 +596,37 @@ Pokémon's Shadow rows to the new probability, so forms and moves stay consisten
 Calibration (out of fold): predicted 0.07 / 0.20 / 0.40 / 0.60 / 0.80 / 0.94 → observed 0 / 0.20 / 0.43 / 0.55 /
 0.86 / 0.82. With aura and hits both measured it is 115/144 (old 92); with neither it is 19/32 (old 18), barely above the prior.
 
+**Focus shots (2026-10-11, second round).** Your Shadow's flames spill into the opponent's aura box, and the
+opponent's box even shows your Pokémon while the camera frames it. During a charged attack the camera frames one
+Pokémon at a time: the attacker as it launches (from the "X used Y!" banner, ~1 s), then the defender as it is hit
+(after a ~1 s cut). That Pokémon fills the view with its HP bar centred above it, and the other side is out of
+frame. `aura.js measureFocus` measures aura-purple in a box under a centred bar when your usual bar is absent;
+`focusMoments` keeps bars ≥ 100 units below the opponent's usual bar, groups them into shots, names attacker and
+defender from the banner, and assigns shots without a banner by HP fill (the bar's fill must match one side's fill
+just before). Shielded defenders (the pink bubble reads as purple) and ghost/dark/poison/psychic moves (purple
+effects) are skipped. Run-node and the browser record `b.focus`; `focus-backfill.cjs` measures old runs from video
+into `WORK/focus/<id>.json`, which `shadow-dataset.cjs` and the learning loop attach. Features: `focusT` (log median
+purple over shots), `focusHi` (share of shots ≥ 0.5% purple), `focusN` (log shot count; 0 = no shots, the others are
+then imputed). On labelled Pokémon with shots, median focus purple is 0.0% (regular) vs 14% (Shadow); AUC 0.91
+(0.94 for opponents facing your Shadow, where the old aura has 0.75).
+
+| Leave-one-video-out, 410 labels (125 videos) | Classifier before | With focus features |
+| --- | --- | --- |
+| Right / log-loss / AUC | 299 (72.9%) / 0.504 / 0.829 | **323 (78.8%) / 0.461 / 0.870** |
+| Your Pokémon (73) | 59 / 0.459 / 0.859 | **63 / 0.414 / 0.897** |
+| Opponents (337) | 240 / 0.514 / 0.816 | **260 / 0.471 / 0.861** |
+| Opponents facing your Shadow (120) | 88 / 0.543 / 0.774 | **98 / 0.453 / 0.886** |
+| Opponents facing your regular (217) | 152 / 0.498 / 0.839 | **162 / 0.481 / 0.854** |
+| Pokémon with focus shots (177) | 130 / 0.475 / 0.851 | **155 / 0.352 / 0.918** |
+| Pokémon without (233) | 169 / 0.526 / 0.815 | 168 / 0.543 / 0.801 |
+
+Both columns use the HP-bar re-extraction (3a6c2e0) and the 412 labels. 233 labels have no shots: 46 of the needed
+videos could not be re-downloaded (YouTube bot checks), and some videos give no centred bars (low resolution, no HP
+bars found). The model was about as accurate on both subsets before (73% vs 73%), so the gain is not from easier
+videos; on the no-shot subset it is slightly worse (imputed focus features), which is why those questions use
+separate thresholds (below). Chosen by video-grouped CV over L2 4/8/16 and focus-feature sets; `focusMax`,
+`sideFocusT` and attacker/defender splits added nothing.
+
 **Model resolution.** Thresholds are chosen per direction on out-of-fold predictions. "Not Shadow" at p ≤ 0.12 was
 right 27 of 28 times (96%, Wilson lower bound 0.82, 14 videos). Choosing that threshold without the test video
 (nested) gave 19 of 19. "Shadow" calls never reach 95% (the top 10 were 8 right), because purple-bodied species and
@@ -604,6 +636,13 @@ Shadow check after 40 refits. For Shadow it is replaced by the classifier gate: 
 ≥ 0.80, same call under priors learned only from traceable labels. Human answers still win, audit questions stay
 open, and resolutions are recomputed (reversible) on every refit. On the live queue this resolves 15 of 135 open
 Shadow questions as "not Shadow".
+
+Second round (410 labels, focus features): "not Shadow" at confidence ≥ 0.72 was right 128/134 (Wilson 0.91, 56 videos;
+nested 127/133) and "Shadow" at ≥ 0.94 27/28 (Wilson 0.82, 15 videos), so both directions pass the unchanged gate.
+The Shadow direction is thin: chosen without the test video (nested) it was 14/16. Pokémon without focus shots are
+judged against thresholds from held-out predictions with the focus features removed (`thresholdsNoFocus`: not Shadow
+85/89 at ≥ 0.76, Shadow 32/33 at ≥ 0.89). A dry run of the learning loop on the app's last input resolves 383 of 993
+open Shadow questions (347 not Shadow, 36 Shadow).
 
 **Still wrong.** Shadows with no purple measured (aura box missed, e.g. Reuniclus, Cradily, your Sableye over
 9 matchups); regular purple-bodied or low-resolution reads (Gyarados at 288×640, Sableye, Giratina); videos

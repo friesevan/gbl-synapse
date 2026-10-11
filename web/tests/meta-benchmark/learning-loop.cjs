@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Offline active-learning pass: human labels only; evaluate held-out videos before auto-resolution.
 const fs=require('node:fs'),path=require('node:path'),Q=require('../../includes/meta/questions.js'),{refitRun,loadGameMaster}=require('./refit.cjs'),D=require('./movefit-data.cjs'),T=require('./movefit-threshold.cjs');
-const Shadow=require('../../includes/meta/shadow-model.js'),{trainShadow}=require('./shadow-cv.cjs');
+const Shadow=require('../../includes/meta/shadow-model.js'),Focus=require('./focus-backfill.cjs'),{trainShadow}=require('./shadow-cv.cjs');
 // Fast moves and forms resolve at a confidence threshold chosen from video-grouped held-out predictions:
 // the lowest posterior at which held-out answers are ≥ target correct (also at every higher threshold),
 // with enough answers, videos and a Wilson 95% lower bound ≥ minLower. Shadow keeps its own gates below.
@@ -21,7 +21,7 @@ function prediction(run,q){
  let dist;if(q.kind==='shadow')dist=[{value:true,p:sp},{value:false,p:1-sp}];else if(q.kind==='form')dist=inf.forms;else if(q.kind==='fastMove')dist=inf.moves;else return null;
  if(!dist?.length)return null;dist=[...dist].filter(x=>Number.isFinite(x.p)).sort((a,b)=>b.p-a.p);if(!dist.length)return null;
  const gs=(b.matchups||[]).filter(g=>g[q.side]===q.key),hits=gs.reduce((s,g)=>s+(q.side==='opponent'?g.hitsOnMy?.length||0:g.hitsOnOpp?.length||0),0);
- return {value:dist[0].value,p:dist[0].p,margin:dist[0].p-(dist[1]?.p||0),hits,matchups:inf?.matchups||gs.length};
+ return {value:dist[0].value,p:dist[0].p,margin:dist[0].p-(dist[1]?.p||0),hits,matchups:inf?.matchups||gs.length,focus:q.kind==='shadow'?(m?.shadowModel?.info?.focus||0):undefined};
 }
 // Shadow questions are resolved by the Shadow classifier (includes/meta/shadow-model.js) when its
 // video-grouped out-of-fold calls in the same direction (Shadow / not Shadow) were ≥ 95% right at this
@@ -29,8 +29,10 @@ function prediction(run,q){
 // gates (README "Shadow classifier"): the per-species/50-check gates never pass at this data volume,
 // while the threshold rule chosen without the test video was 19/19 right on held-out videos.
 const SHADOW_GATE={accuracy:.95,calls:25,lowerBound:.8,videos:5};
-function shadowGate(model,value){const t=model?.thresholds?.[value?'shadow':'regular'];return t&&t.accuracy>=SHADOW_GATE.accuracy&&t.n>=SHADOW_GATE.calls&&t.lowerBound>=SHADOW_GATE.lowerBound&&(t.videos||0)>=SHADOW_GATE.videos?t:null;}
-function canResolveShadow(q,p,{shadowModel,version}){if(!p||q.audit||q.kind!=='shadow')return null;const t=shadowGate(shadowModel,p.value);if(!t||p.p<t.confidence)return null;if(!q.options?.some(o=>o.value===p.value))return null;
+// Pokémon without focus shots (runs analysed before they were recorded) are judged against thresholds
+// from held-out predictions made with the focus features removed (model.thresholdsNoFocus).
+function shadowGate(model,value,focus){const set=focus===0&&model?.thresholdsNoFocus?model.thresholdsNoFocus:model?.thresholds,t=set?.[value?'shadow':'regular'];return t&&t.accuracy>=SHADOW_GATE.accuracy&&t.n>=SHADOW_GATE.calls&&t.lowerBound>=SHADOW_GATE.lowerBound&&(t.videos||0)>=SHADOW_GATE.videos?t:null;}
+function canResolveShadow(q,p,{shadowModel,version}){if(!p||q.audit||q.kind!=='shadow')return null;const t=shadowGate(shadowModel,p.value,p.focus);if(!t||p.p<t.confidence)return null;if(!q.options?.some(o=>o.value===p.value))return null;
  return {value:p.value,confidence:p.p,margin:p.margin,modelVersion:version,resolvedAt:new Date().toISOString(),reason:`Shadow classifier (aura, damage, species rates); held-out ${p.value?'Shadow':'not-Shadow'} calls at ≥${(t.confidence*100).toFixed(0)}% confidence were right ${t.right}/${t.n} on ${t.videos} videos (95% lower bound ${(t.lowerBound*100).toFixed(1)}%).`,source:'model'};}
 function canResolveMove(q,p,{calibration,version}){const c=calibration[q.kind];if(!p||q.audit||!c?.threshold||c.lowerBound<MOVE_POLICY.minLower)return null;const t=Math.max(MOVE_POLICY.floor,c.threshold);
  if(p.p<t||p.margin<MOVE_POLICY.minMargin||!q.options?.some(o=>o.value===p.value))return null;
@@ -76,9 +78,9 @@ function execute(input){
  const answers=input.answers.filter(eligible),newOnly=learnedFor(answers),learned=mergeLearned(input.baseline,newOnly);if(input.fitParams&&fs.existsSync(input.fitParams)){try{input.fit=JSON.parse(fs.readFileSync(input.fitParams,'utf8')).params;}catch{}}if(input.fit)learned.fit=input.fit;learned.channels=D.channelLearned(answers.map(a=>({...a,channel:a.video?.channel})));
  const runs=new Map(),fitted=new Map(),calibration={},predictions={},resolutions={},errors=[],independentFits=new Map();
  const gmCache=new Map();const gmFor=r=>{const file=r.gamemaster||'';if(!gmCache.has(file))gmCache.set(file,loadGameMaster(file||undefined));return gmCache.get(file);};
- for(const r of input.runs||[]){try{const raw=JSON.parse(fs.readFileSync(r.path,'utf8'));if(!Array.isArray(raw.full))continue;runs.set(r.videoId,{r,raw,live:true});}catch(e){errors.push({videoId:r.videoId,error:e.message});}}
+ for(const r of input.runs||[]){try{const raw=Focus.attach(JSON.parse(fs.readFileSync(r.path,'utf8')),r.videoId,path.dirname(path.dirname(r.path)));if(!Array.isArray(raw.full))continue;runs.set(r.videoId,{r,raw,live:true});}catch(e){errors.push({videoId:r.videoId,error:e.message});}}
  const archived=archivedLabels(input,answers),resultsDir=input.runs?.[0]?.path?path.dirname(input.runs[0].path):null;
- for(const vid of new Set(archived.map(video)))if(!runs.has(vid)&&resultsDir){const f=path.join(resultsDir,vid+'.json');try{const raw=JSON.parse(fs.readFileSync(f,'utf8'));if(Array.isArray(raw.full))runs.set(vid,{r:{videoId:vid,path:f,league:raw.learningContext?.league||1500,gamemaster:raw.learningContext?.gamemaster},raw});}catch{}}
+ for(const vid of new Set(archived.map(video)))if(!runs.has(vid)&&resultsDir){const f=path.join(resultsDir,vid+'.json');try{const raw=Focus.attach(JSON.parse(fs.readFileSync(f,'utf8')),vid,path.dirname(resultsDir));if(Array.isArray(raw.full))runs.set(vid,{r:{videoId:vid,path:f,league:raw.learningContext?.league||1500,gamemaster:raw.learningContext?.gamemaster},raw});}catch{}}
  // One refit per labelled video with every label from that video omitted (and its footage left out of
  // the species purple baseline). No conditioning on labels; the Shadow classifier is not applied here.
  const heldout=new Map(),heldoutFor=vid=>{const entry=runs.get(vid);if(!entry)return null;if(!heldout.has(vid)){try{heldout.set(vid,refitRun(entry.raw,{learned:learnedFor(answers,vid),league:entry.r.league||1500,gm:gmFor(entry.r),shadowModel:false,speciesPurple:Shadow.speciesPurple([...runs].filter(([k])=>k!==vid).map(([,e])=>e.raw))}));}catch(e){heldout.set(vid,null);}}return heldout.get(vid);};
