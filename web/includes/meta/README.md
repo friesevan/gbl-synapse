@@ -416,10 +416,10 @@ Species appearance rate = reviewed battles revealing that species / reviewed bat
 Complete teams require exactly three confirmed distinct species (Pokédex number when known), human review and confirmed lead. Leads remain first; bench members are sorted for counting equivalent teams. Trainer export excludes synthetic examples and requires one rating bracket, with league/cup/date filtering. It uses the existing trainer import format:
 
 ```json
-{"source":"Meta Extractor: human-reviewed video observations","cp":1500,"cup":"all","collectedAt":"ISO export timestamp","rank":"2200–2400","teams":[{"members":["melmetal","cramorant","jumpluff"],"count":1}]}
+{"source":"Meta Extractor: human-reviewed video observations","cp":1500,"cup":"all","collectedAt":"latest recording date","rank":"2200–2400","teams":[{"members":["melmetal","cramorant","jumpluff"],"count":1,"collectedAt":"2026-10-09"}]}
 ```
 
-The reviewed report retains each battle’s original date. Trainer aggregate `collectedAt` is the export time; select an appropriate date window before exporting. Moveset and IV uncertainty is not resolved by that team-only format; the trainer’s opponent initialization still applies.
+The reviewed report retains each battle’s original date. The trainer export keeps it too: teams are counted per recording date (`teams[].collectedAt`), and the top-level `collectedAt` is the latest recording date, so `--usage-half-life` ages battles from when they were played. Moveset and IV uncertainty is not resolved by that team-only format; the trainer’s opponent initialization still applies.
 
 ## Audit: improvements over the original prototype
 

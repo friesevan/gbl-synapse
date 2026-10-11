@@ -192,5 +192,8 @@ HudTracker.prototype.move=function(t,text,confidence,moves){const b=this.current
  const last=b.events.filter(e=>e.kind==='move').at(-1);if(last&&last.move===move.moveId&&last.actor===key&&t-last.t<8)return;
  b.events.push({t,kind:'move',side,actor:key,move:move.moveId,label:text.trim(),confidence});};
 
-const api={normalize,dictionary,match,outcome,Tracker,eligible,aggregate,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,NameCache,HudTracker,bandStats,bannerBox,bannerRead,parseBanner,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+// Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
+// Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
+function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
+const api={normalize,dictionary,match,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,NameCache,HudTracker,bandStats,bannerBox,bannerRead,parseBanner,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);
