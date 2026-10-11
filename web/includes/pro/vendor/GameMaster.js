@@ -189,6 +189,7 @@ var GameMaster = (function () {
 			// Initialize search maps
 			object.pokemonMap = new Map(object.data.pokemon.map(pokemon => [pokemon.speciesId, pokemon]));
 			object.moveMap = new Map(object.data.moves.map(move => [move.moveId, move]));
+			object.simulationMoveTemplates = new WeakMap();
 		}
 
 		// Create data for Pokemon select dropdown list
@@ -911,6 +912,34 @@ var GameMaster = (function () {
 				console.error(id + " missing");
 			}
 
+			return move;
+		}
+
+		// Reuse normalized metadata, but keep every writable battle field local.
+		// Weak keys follow the current game master entries, so data reloads and
+		// createSearchMaps invalidate templates without retaining previous data.
+		object.getSimulationMoveById = function(id){
+			if(id == "none") return;
+			var data = object.moveMap.get(id);
+			if(!data) return object.getMoveById(id);
+			var templates = object.simulationMoveTemplates || (object.simulationMoveTemplates = new WeakMap());
+			var template = templates.get(data);
+			if(!template){
+				template = object.getMoveById(id);
+				// Buff arrays were historically shared with the game master. Copies
+				// here prevent forecast changes from contaminating other battles.
+				for(var key of ["buffs", "buffsSelf", "buffsOpponent", "tags"]){
+					if(template[key]) template[key] = Object.freeze(template[key].slice());
+				}
+				if(template.formChange) template.formChange = Object.freeze(template.formChange);
+				Object.freeze(template);
+				templates.set(data, template);
+			}
+			var move = Object.assign({}, template);
+			for(var key of ["buffs", "buffsSelf", "buffsOpponent", "tags"]){
+				if(move[key]) move[key] = move[key].slice();
+			}
+			if(move.formChange) move.formChange = JSON.parse(JSON.stringify(move.formChange));
 			return move;
 		}
 

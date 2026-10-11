@@ -36,3 +36,13 @@ test('retests rotate seven challengers and retain regular incumbent checks',()=>
  assert.equal(chosen.filter(t=>t===known[0].team).length,4);
  assert.equal(new Set(chosen.map(t=>t[0])).size,8);assert.equal(retestTeam([],0),null);
 });
+test('moveset rivals include their known parent for a common-round comparison',()=>{
+ const {movesetRival,selectCandidates,generateCandidates}=require('./propose.cjs');
+ const variants=Array.from({length:18},(_,i)=>({speciesId:'p'+Math.floor(i/3),dex:Math.floor(i/3)+1})),known=[{team:[9,12,15]},{team:[0,3,6]}];
+ assert.deepEqual(movesetRival([[1,6,3]],known,variants),known[1].team);
+ assert.equal(movesetRival([[3,0,6]],known,variants),null); // Different lead.
+ const opts={variants,known,seen:new Map(known.map(r=>[r.team.join(','),r])),seed:1,candidates:100,batchTeams:4,round:0},generation=generateCandidates(opts);
+ const selected=selectCandidates(opts,generation,generation.teams.map(t=>({mean:t.join(',')==='1,3,6'?1:0,uncertainty:0})));
+ assert.equal(selected.sources['0,3,6'],'retest');assert.ok(selected.teams.some(t=>t.join(',')==='1,3,6'));
+ assert.deepEqual(selected.predictions['1,3,6'],{mean:1,uncertainty:0});
+});

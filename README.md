@@ -18,6 +18,25 @@ node web/tests/meta-extractor.test.cjs
 node artifact/build.cjs /path/to/out   # assemble the artifact for publishing
 ```
 
+## Full Team Neural Network
+
+The neural network searches for the best 3-Pokémon team against a meta. It runs locally, in Node 20 or later, from `web/`:
+
+```bash
+node training/team-search/launch-next.cjs --hours 8                # start a detached run
+node training/team-search/status.cjs training/runs/team-search-v4  # progress
+node training/team-search/stop.cjs training/runs/team-search-v4    # stop safely, saving results
+node --test training/*.test.cjs training/next/*.test.cjs training/team-search/*.test.cjs
+```
+
+When a run finishes, open the **Full Team Neural Network** tab and import `training/runs/<run>/report.pvpteams.json.gz` to view the report. Runs stay local in `web/training/runs/`, which git ignores. The full guide is in `web/training/team-search/README.md`, and the simulator speed work is in `PERFORMANCE.md` next to it.
+
+**Opponent meta.** For now, opponent teams are built from PvPoke's per-Pokémon default weights (`--meta hybrid` without a usage file): half are drawn member by member in proportion to weight, and half are built like real teams, favouring members that cover the earlier picks' weaknesses (sometimes in an ABB shape). When the Meta Extractor's observed team data is complete, pass it with `--usage-file` (format: `web/training/next/usage-template.json`). Observed teams then make up part of the opponents, or all of them with `--meta observed`.
+
+The trainer was developed separately as PvPokeTeamTrainer and merged here on 2026-10-10.
+
+## Benchmarks
+
 Benchmark runs need ffmpeg: `node web/tests/meta-benchmark/run-batch.cjs JOBS.txt OUTDIR` (see the header of that file).
 
 ## Data policy

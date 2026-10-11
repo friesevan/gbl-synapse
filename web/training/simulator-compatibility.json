@@ -1,0 +1,14 @@
+{
+  "description": "Exact source hashes verified against pre-optimization mechanics. Unlisted implementations retain their own source hash.",
+  "sources": {
+    "v4": {
+      "f2e6393e80bb4db4d7d6645a39503ee209d3dda336debfa4c3fd0eca3b081986": "1b33a32b427cf1fb1a775193c20b2895cea23b3cfa6f1daf13178ba1210754d9"
+    },
+    "v2": {
+      "c64eb677a011cf4c29e769c99a267f51706507032e807fdabd0090d7cedb96bf": "31b4a52b7983e83d4d8f40132066cc26fd0ed954c1397d53f7eb61c6ec717c75"
+    },
+    "v1": {
+      "87d22b583b7c02ee2f68191ba393f7b50648eb99c37546647f2c115deffd327b": "a0aa220e681b1c4af6fabbdef934d1c191f200101e95388f62fd322dff6b7c20"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "tests": 104,
+  "fullSuitePassed": true,
+  "benchmarkBattles": 1536,
+  "multicorePipeline": {
+    "runs": 2,
+    "workers": 12,
+    "battlesPerRun": 136,
+    "trainingFixturesPerRun": 100,
+    "models": 3,
+    "rounds": 2,
+    "screened": 4,
+    "finalists": 2,
+    "baselines": 3,
+    "exactMatches": [
+      "models",
+      "recommendation neural predictions",
+      "records",
+      "observations",
+      "screening",
+      "final evaluations",
+      "baseline evaluations",
+      "finalist selection"
+    ],
+    "algorithmHash": "9efe793703ac79d4848cb0ba78c90219bad3e71065922e5169416278a11eb017"
+  },
+  "limitation": "Regression checks and small pipeline smoke tests; not an overnight run or evidence of stronger recommended teams."
+}

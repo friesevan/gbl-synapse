@@ -13,8 +13,9 @@ function installTeamSimulationSafety(){
  Pokemon=function(...args){const p=new OriginalPokemon(...args),reset=p.reset;p.reset=function(isSwitch=false){reset.call(p,isSwitch);const max=GameMaster.getInstance().data.settings.maxBuffStages;p.statBuffs=p.startStatBuffs.map((v,i)=>Math.max(-max,Math.min(max,v+(p.nativeStatBuffs[i]||0))));p.resetMoves();};return p;};
  Object.setPrototypeOf(Pokemon,OriginalPokemon);Pokemon.prototype=OriginalPokemon.prototype;
 }
+function cloneTeamLookaheadRow(row){return {...row,moveset:row.moveset.slice(),buffs:row.buffs.slice(),stats:{...row.stats},baseStats:{...row.baseStats},ivs:{...row.ivs},types:row.types.slice(),native:row.native.slice()};}
 function createTeamLookaheadPokemon(row,index,b){
- const p=new Pokemon(row.speciesId,index,b);p.initialize(b.getCP());p.ivs={...row.ivs};p.setLevel(row.level,false);
+ const p=new Pokemon(row.speciesId,index,b,undefined,{selectedMovesOnly:true,moveset:row.moveset});p.initialize(b.getCP());p.ivs={...row.ivs};p.setLevel(row.level,false);
  if(Number.isFinite(row.cpm))p.cpm=row.cpm;
  p.selectMove('fast',row.moveset[0]);row.moveset.slice(1).forEach((m,i)=>{if(i<2)p.selectMove('charged',m,i);else if(p.hasThirdChargedMove())p.selectMove('extra-charged',m,i);});
  if(row.form&&p.changeForm)p.changeForm(row.form);
@@ -31,7 +32,7 @@ function isolateTeamScenarioScouting(ai,options){
   if(cache.has(cacheKey)){const hit=cache.get(cacheKey);return {...hit,name:type,opponent,matchups:hit.matchups.slice()};}
   const oldRandom=Math.random;Math.random=()=>.5;
   try{
-  const b=new Battle();b.setCP(options.cp);
+  const b=new Battle();b.simulationOptimizations=options.simulationOptimizations!==false;b.headless=options.simulationOptimizations!==false;b.setCP(options.cp);
   const pair=rows.map((row,i)=>createTeamLookaheadPokemon(row,i,b));
   pair[0].baitShields=type==='BOTH_BAIT'||type==='FARM'?1:0;pair[1].baitShields=type==='BOTH_BAIT'||type==='FARM'?1:0;pair[0].farmEnergy=type==='FARM';
   b.setNewPokemon(pair[0],0,false);b.setNewPokemon(pair[1],1,false);
@@ -70,12 +71,13 @@ function installTeamLookahead(battle, players, options) {
  function observe(i){const p=battle.getPokemon()[1-i];if(p)knowledge[i].reveal(teamPublicAppearance(p));}
  const useMove=battle.useMove;
  battle.useMove=function(attacker,defender,move,...args){const result=useMove.call(battle,attacker,defender,move,...args);observe(1-attacker.index);knowledge[1-attacker.index].attack(attacker.speciesId,move.moveId,battle.getTurns());return result;};
- let snapshot=null, cache=new Map(),branchCache=new Map();
+ const optimized=options.simulationOptimizations!==false;
+ let snapshot=null, cache=new Map(),branchCache=new Map(),stateKeys=new WeakMap(),foeCache=new Map();
  function capturePublic(i){return {own:players[i].getTeam().map(captureTeamLookaheadPokemon),observed:knowledge[i].view(),shields:players.map(p=>p.getShields()),clocks:players.map(p=>p.getSwitchTimer())};}
  const action=battle.getTurnAction;
  battle.getTurnAction=function(p,opponent){const a=action.call(battle,p,opponent);if(a?.type==='charged'&&p.stats.atk===opponent.stats.atk){const combatKey=q=>identity(q)+'@'+players[q.index].getTeam().map(identity).join('::'),ids=[combatKey(p),combatKey(opponent)].sort(),winner=seeded(ids.join('::')+':cmp:'+battle.getTurns())()<.5?ids[0]:ids[1];if(combatKey(p)===winner)a.settings.priority+=.001;}return a;};
  const step=battle.step;
- battle.step=function(){snapshot=null;cache=new Map();branchCache=new Map();return step.call(battle);};
+ battle.step=function(){snapshot=null;cache=new Map();branchCache=new Map();stateKeys=new WeakMap();foeCache=new Map();return step.call(battle);};
  const clone=createTeamLookaheadPokemon;
  function resource(p){return Math.max(0,p.hp/p.stats.hp)+.18*Math.max(0,p.hp/p.stats.hp)*p.energy/100;}
  // Value the whole surviving roster, not merely the immediate duel. A coverage
@@ -94,12 +96,15 @@ function installTeamLookahead(battle, players, options) {
   return totals[0]-totals[1]+.32*(shields[0]-shields[1])+.24*alignment-.12*(freedom[0]-freedom[1]);
  }
  function rollout(state,choices){
-  const branchKey=(state===snapshot?'snapshot':JSON.stringify(state))+':'+choices.join(',');
+  let stateKey;
+  if(optimized){stateKey=stateKeys.get(state);if(stateKey===undefined){stateKey=JSON.stringify(state);stateKeys.set(state,stateKey);}}
+  else stateKey=state===snapshot?'snapshot':JSON.stringify(state);
+  const branchKey=stateKey+':'+choices.join(',');
   // Both controllers inspect the same response matrix. Reuse the deterministic
   // branch forecast rather than simulating it again for the opposing decision.
   if(branchCache.has(branchKey)){stats.branchCacheHits++;return branchCache.get(branchKey);}
   stats.branches++;
-  const b=new Battle();b.setCP(options.cp);b.setBattleMode('simulate');b.setBuffChanceModifier(-1);
+  const b=new Battle();b.simulationOptimizations=options.simulationOptimizations!==false;b.headless=options.simulationOptimizations!==false;b.setCP(options.cp);b.setBattleMode('simulate');b.setBuffChanceModifier(-1);
   const teams=state.map((s,i)=>s.team.map(p=>clone(p,i,b)));prepareTeamLookaheadSwitch(teams,state,choices);const duel=choices.map((c,i)=>teams[i][c]);
   duel.forEach((p,i)=>{p.startingShields=state[i].shields;if(choices[i]!==state[i].active)p.startCooldown=0;b.setNewPokemon(p,i,false);});
   b.start();
@@ -115,10 +120,12 @@ function installTeamLookahead(battle, players, options) {
  function worlds(i){
   observe(i);const views=knowledge[i].hypotheses(1-i,battle,battle.getTurns(),seeded(JSON.stringify(knowledge[i].view())+':belief'),options.beliefSamples||3);
   const own={active:players[i].getTeam().indexOf(battle.getPokemon()[i]),shields:players[i].getShields(),timer:players[i].getSwitchTimer(),team:players[i].getTeam().map(captureTeamLookaheadPokemon)};
-  return views.map(other=>{other.shields=players[1-i].getShields();other.timer=players[1-i].getSwitchTimer();other.team.forEach(p=>p.shields=other.shields);return [JSON.parse(JSON.stringify(own)),other];});
+  return views.map(other=>{other.shields=players[1-i].getShields();other.timer=players[1-i].getSwitchTimer();other.team.forEach(p=>p.shields=other.shields);// A rollout only reads its captured input. Sharing this immutable own
+   // snapshot across worlds avoids serializing a six-Pokemon roster repeatedly.
+   return [optimized?own:JSON.parse(JSON.stringify(own)),other];});
  }
  function decide(i,forced){
-  const states=worlds(i),own=states[0][0],key=i+':'+forced;if(cache.has(key))return cache.get(key);
+  const key=i+':'+forced;if(optimized&&cache.has(key))return cache.get(key);const states=worlds(i),own=states[0][0];if(cache.has(key))return cache.get(key);
   const choices=legalTeamLookaheadChoices(own,forced);if(!choices.length)return own.active;
   const before=options.audit?JSON.stringify(capturePublic(i)):null,oldRandom=Math.random;Math.random=()=>.5;
   try{
@@ -136,7 +143,14 @@ function installTeamLookahead(battle, players, options) {
    cache.set(key,selected);return selected;
   }finally{Math.random=oldRandom;if(options.audit&&before!==JSON.stringify(capturePublic(i)))throw Error('Lookahead mutated live battle state');}
  }
- function foe(i){observe(i);const p=clone(knowledge[i].activeGuess(1-i,battle,battle.getTurns()),1-i,battle);p.shields=players[1-i].getShields();return p;}
+ function foe(i){
+  observe(i);const row=knowledge[i].activeGuess(1-i,battle,battle.getTurns()),shields=players[1-i].getShields();
+  const key=optimized?i+':'+shields+':'+JSON.stringify(row):null;
+  if(optimized&&foeCache.has(key))return foeCache.get(key);
+  const p=clone(row,1-i,battle);p.shields=shields;
+  // Damage checks only read this isolated guess; never give it to Battle.
+  if(optimized){if(foeCache.size>=16)foeCache.delete(foeCache.keys().next().value);foeCache.set(key,p);}return p;
+ }
  players.forEach((player,i)=>{
   const ai=player.getAI();
   // Champion's original methods read hidden opponent moves and energy. Replace

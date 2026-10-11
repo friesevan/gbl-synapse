@@ -1,8 +1,27 @@
+# Current v4 simulator and staged search
+
+Start a fresh run with `node training/team-search/launch-next.cjs --hours 8`.
+Results go to `training/runs/team-search-v4`; use a different `--out` directory
+when that directory already contains a checkpoint. Status and stop commands take
+that directory as their argument. Import its `report.pvpteams.json.gz` in the site.
+
+The current simulator caches fixed metadata, initializes selected forecast moves,
+and skips graphical bookkeeping during headless training. Staged acquisition gives
+all candidates eight common opponent fixtures, then expands the promising or
+uncertain half. Final evaluation retains its independent opponent panel.
+
+Read [the current guide](../../training/team-search/README.md) and
+[performance measurements and compatibility](../../training/team-search/PERFORMANCE.md).
+The exact verified simulator implementation preserves historical v4 replay IDs;
+changed search settings require a new run or compatible v4 warm-start.
+
+The following v3 instructions are historical.
+
 # Neural team search v3: run, import and transfer
 
 ## Run tonight
 
-From `Desktop/Projects/PvPokeTeamTrainer`:
+From the `web/` folder of GBL Synapse:
 
 ```sh
 node training/team-search/launch-next.cjs --hours 8

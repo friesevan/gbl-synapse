@@ -16,6 +16,41 @@ class DamageMultiplier{
 */
 
 class DamageCalculator {
+	static typeEffectivenessCache = new Map();
+	static damageCaches = new WeakMap();
+
+	// Ordered, normalized typing preserves the original multiplication order.
+	// Species with changing forms select another immutable table automatically.
+	static getCachedTypeEffectiveness(types){
+		var key = types.map(type => type.toLowerCase()).join("|");
+		var table = DamageCalculator.typeEffectivenessCache.get(key);
+		if(!table){
+			table = [];
+			for(var type of Pokemon.getAllTypes()){
+				table[type.toLowerCase()] = DamageCalculator.getEffectiveness(type, types);
+			}
+			Object.freeze(table);
+			// Bound custom typing combinations as well as normal game typings.
+			if(DamageCalculator.typeEffectivenessCache.size >= 512) DamageCalculator.typeEffectivenessCache.clear();
+			DamageCalculator.typeEffectivenessCache.set(key, table);
+		}
+		return table;
+	}
+
+	static getDamageCacheEntry(attacker, defender, move){
+		var battle = attacker.getBattle && attacker.getBattle();
+		if(!battle || battle.simulationOptimizations !== true || battle.cacheDamage === false) return null;
+		var attackers = DamageCalculator.damageCaches.get(battle);
+		if(!attackers) DamageCalculator.damageCaches.set(battle, attackers = new WeakMap());
+		var defenders = attackers.get(attacker);
+		if(!defenders) attackers.set(attacker, defenders = new WeakMap());
+		var moves = defenders.get(defender);
+		if(!moves) defenders.set(defender, moves = new WeakMap());
+		var entry = moves.get(move);
+		if(!entry) moves.set(move, entry = {});
+		// Only the latest state per weakly referenced pair/move is retained.
+		return entry;
+	}
 	// Calculate damage given an attacker, defender, and move, requires move to be initialized first
 	static damage(attacker, defender, move, charge = 1, mode = "simulate", players = []){
 		var effectiveness = defender.typeEffectiveness[move.type];
@@ -51,6 +86,12 @@ class DamageCalculator {
 		}
 
 		let damage = 1;
+		let cache = DamageCalculator.getDamageCacheEntry(attacker, defender, move);
+		// Key by final numeric inputs, after stages, Shadow modifiers, forms,
+		// mega bonuses and emulation charge rules. HP methods include max HP.
+		if(cache && cache.power === power && cache.stab === move.stab && cache.attack === attackStat && cache.defense === defenseStat && cache.effectiveness === effectiveness && cache.charge === chargeMultiplier && cache.mega === megaMultiplier && cache.method === move.damageMethod && cache.hp === defender.stats.hp){
+			return cache.damage;
+		}
 
 		// Form specific special cases
 		switch(attacker.activeFormId){
@@ -73,6 +114,11 @@ class DamageCalculator {
 				break;
 		}
 
+		if(cache){
+			cache.power = power; cache.stab = move.stab; cache.attack = attackStat; cache.defense = defenseStat;
+			cache.effectiveness = effectiveness; cache.charge = chargeMultiplier; cache.mega = megaMultiplier;
+			cache.method = move.damageMethod; cache.hp = defender.stats.hp; cache.damage = damage;
+		}
 		return damage;
 	}
 

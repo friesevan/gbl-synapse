@@ -31,6 +31,16 @@ function Battle(){
 	// Battle properties
 
 	var timeline = [];
+	// Headless training still runs the authoritative combat/timer state machine.
+	// Only charged-event names are needed for rollout elapsed time and outcome
+	// counters; full replay events are retained whenever headless is disabled.
+	this.recordTimelineEvent = function(type, name, actor, eventTime, turn, values, editable){
+		if(self.headless){
+			if(type.startsWith("charged ")) timeline.push({type: type, name: name});
+			return;
+		}
+		timeline.push(new TimelineEvent(type, name, actor, eventTime, turn, values, editable));
+	};
 	var time;
 	var matchupDisplayTime;
 	var turns;
@@ -358,7 +368,7 @@ function Battle(){
 
 							if(valid){
 								cooldownsToSet[i] += poke.fastMove.cooldown;
-								timeline.push(new TimelineEvent("tap interaction", "Tap", poke.index, time, turns, [2,0]));
+								self.recordTimelineEvent("tap interaction", "Tap", poke.index, time, turns, [2,0]);
 							}
 						}
 
@@ -514,7 +524,7 @@ function Battle(){
 		// Display sixty second marker after 60 seconds have passed
 
 		if((mode == "simulate")&&(matchupDisplayTime >= 45000)&&(! switchTimerMarked)){
-			timeline.push(new TimelineEvent("switchAvailable", "Switch Available (45 seconds)", 0, time, turns));
+			self.recordTimelineEvent("switchAvailable", "Switch Available (45 seconds)", 0, time, turns);
 			switchTimerMarked = true;
 		}
 
@@ -525,7 +535,7 @@ function Battle(){
 			var poke = pokemon[i];
 
 			if(poke.hp <= 0){
-				timeline.push(new TimelineEvent("faint", "Faint", poke.index, time, turns));
+				self.recordTimelineEvent("faint", "Faint", poke.index, time, turns);
 
 				var opponentIndex = (i == 0) ? 0 : 1;
 
@@ -974,7 +984,7 @@ function Battle(){
 				if(roundShieldUsed){
 					displayTime -= chargedMinigameTime;
 				}
-				timeline.push(new TimelineEvent("tap interaction wait", "Wait", poke.index, displayTime, turns, [2,0]));
+				self.recordTimelineEvent("tap interaction wait", "Wait", poke.index, displayTime, turns, [2,0]);
 				break;
 
 			case "switch":
@@ -1066,7 +1076,7 @@ function Battle(){
 
 			if(! move.hasTag("instant")){
 				for(var i = 0; i < 8; i++){
-					timeline.push(new TimelineEvent("tap "+move.type, "Swipe", attacker.index, time+(1000*i), turns, [i]));
+					self.recordTimelineEvent("tap "+move.type, "Swipe", attacker.index, time+(1000*i), turns, [i]);
 				}
 			}
 
@@ -1209,14 +1219,14 @@ function Battle(){
 						shieldTimelineDescriptions.push("Form Change");
 					}
 
-					timeline.push(new TimelineEvent("shield", "Shield", defender.index, time+8500, turns, shieldTimelineDescriptions));
+					self.recordTimelineEvent("shield", "Shield", defender.index, time+8500, turns, shieldTimelineDescriptions);
 
 					if(players.length > 0){
 						players[defender.index].useShield();
 					}
 
 					if(mode == "emulate"){
-						turnMessages.push({ index: defender.index, str: "Blocked!"});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Blocked!"});
 					}
 
 					// Don't debuff if it shields
@@ -1259,9 +1269,9 @@ function Battle(){
 				if(mode == "emulate"){
 					var effectiveness = defender.typeEffectiveness[move.type];
 					if(effectiveness > 1){
-						turnMessages.push({ index: defender.index, str: "Super effective!"});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Super effective!"});
 					} else if(effectiveness < 1){
-						turnMessages.push({ index: defender.index, str: "Not very effective..."});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Not very effective..."});
 					}
 
 					if((defender.hp <= damage)&&(players[0].getSwitchTimer() == 0)&&(players[1].getSwitchTimer()==0)){
@@ -1278,13 +1288,13 @@ function Battle(){
 				damage = 1;
 				roundShieldUsed = true;
 
-				timeline.push(new TimelineEvent("shieldSpecial", "Disguise Busted", defender.index, time+8500, turns, shieldTimelineDescriptions));
+				self.recordTimelineEvent("shieldSpecial", "Disguise Busted", defender.index, time+8500, turns, shieldTimelineDescriptions);
 
 				if(mode == "emulate"){
-					turnMessages.push({ index: defender.index, str: "Blocked!"});
+					if(!self.headless) turnMessages.push({ index: defender.index, str: "Blocked!"});
 					
 					if(defender.formChange.alternativeFormId == "mimikyu_busted"){
-						turnMessages.push({ index: defender.index, str: "Mimikyu's disguise was busted!"});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Mimikyu's disguise was busted!"});
 					}
 				}
 
@@ -1479,7 +1489,7 @@ function Battle(){
 									statDescription = "rose sharply";
 								}
 
-								turnMessages.push({ index: buffTargets[i].target.index, str: statNames[n] + " " + statDescription +"!"});
+								if(!self.headless) turnMessages.push({ index: buffTargets[i].target.index, str: statNames[n] + " " + statDescription +"!"});
 							}
 						}
 					}
@@ -1516,7 +1526,7 @@ function Battle(){
 		}
 
 
-		var timelineDescriptions = [damage, energyValue, percentDamage];
+		var timelineDescriptions = self.headless ? null : [damage, energyValue, percentDamage];
 
 		if(buffApplied){
 			var buffStr = "";
@@ -1541,7 +1551,7 @@ function Battle(){
 				buffStr += move.buffs[1] + " Defense";
 			}
 
-			timelineDescriptions.push(buffStr);
+			if(timelineDescriptions) timelineDescriptions.push(buffStr);
 		}
 
 		// Apply post-attack form changes
@@ -1577,7 +1587,7 @@ function Battle(){
 		}
 
 		if(attackerChangedForm){
-			timelineDescriptions.push("Form Change");
+			if(timelineDescriptions) timelineDescriptions.push("Form Change");
 		}
 
 		// Form specific functionality for Cramorant Gulp Missile trigger, form change is applied on Gulp Missile
@@ -1634,12 +1644,12 @@ function Battle(){
 		}
 
 		if(defenderChangedForm){
-			//timelineDescriptions.push("Form Change");
+			//if(timelineDescriptions) timelineDescriptions.push("Form Change");
 		}
 
 		let editable = ! move.hasTag("uneditable");
 
-		timeline.push(new TimelineEvent(type, move.name, attacker.index, displayTime, turns, timelineDescriptions, editable));
+		self.recordTimelineEvent(type, move.name, attacker.index, displayTime, turns, timelineDescriptions, editable);
 		// If a Pokemon has fainted, clear the action queue
 
 		if(defender.hp <= 0){
@@ -1969,6 +1979,7 @@ function Battle(){
 	// For the emulator, push an animation into the list of animations from this turn
 
 	this.pushAnimation = function(actor, type, value){
+		if(self.headless) return;
 		turnAnimations.push({
 			actor: actor,
 			type: type,

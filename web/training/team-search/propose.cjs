@@ -32,6 +32,12 @@ function retestTeam(known,round=0){
  if(!known.length)return null;
  const rivals=known.slice(1,8);return round%3===0||!rivals.length?known[0].team:rivals[(round-Math.floor(round/3)-1)%rivals.length].team;
 }
+function movesetRival(teams,known,variants){
+ const composition=team=>[variants[team[0]].speciesId??variants[team[0]].dex,...team.slice(1).map(i=>variants[i].speciesId??variants[i].dex).sort()].join('|');
+ // Include the known parent on this round's identical opponents and seeds.
+ for(const team of teams)for(const row of known)if(teamKey(team)!==teamKey(row.team)&&composition(team)===composition(row.team))return row.team;
+ return null;
+}
 function generateCandidates({variants,known,seen,seed,candidates=12000,localSearch=true}){
  const r=random(seed),unique=new Map(),groups=variantGroups(variants);let attempts=0;
  if(localSearch)for(const row of known.slice(0,8))for(const t of localNeighbors(row.team,variants,groups)){
@@ -43,15 +49,16 @@ function generateCandidates({variants,known,seen,seed,candidates=12000,localSear
 function selectCandidates({variants,known,seen,batchTeams=24,exploration='promising',round=0},generation,scores){
  if(scores.length!==generation.teams.length)throw Error('Candidate score count mismatch');
  if(scores.some(s=>!Number.isFinite(s.mean)||!Number.isFinite(s.uncertainty)||s.uncertainty<0))throw Error('Candidate predictions must be finite');
- const r=generation.random,ranked=generation.teams.map((team,i)=>({team,...scores[i]})),teams=[],sources={},used=new Set();
+ const r=generation.random,ranked=generation.teams.map((team,i)=>({team,...scores[i]})),teams=[],sources={},used=new Set(),predictions={};
+ for(const row of ranked)predictions[teamKey(row.team)]={mean:row.mean,uncertainty:row.uncertainty};
  const add=(team,source)=>{const key=teamKey(team);if(!used.has(key)){teams.push(team);used.add(key);sources[key]=source;}};
  const retest=known.length?1:0,randomSlots=Math.floor(batchTeams*.25),uncertaintySlots=Math.floor(batchTeams*.25),neuralSlots=batchTeams-randomSlots-uncertaintySlots-retest;
  ranked.sort((a,b)=>b.mean-a.mean);for(const row of ranked){if(teams.length>=neuralSlots)break;add(row.team,'neural');}
  ranked.sort((a,b)=>explorationScore(b,exploration)-explorationScore(a,exploration));for(const row of ranked){if(teams.length>=neuralSlots+uncertaintySlots)break;add(row.team,'uncertainty');}
  // Genuine uniform exploration, independent of the neural/mutation proposal shortlist.
  for(let tries=0;teams.length<batchTeams-retest&&tries<batchTeams*1000;tries++){const team=randomTeam(variants,r);if(!seen.has(teamKey(team)))add(team,'random');}
- if(retest)add(retestTeam(known,round),'retest');
- return {teams,sources};
+ if(retest)add(movesetRival(teams,known,variants)||retestTeam(known,round),'retest');
+ return {teams,sources,predictions:Object.fromEntries(teams.filter(team=>predictions[teamKey(team)]).map(team=>[teamKey(team),predictions[teamKey(team)]]))};
 }
 function propose(options){const generation=generateCandidates(options);return selectCandidates(options,generation,generation.teams.map(options.predict));}
-module.exports={propose,generateCandidates,selectCandidates,mutateCandidate,localNeighbors,explorationScore,retestTeam};
+module.exports={propose,generateCandidates,selectCandidates,mutateCandidate,localNeighbors,explorationScore,retestTeam,movesetRival};

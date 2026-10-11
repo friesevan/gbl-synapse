@@ -2,7 +2,7 @@
 
 Neural fitting and inference now reuse minibatch calculations and scratch buffers. See [performance measurements and compatibility](PERFORMANCE.md).
 
-Run a fresh eight-hour experiment from `Desktop/Projects/PvPokeTeamTrainer`:
+Run a fresh eight-hour experiment from the `web/` folder of GBL Synapse:
 
 ```sh
 node training/team-search/launch-next.cjs --hours 8
@@ -34,7 +34,7 @@ The latest acquisition algorithm is `interaction-neural-v6-promising-exploration
 
 ## Reuse the completed run without contaminating the new final test
 
-From `Desktop/Projects/PvPokeTeamTrainer`:
+From the `web/` folder of GBL Synapse:
 
 ```sh
 node training/team-search/absorb-evaluation.cjs training/runs/team-search-v3-refined-20261010/checkpoint.json training/runs/team-search-v3-refined-20261010/pool.json training/runs/v3-next-evidence.json
@@ -70,7 +70,7 @@ This system learns a neural matchup model from **complete three-on-three battles
 
 ## Run on the M2 Max
 
-The installed trainer is at `Desktop/Projects/PvPokeTeamTrainer`. From that folder, with Node 20 or later:
+The trainer lives in the `web/` folder of GBL Synapse. From that folder, with Node 20 or later:
 
 ```sh
 node --test training/team-search/*.test.cjs

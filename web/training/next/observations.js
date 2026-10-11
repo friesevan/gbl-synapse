@@ -5,7 +5,9 @@ function teamPublicAppearance(p){return {speciesId:p.speciesId,form:p.activeForm
 function teamObservedKnowledge(options){
  const bySpecies=new Map((options.beliefRoster||[]).map(p=>[p.speciesId,p]));
  const moves=new Map(GameMaster.getInstance().data.moves.map(m=>[m.moveId,m]));
- const seen=new Map();let active=null,initialLead=null,matchKey='',matchedBank=[];
+ const seen=new Map(),templates=new Map();
+ const optimized=options.simulationOptimizations!==false;
+ let active=null,initialLead=null,matchKey='',matchedBank=[];
  function reveal(appearance){
   if(active&&active!==appearance.speciesId){const outgoing=seen.get(active);if(outgoing&&outgoing.hpFraction>0)outgoing.buffs=[0,0];}
   active=appearance.speciesId;initialLead??=active;
@@ -32,11 +34,20 @@ function teamObservedKnowledge(options){
   return {speciesId:id,dex:p.dex,moveset:[p.fastMove.moveId,...p.chargedMoves.filter(Boolean).map(m=>m.moveId)],weight:1};
  }
  function guessed(row,prior,index,b,turn){
-  const p=new Pokemon(row.speciesId,index,b);p.initialize(options.cp);
-  const selected=compatibleMoves(row,prior);p.selectMove('fast',selected[0]);selected.slice(1).forEach((m,j)=>{if(j<2)p.selectMove('charged',m,j);else if(p.hasThirdChargedMove())p.selectMove('extra-charged',m,j);});
-  if(row.form&&p.changeForm)p.changeForm(row.form);
-  p.hp=Math.round(p.stats.hp*row.hpFraction);p.energy=row.energy;p.statBuffs=row.buffs.slice();p.cooldown=row.fast?Math.max(0,p.fastMove.cooldown-(turn-row.lastFastTurn)*500):0;
-  return captureTeamLookaheadPokemon(p);
+  const selected=compatibleMoves(row,prior),key=JSON.stringify([row.speciesId,selected,row.form,index,b.getCP(),b.getLevelCap()]);
+  let template=optimized?templates.get(key):null;
+  if(!template){
+   const p=new Pokemon(row.speciesId,index,b,undefined,{selectedMovesOnly:true,moveset:selected});p.initialize(options.cp);
+   p.selectMove('fast',selected[0]);selected.slice(1).forEach((m,j)=>{if(j<2)p.selectMove('charged',m,j);else if(p.hasThirdChargedMove())p.selectMove('extra-charged',m,j);});
+   if(row.form&&p.changeForm)p.changeForm(row.form);
+   template={row:captureTeamLookaheadPokemon(p),fastCooldown:p.fastMove.cooldown};
+   // Templates hold public/default-IV metadata only; mutable HP, energy,
+   // stages and cooldown are copied below for each hypothesized world.
+   if(optimized){if(templates.size>=256)templates.delete(templates.keys().next().value);templates.set(key,template);}
+  }
+  const guess=cloneTeamLookaheadRow(template.row);
+  guess.hp=Math.round(guess.stats.hp*row.hpFraction);guess.energy=row.energy;guess.buffs=row.buffs.slice();guess.cooldown=row.fast?Math.max(0,template.fastCooldown-(turn-row.lastFastTurn)*500):0;
+  return guess;
  }
  function hypotheses(index,b,turn,r,count=3){
   if(!active)return [];

@@ -4,7 +4,7 @@
 * The main Pokemon class used to represent individual Pokemon in battle
 */
 
-function Pokemon(id, i, b, d){
+function Pokemon(id, i, b, d, simulationOptions){
 	var gm = GameMaster.getInstance();
 	var data;
 	var battle = b;
@@ -27,6 +27,11 @@ function Pokemon(id, i, b, d){
 		console.log(id + " not found");
 		return false;
 	}
+
+	// Forecasts never choose new attacks. Ordinary species can prepare only
+	// their selected pools; special forms retain all replacement attacks.
+	var selectedMoves = b && b.simulationOptimizations === true && simulationOptions && simulationOptions.selectedMovesOnly && !data.formChange && !data.originalFormId && !data.extraChargedMoves ? simulationOptions.moveset : null;
+	var getMove = b && b.simulationOptimizations === true ? gm.getSimulationMoveById : gm.getMoveById;
 
 	// Base properties
 	this.data = data;
@@ -170,7 +175,8 @@ function Pokemon(id, i, b, d){
 	// Set battle moves
 
 	for(var i = 0; i < data.fastMoves.length; i++){
-		var move = gm.getMoveById(data.fastMoves[i]);
+		if(selectedMoves && data.fastMoves[i] !== selectedMoves[0]) continue;
+		var move = getMove(data.fastMoves[i]);
 
 		if(move){
 			move.legacy = (self.legacyMoves.indexOf(move.moveId) > -1);
@@ -194,11 +200,12 @@ function Pokemon(id, i, b, d){
 
 	// Safeguard for Pokemon with empty Fast Move pool
 	if(this.fastMovePool.length == 0){
-		this.fastMovePool.push(gm.getMoveById("SPLASH"));
+		this.fastMovePool.push(getMove("SPLASH"));
 	}
 
 	for(var i = 0; i < data.chargedMoves.length; i++){
-		var move = gm.getMoveById(data.chargedMoves[i]);
+		if(selectedMoves && selectedMoves.indexOf(data.chargedMoves[i], 1) < 0) continue;
+		var move = getMove(data.chargedMoves[i]);
 
 		if(move){
 			move.legacy = (self.legacyMoves.indexOf(move.moveId) > -1);
@@ -222,7 +229,7 @@ function Pokemon(id, i, b, d){
 
 	// Safeguard for Pokemon with empty Charged Move pool
 	if(this.chargedMovePool.length == 0){
-		this.chargedMovePool.push(gm.getMoveById("STRUGGLE"));
+		this.chargedMovePool.push(getMove("STRUGGLE"));
 	}
 
 
@@ -232,7 +239,7 @@ function Pokemon(id, i, b, d){
 		self.shadowEligible = true;
 
 		if(data.level25CP <= b.getCP()){
-			self.chargedMovePool.push(gm.getMoveById("RETURN"));
+			self.chargedMovePool.push(getMove("RETURN"));
 			self.legacyMoves.push("RETURN");
 		}
 	}
@@ -241,7 +248,7 @@ function Pokemon(id, i, b, d){
 		self.shadowEligible = true;
 
 		if(data.tags.indexOf("shadow") > -1){
-			self.chargedMovePool.push(gm.getMoveById("FRUSTRATION"));
+			self.chargedMovePool.push(getMove("FRUSTRATION"));
 		}
 
 		self.legacyMoves.push("FRUSTRATION");
@@ -250,7 +257,7 @@ function Pokemon(id, i, b, d){
 	// Add extra Charged Moves for Mega Evolutions or other qualifying Pokemon
 	if(data.extraChargedMoves && data.extraChargedMoves.length > 0){
 		for(let i = 0; i < data.extraChargedMoves.length; i++){
-			let move = gm.getMoveById(data.extraChargedMoves[i]);
+			let move = getMove(data.extraChargedMoves[i]);
 
 			if(move){
 				move.legacy = (self.legacyMoves.indexOf(move.moveId) > -1);
@@ -1905,6 +1912,9 @@ function Pokemon(id, i, b, d){
 
 		if(! battle){
 			return;
+		}
+		if(battle.simulationOptimizations === true){
+			return DamageCalculator.getCachedTypeEffectiveness(self.types);
 		}
 
 		var arr = [];

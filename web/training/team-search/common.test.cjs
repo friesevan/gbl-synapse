@@ -25,6 +25,13 @@ test('screening and final fixture seeds are fresh after absorbing earlier pilot 
  const {screeningSeed,freshEvaluationSeeds}=require('./common.cjs');
  for(const seed of [1,20261009,0xffffffff]){const screening=screeningSeed(seed);assert.ok(Number.isInteger(screening)&&screening>0&&screening<=0xffffffff);assert.notEqual(screening,seed);assert.equal(screeningSeed(seed),screening);assert.equal(freshEvaluationSeeds(seed,[]),true);assert.equal(freshEvaluationSeeds(seed,[seed]),false);assert.equal(freshEvaluationSeeds(seed,[screening]),false);}
 });
+test('guarded seeds preserve historical streams unless unsigned normalization aliases a sealed seed',()=>{
+ const {guardedSeed}=require('./common.cjs');
+ assert.equal(guardedSeed(123,[456,789]),123);assert.equal(guardedSeed(2**32+123,[456,789]),123);
+ assert.equal(guardedSeed(2**32+123,[123,124]),125);assert.equal(guardedSeed(0xffffffff,[0xffffffff]),0);
+ assert.equal(guardedSeed(2**32,[1,2]),0);assert.deepEqual(Array.from({length:3},random(guardedSeed(2**32,[1,2]))),Array.from({length:3},random(0)));
+ assert.equal(guardedSeed(2**32,[0]),1);assert.throws(()=>guardedSeed(.5,[1]),/integer/);
+});
 
 test('fresh warm-start rounds skip existing raw evidence while ordinary resume retains pending progress',()=>{const {nextRound}=require('./common.cjs');assert.equal(nextRound({round:8,observations:[{round:7}]}),8);assert.equal(nextRound({round:8,observations:[{round:8}]}),9);assert.equal(nextRound({round:0,observations:[]}),0);});
 

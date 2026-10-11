@@ -3,7 +3,7 @@
 function random(seed){let s=seed>>>0;return ()=>{s=(s+0x6D2B79F5)>>>0;let t=Math.imul(s^(s>>>15),1|s);t^=t+Math.imul(t^(t>>>7),61|t);return ((t^(t>>>14))>>>0)/4294967296;};}
 const defaults={switch:1,switchFarm:1,bait:1,farm:1,shield:1};
 
-function replayCore(teamA,teamB,policyA=defaults,policyB=defaults,{seed=1,cp=1500,lookahead=false,horizon=24,interval=4,trace=false,audit=false,neutralPriority=false,plannerTeams=[true,true],beliefRoster=[],beliefTeams=[],beliefSamples=3}={}){
+function replayCore(teamA,teamB,policyA=defaults,policyB=defaults,{seed=1,cp=1500,lookahead=false,horizon=24,interval=4,trace=false,audit=false,neutralPriority=false,plannerTeams=[true,true],beliefRoster=[],beliefTeams=[],beliefSamples=3,simulationOptimizations=true}={}){
  let time=0,id=0,result=null,events=0,lastPhase='',timeouts=0;const timers=new Map(),rng=random(seed);
  const schedule=(fn,delay,repeat)=>{const key=++id;timers.set(key,{fn,at:time+delay,repeat});return key;};
  Math.random=rng;
@@ -200,6 +200,7 @@ var GameMaster = (function () {
 			// Initialize search maps
 			object.pokemonMap = new Map(object.data.pokemon.map(pokemon => [pokemon.speciesId, pokemon]));
 			object.moveMap = new Map(object.data.moves.map(move => [move.moveId, move]));
+			object.simulationMoveTemplates = new WeakMap();
 		}
 
 		// Create data for Pokemon select dropdown list
@@ -922,6 +923,34 @@ var GameMaster = (function () {
 				console.error(id + " missing");
 			}
 
+			return move;
+		}
+
+		// Reuse normalized metadata, but keep every writable battle field local.
+		// Weak keys follow the current game master entries, so data reloads and
+		// createSearchMaps invalidate templates without retaining previous data.
+		object.getSimulationMoveById = function(id){
+			if(id == "none") return;
+			var data = object.moveMap.get(id);
+			if(!data) return object.getMoveById(id);
+			var templates = object.simulationMoveTemplates || (object.simulationMoveTemplates = new WeakMap());
+			var template = templates.get(data);
+			if(!template){
+				template = object.getMoveById(id);
+				// Buff arrays were historically shared with the game master. Copies
+				// here prevent forecast changes from contaminating other battles.
+				for(var key of ["buffs", "buffsSelf", "buffsOpponent", "tags"]){
+					if(template[key]) template[key] = Object.freeze(template[key].slice());
+				}
+				if(template.formChange) template.formChange = Object.freeze(template.formChange);
+				Object.freeze(template);
+				templates.set(data, template);
+			}
+			var move = Object.assign({}, template);
+			for(var key of ["buffs", "buffsSelf", "buffsOpponent", "tags"]){
+				if(move[key]) move[key] = move[key].slice();
+			}
+			if(move.formChange) move.formChange = JSON.parse(JSON.stringify(move.formChange));
 			return move;
 		}
 
@@ -1884,6 +1913,41 @@ class DamageMultiplier{
 */
 
 class DamageCalculator {
+	static typeEffectivenessCache = new Map();
+	static damageCaches = new WeakMap();
+
+	// Ordered, normalized typing preserves the original multiplication order.
+	// Species with changing forms select another immutable table automatically.
+	static getCachedTypeEffectiveness(types){
+		var key = types.map(type => type.toLowerCase()).join("|");
+		var table = DamageCalculator.typeEffectivenessCache.get(key);
+		if(!table){
+			table = [];
+			for(var type of Pokemon.getAllTypes()){
+				table[type.toLowerCase()] = DamageCalculator.getEffectiveness(type, types);
+			}
+			Object.freeze(table);
+			// Bound custom typing combinations as well as normal game typings.
+			if(DamageCalculator.typeEffectivenessCache.size >= 512) DamageCalculator.typeEffectivenessCache.clear();
+			DamageCalculator.typeEffectivenessCache.set(key, table);
+		}
+		return table;
+	}
+
+	static getDamageCacheEntry(attacker, defender, move){
+		var battle = attacker.getBattle && attacker.getBattle();
+		if(!battle || battle.simulationOptimizations !== true || battle.cacheDamage === false) return null;
+		var attackers = DamageCalculator.damageCaches.get(battle);
+		if(!attackers) DamageCalculator.damageCaches.set(battle, attackers = new WeakMap());
+		var defenders = attackers.get(attacker);
+		if(!defenders) attackers.set(attacker, defenders = new WeakMap());
+		var moves = defenders.get(defender);
+		if(!moves) defenders.set(defender, moves = new WeakMap());
+		var entry = moves.get(move);
+		if(!entry) moves.set(move, entry = {});
+		// Only the latest state per weakly referenced pair/move is retained.
+		return entry;
+	}
 	// Calculate damage given an attacker, defender, and move, requires move to be initialized first
 	static damage(attacker, defender, move, charge = 1, mode = "simulate", players = []){
 		var effectiveness = defender.typeEffectiveness[move.type];
@@ -1919,6 +1983,12 @@ class DamageCalculator {
 		}
 
 		let damage = 1;
+		let cache = DamageCalculator.getDamageCacheEntry(attacker, defender, move);
+		// Key by final numeric inputs, after stages, Shadow modifiers, forms,
+		// mega bonuses and emulation charge rules. HP methods include max HP.
+		if(cache && cache.power === power && cache.stab === move.stab && cache.attack === attackStat && cache.defense === defenseStat && cache.effectiveness === effectiveness && cache.charge === chargeMultiplier && cache.mega === megaMultiplier && cache.method === move.damageMethod && cache.hp === defender.stats.hp){
+			return cache.damage;
+		}
 
 		// Form specific special cases
 		switch(attacker.activeFormId){
@@ -1941,6 +2011,11 @@ class DamageCalculator {
 				break;
 		}
 
+		if(cache){
+			cache.power = power; cache.stab = move.stab; cache.attack = attackStat; cache.defense = defenseStat;
+			cache.effectiveness = effectiveness; cache.charge = chargeMultiplier; cache.mega = megaMultiplier;
+			cache.method = move.damageMethod; cache.hp = defender.stats.hp; cache.damage = damage;
+		}
 		return damage;
 	}
 
@@ -3629,6 +3704,16 @@ function Battle(){
 	// Battle properties
 
 	var timeline = [];
+	// Headless training still runs the authoritative combat/timer state machine.
+	// Only charged-event names are needed for rollout elapsed time and outcome
+	// counters; full replay events are retained whenever headless is disabled.
+	this.recordTimelineEvent = function(type, name, actor, eventTime, turn, values, editable){
+		if(self.headless){
+			if(type.startsWith("charged ")) timeline.push({type: type, name: name});
+			return;
+		}
+		timeline.push(new TimelineEvent(type, name, actor, eventTime, turn, values, editable));
+	};
 	var time;
 	var matchupDisplayTime;
 	var turns;
@@ -3956,7 +4041,7 @@ function Battle(){
 
 							if(valid){
 								cooldownsToSet[i] += poke.fastMove.cooldown;
-								timeline.push(new TimelineEvent("tap interaction", "Tap", poke.index, time, turns, [2,0]));
+								self.recordTimelineEvent("tap interaction", "Tap", poke.index, time, turns, [2,0]);
 							}
 						}
 
@@ -4112,7 +4197,7 @@ function Battle(){
 		// Display sixty second marker after 60 seconds have passed
 
 		if((mode == "simulate")&&(matchupDisplayTime >= 45000)&&(! switchTimerMarked)){
-			timeline.push(new TimelineEvent("switchAvailable", "Switch Available (45 seconds)", 0, time, turns));
+			self.recordTimelineEvent("switchAvailable", "Switch Available (45 seconds)", 0, time, turns);
 			switchTimerMarked = true;
 		}
 
@@ -4123,7 +4208,7 @@ function Battle(){
 			var poke = pokemon[i];
 
 			if(poke.hp <= 0){
-				timeline.push(new TimelineEvent("faint", "Faint", poke.index, time, turns));
+				self.recordTimelineEvent("faint", "Faint", poke.index, time, turns);
 
 				var opponentIndex = (i == 0) ? 0 : 1;
 
@@ -4572,7 +4657,7 @@ function Battle(){
 				if(roundShieldUsed){
 					displayTime -= chargedMinigameTime;
 				}
-				timeline.push(new TimelineEvent("tap interaction wait", "Wait", poke.index, displayTime, turns, [2,0]));
+				self.recordTimelineEvent("tap interaction wait", "Wait", poke.index, displayTime, turns, [2,0]);
 				break;
 
 			case "switch":
@@ -4664,7 +4749,7 @@ function Battle(){
 
 			if(! move.hasTag("instant")){
 				for(var i = 0; i < 8; i++){
-					timeline.push(new TimelineEvent("tap "+move.type, "Swipe", attacker.index, time+(1000*i), turns, [i]));
+					self.recordTimelineEvent("tap "+move.type, "Swipe", attacker.index, time+(1000*i), turns, [i]);
 				}
 			}
 
@@ -4807,14 +4892,14 @@ function Battle(){
 						shieldTimelineDescriptions.push("Form Change");
 					}
 
-					timeline.push(new TimelineEvent("shield", "Shield", defender.index, time+8500, turns, shieldTimelineDescriptions));
+					self.recordTimelineEvent("shield", "Shield", defender.index, time+8500, turns, shieldTimelineDescriptions);
 
 					if(players.length > 0){
 						players[defender.index].useShield();
 					}
 
 					if(mode == "emulate"){
-						turnMessages.push({ index: defender.index, str: "Blocked!"});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Blocked!"});
 					}
 
 					// Don't debuff if it shields
@@ -4857,9 +4942,9 @@ function Battle(){
 				if(mode == "emulate"){
 					var effectiveness = defender.typeEffectiveness[move.type];
 					if(effectiveness > 1){
-						turnMessages.push({ index: defender.index, str: "Super effective!"});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Super effective!"});
 					} else if(effectiveness < 1){
-						turnMessages.push({ index: defender.index, str: "Not very effective..."});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Not very effective..."});
 					}
 
 					if((defender.hp <= damage)&&(players[0].getSwitchTimer() == 0)&&(players[1].getSwitchTimer()==0)){
@@ -4876,13 +4961,13 @@ function Battle(){
 				damage = 1;
 				roundShieldUsed = true;
 
-				timeline.push(new TimelineEvent("shieldSpecial", "Disguise Busted", defender.index, time+8500, turns, shieldTimelineDescriptions));
+				self.recordTimelineEvent("shieldSpecial", "Disguise Busted", defender.index, time+8500, turns, shieldTimelineDescriptions);
 
 				if(mode == "emulate"){
-					turnMessages.push({ index: defender.index, str: "Blocked!"});
+					if(!self.headless) turnMessages.push({ index: defender.index, str: "Blocked!"});
 					
 					if(defender.formChange.alternativeFormId == "mimikyu_busted"){
-						turnMessages.push({ index: defender.index, str: "Mimikyu's disguise was busted!"});
+						if(!self.headless) turnMessages.push({ index: defender.index, str: "Mimikyu's disguise was busted!"});
 					}
 				}
 
@@ -5077,7 +5162,7 @@ function Battle(){
 									statDescription = "rose sharply";
 								}
 
-								turnMessages.push({ index: buffTargets[i].target.index, str: statNames[n] + " " + statDescription +"!"});
+								if(!self.headless) turnMessages.push({ index: buffTargets[i].target.index, str: statNames[n] + " " + statDescription +"!"});
 							}
 						}
 					}
@@ -5114,7 +5199,7 @@ function Battle(){
 		}
 
 
-		var timelineDescriptions = [damage, energyValue, percentDamage];
+		var timelineDescriptions = self.headless ? null : [damage, energyValue, percentDamage];
 
 		if(buffApplied){
 			var buffStr = "";
@@ -5139,7 +5224,7 @@ function Battle(){
 				buffStr += move.buffs[1] + " Defense";
 			}
 
-			timelineDescriptions.push(buffStr);
+			if(timelineDescriptions) timelineDescriptions.push(buffStr);
 		}
 
 		// Apply post-attack form changes
@@ -5175,7 +5260,7 @@ function Battle(){
 		}
 
 		if(attackerChangedForm){
-			timelineDescriptions.push("Form Change");
+			if(timelineDescriptions) timelineDescriptions.push("Form Change");
 		}
 
 		// Form specific functionality for Cramorant Gulp Missile trigger, form change is applied on Gulp Missile
@@ -5232,12 +5317,12 @@ function Battle(){
 		}
 
 		if(defenderChangedForm){
-			//timelineDescriptions.push("Form Change");
+			//if(timelineDescriptions) timelineDescriptions.push("Form Change");
 		}
 
 		let editable = ! move.hasTag("uneditable");
 
-		timeline.push(new TimelineEvent(type, move.name, attacker.index, displayTime, turns, timelineDescriptions, editable));
+		self.recordTimelineEvent(type, move.name, attacker.index, displayTime, turns, timelineDescriptions, editable);
 		// If a Pokemon has fainted, clear the action queue
 
 		if(defender.hp <= 0){
@@ -5567,6 +5652,7 @@ function Battle(){
 	// For the emulator, push an animation into the list of animations from this turn
 
 	this.pushAnimation = function(actor, type, value){
+		if(self.headless) return;
 		turnAnimations.push({
 			actor: actor,
 			type: type,
@@ -5655,7 +5741,7 @@ function Battle(){
 * The main Pokemon class used to represent individual Pokemon in battle
 */
 
-function Pokemon(id, i, b, d){
+function Pokemon(id, i, b, d, simulationOptions){
 	var gm = GameMaster.getInstance();
 	var data;
 	var battle = b;
@@ -5678,6 +5764,11 @@ function Pokemon(id, i, b, d){
 		console.log(id + " not found");
 		return false;
 	}
+
+	// Forecasts never choose new attacks. Ordinary species can prepare only
+	// their selected pools; special forms retain all replacement attacks.
+	var selectedMoves = b && b.simulationOptimizations === true && simulationOptions && simulationOptions.selectedMovesOnly && !data.formChange && !data.originalFormId && !data.extraChargedMoves ? simulationOptions.moveset : null;
+	var getMove = b && b.simulationOptimizations === true ? gm.getSimulationMoveById : gm.getMoveById;
 
 	// Base properties
 	this.data = data;
@@ -5821,7 +5912,8 @@ function Pokemon(id, i, b, d){
 	// Set battle moves
 
 	for(var i = 0; i < data.fastMoves.length; i++){
-		var move = gm.getMoveById(data.fastMoves[i]);
+		if(selectedMoves && data.fastMoves[i] !== selectedMoves[0]) continue;
+		var move = getMove(data.fastMoves[i]);
 
 		if(move){
 			move.legacy = (self.legacyMoves.indexOf(move.moveId) > -1);
@@ -5845,11 +5937,12 @@ function Pokemon(id, i, b, d){
 
 	// Safeguard for Pokemon with empty Fast Move pool
 	if(this.fastMovePool.length == 0){
-		this.fastMovePool.push(gm.getMoveById("SPLASH"));
+		this.fastMovePool.push(getMove("SPLASH"));
 	}
 
 	for(var i = 0; i < data.chargedMoves.length; i++){
-		var move = gm.getMoveById(data.chargedMoves[i]);
+		if(selectedMoves && selectedMoves.indexOf(data.chargedMoves[i], 1) < 0) continue;
+		var move = getMove(data.chargedMoves[i]);
 
 		if(move){
 			move.legacy = (self.legacyMoves.indexOf(move.moveId) > -1);
@@ -5873,7 +5966,7 @@ function Pokemon(id, i, b, d){
 
 	// Safeguard for Pokemon with empty Charged Move pool
 	if(this.chargedMovePool.length == 0){
-		this.chargedMovePool.push(gm.getMoveById("STRUGGLE"));
+		this.chargedMovePool.push(getMove("STRUGGLE"));
 	}
 
 
@@ -5883,7 +5976,7 @@ function Pokemon(id, i, b, d){
 		self.shadowEligible = true;
 
 		if(data.level25CP <= b.getCP()){
-			self.chargedMovePool.push(gm.getMoveById("RETURN"));
+			self.chargedMovePool.push(getMove("RETURN"));
 			self.legacyMoves.push("RETURN");
 		}
 	}
@@ -5892,7 +5985,7 @@ function Pokemon(id, i, b, d){
 		self.shadowEligible = true;
 
 		if(data.tags.indexOf("shadow") > -1){
-			self.chargedMovePool.push(gm.getMoveById("FRUSTRATION"));
+			self.chargedMovePool.push(getMove("FRUSTRATION"));
 		}
 
 		self.legacyMoves.push("FRUSTRATION");
@@ -5901,7 +5994,7 @@ function Pokemon(id, i, b, d){
 	// Add extra Charged Moves for Mega Evolutions or other qualifying Pokemon
 	if(data.extraChargedMoves && data.extraChargedMoves.length > 0){
 		for(let i = 0; i < data.extraChargedMoves.length; i++){
-			let move = gm.getMoveById(data.extraChargedMoves[i]);
+			let move = getMove(data.extraChargedMoves[i]);
 
 			if(move){
 				move.legacy = (self.legacyMoves.indexOf(move.moveId) > -1);
@@ -7557,6 +7650,9 @@ function Pokemon(id, i, b, d){
 		if(! battle){
 			return;
 		}
+		if(battle.simulationOptimizations === true){
+			return DamageCalculator.getCachedTypeEffectiveness(self.types);
+		}
 
 		var arr = [];
 
@@ -8287,6 +8383,7 @@ Pokemon.getAllTypes = function(lowerCase = false){
 
 	return types;
 }
+
 // Load AI archetypes
 
 var file = webRoot+"data/training/aiArchetypes.json?v=1";
@@ -9943,8 +10040,9 @@ function installTeamSimulationSafety(){
  Pokemon=function(...args){const p=new OriginalPokemon(...args),reset=p.reset;p.reset=function(isSwitch=false){reset.call(p,isSwitch);const max=GameMaster.getInstance().data.settings.maxBuffStages;p.statBuffs=p.startStatBuffs.map((v,i)=>Math.max(-max,Math.min(max,v+(p.nativeStatBuffs[i]||0))));p.resetMoves();};return p;};
  Object.setPrototypeOf(Pokemon,OriginalPokemon);Pokemon.prototype=OriginalPokemon.prototype;
 }
+function cloneTeamLookaheadRow(row){return {...row,moveset:row.moveset.slice(),buffs:row.buffs.slice(),stats:{...row.stats},baseStats:{...row.baseStats},ivs:{...row.ivs},types:row.types.slice(),native:row.native.slice()};}
 function createTeamLookaheadPokemon(row,index,b){
- const p=new Pokemon(row.speciesId,index,b);p.initialize(b.getCP());p.ivs={...row.ivs};p.setLevel(row.level,false);
+ const p=new Pokemon(row.speciesId,index,b,undefined,{selectedMovesOnly:true,moveset:row.moveset});p.initialize(b.getCP());p.ivs={...row.ivs};p.setLevel(row.level,false);
  if(Number.isFinite(row.cpm))p.cpm=row.cpm;
  p.selectMove('fast',row.moveset[0]);row.moveset.slice(1).forEach((m,i)=>{if(i<2)p.selectMove('charged',m,i);else if(p.hasThirdChargedMove())p.selectMove('extra-charged',m,i);});
  if(row.form&&p.changeForm)p.changeForm(row.form);
@@ -9961,7 +10059,7 @@ function isolateTeamScenarioScouting(ai,options){
   if(cache.has(cacheKey)){const hit=cache.get(cacheKey);return {...hit,name:type,opponent,matchups:hit.matchups.slice()};}
   const oldRandom=Math.random;Math.random=()=>.5;
   try{
-  const b=new Battle();b.setCP(options.cp);
+  const b=new Battle();b.simulationOptimizations=options.simulationOptimizations!==false;b.headless=options.simulationOptimizations!==false;b.setCP(options.cp);
   const pair=rows.map((row,i)=>createTeamLookaheadPokemon(row,i,b));
   pair[0].baitShields=type==='BOTH_BAIT'||type==='FARM'?1:0;pair[1].baitShields=type==='BOTH_BAIT'||type==='FARM'?1:0;pair[0].farmEnergy=type==='FARM';
   b.setNewPokemon(pair[0],0,false);b.setNewPokemon(pair[1],1,false);
@@ -10000,12 +10098,13 @@ function installTeamLookahead(battle, players, options) {
  function observe(i){const p=battle.getPokemon()[1-i];if(p)knowledge[i].reveal(teamPublicAppearance(p));}
  const useMove=battle.useMove;
  battle.useMove=function(attacker,defender,move,...args){const result=useMove.call(battle,attacker,defender,move,...args);observe(1-attacker.index);knowledge[1-attacker.index].attack(attacker.speciesId,move.moveId,battle.getTurns());return result;};
- let snapshot=null, cache=new Map(),branchCache=new Map();
+ const optimized=options.simulationOptimizations!==false;
+ let snapshot=null, cache=new Map(),branchCache=new Map(),stateKeys=new WeakMap(),foeCache=new Map();
  function capturePublic(i){return {own:players[i].getTeam().map(captureTeamLookaheadPokemon),observed:knowledge[i].view(),shields:players.map(p=>p.getShields()),clocks:players.map(p=>p.getSwitchTimer())};}
  const action=battle.getTurnAction;
  battle.getTurnAction=function(p,opponent){const a=action.call(battle,p,opponent);if(a?.type==='charged'&&p.stats.atk===opponent.stats.atk){const combatKey=q=>identity(q)+'@'+players[q.index].getTeam().map(identity).join('::'),ids=[combatKey(p),combatKey(opponent)].sort(),winner=seeded(ids.join('::')+':cmp:'+battle.getTurns())()<.5?ids[0]:ids[1];if(combatKey(p)===winner)a.settings.priority+=.001;}return a;};
  const step=battle.step;
- battle.step=function(){snapshot=null;cache=new Map();branchCache=new Map();return step.call(battle);};
+ battle.step=function(){snapshot=null;cache=new Map();branchCache=new Map();stateKeys=new WeakMap();foeCache=new Map();return step.call(battle);};
  const clone=createTeamLookaheadPokemon;
  function resource(p){return Math.max(0,p.hp/p.stats.hp)+.18*Math.max(0,p.hp/p.stats.hp)*p.energy/100;}
  // Value the whole surviving roster, not merely the immediate duel. A coverage
@@ -10024,12 +10123,15 @@ function installTeamLookahead(battle, players, options) {
   return totals[0]-totals[1]+.32*(shields[0]-shields[1])+.24*alignment-.12*(freedom[0]-freedom[1]);
  }
  function rollout(state,choices){
-  const branchKey=(state===snapshot?'snapshot':JSON.stringify(state))+':'+choices.join(',');
+  let stateKey;
+  if(optimized){stateKey=stateKeys.get(state);if(stateKey===undefined){stateKey=JSON.stringify(state);stateKeys.set(state,stateKey);}}
+  else stateKey=state===snapshot?'snapshot':JSON.stringify(state);
+  const branchKey=stateKey+':'+choices.join(',');
   // Both controllers inspect the same response matrix. Reuse the deterministic
   // branch forecast rather than simulating it again for the opposing decision.
   if(branchCache.has(branchKey)){stats.branchCacheHits++;return branchCache.get(branchKey);}
   stats.branches++;
-  const b=new Battle();b.setCP(options.cp);b.setBattleMode('simulate');b.setBuffChanceModifier(-1);
+  const b=new Battle();b.simulationOptimizations=options.simulationOptimizations!==false;b.headless=options.simulationOptimizations!==false;b.setCP(options.cp);b.setBattleMode('simulate');b.setBuffChanceModifier(-1);
   const teams=state.map((s,i)=>s.team.map(p=>clone(p,i,b)));prepareTeamLookaheadSwitch(teams,state,choices);const duel=choices.map((c,i)=>teams[i][c]);
   duel.forEach((p,i)=>{p.startingShields=state[i].shields;if(choices[i]!==state[i].active)p.startCooldown=0;b.setNewPokemon(p,i,false);});
   b.start();
@@ -10045,10 +10147,12 @@ function installTeamLookahead(battle, players, options) {
  function worlds(i){
   observe(i);const views=knowledge[i].hypotheses(1-i,battle,battle.getTurns(),seeded(JSON.stringify(knowledge[i].view())+':belief'),options.beliefSamples||3);
   const own={active:players[i].getTeam().indexOf(battle.getPokemon()[i]),shields:players[i].getShields(),timer:players[i].getSwitchTimer(),team:players[i].getTeam().map(captureTeamLookaheadPokemon)};
-  return views.map(other=>{other.shields=players[1-i].getShields();other.timer=players[1-i].getSwitchTimer();other.team.forEach(p=>p.shields=other.shields);return [JSON.parse(JSON.stringify(own)),other];});
+  return views.map(other=>{other.shields=players[1-i].getShields();other.timer=players[1-i].getSwitchTimer();other.team.forEach(p=>p.shields=other.shields);// A rollout only reads its captured input. Sharing this immutable own
+   // snapshot across worlds avoids serializing a six-Pokemon roster repeatedly.
+   return [optimized?own:JSON.parse(JSON.stringify(own)),other];});
  }
  function decide(i,forced){
-  const states=worlds(i),own=states[0][0],key=i+':'+forced;if(cache.has(key))return cache.get(key);
+  const key=i+':'+forced;if(optimized&&cache.has(key))return cache.get(key);const states=worlds(i),own=states[0][0];if(cache.has(key))return cache.get(key);
   const choices=legalTeamLookaheadChoices(own,forced);if(!choices.length)return own.active;
   const before=options.audit?JSON.stringify(capturePublic(i)):null,oldRandom=Math.random;Math.random=()=>.5;
   try{
@@ -10066,7 +10170,14 @@ function installTeamLookahead(battle, players, options) {
    cache.set(key,selected);return selected;
   }finally{Math.random=oldRandom;if(options.audit&&before!==JSON.stringify(capturePublic(i)))throw Error('Lookahead mutated live battle state');}
  }
- function foe(i){observe(i);const p=clone(knowledge[i].activeGuess(1-i,battle,battle.getTurns()),1-i,battle);p.shields=players[1-i].getShields();return p;}
+ function foe(i){
+  observe(i);const row=knowledge[i].activeGuess(1-i,battle,battle.getTurns()),shields=players[1-i].getShields();
+  const key=optimized?i+':'+shields+':'+JSON.stringify(row):null;
+  if(optimized&&foeCache.has(key))return foeCache.get(key);
+  const p=clone(row,1-i,battle);p.shields=shields;
+  // Damage checks only read this isolated guess; never give it to Battle.
+  if(optimized){if(foeCache.size>=16)foeCache.delete(foeCache.keys().next().value);foeCache.set(key,p);}return p;
+ }
  players.forEach((player,i)=>{
   const ai=player.getAI();
   // Champion's original methods read hidden opponent moves and energy. Replace
@@ -10114,7 +10225,9 @@ function teamPublicAppearance(p){return {speciesId:p.speciesId,form:p.activeForm
 function teamObservedKnowledge(options){
  const bySpecies=new Map((options.beliefRoster||[]).map(p=>[p.speciesId,p]));
  const moves=new Map(GameMaster.getInstance().data.moves.map(m=>[m.moveId,m]));
- const seen=new Map();let active=null,initialLead=null,matchKey='',matchedBank=[];
+ const seen=new Map(),templates=new Map();
+ const optimized=options.simulationOptimizations!==false;
+ let active=null,initialLead=null,matchKey='',matchedBank=[];
  function reveal(appearance){
   if(active&&active!==appearance.speciesId){const outgoing=seen.get(active);if(outgoing&&outgoing.hpFraction>0)outgoing.buffs=[0,0];}
   active=appearance.speciesId;initialLead??=active;
@@ -10141,11 +10254,20 @@ function teamObservedKnowledge(options){
   return {speciesId:id,dex:p.dex,moveset:[p.fastMove.moveId,...p.chargedMoves.filter(Boolean).map(m=>m.moveId)],weight:1};
  }
  function guessed(row,prior,index,b,turn){
-  const p=new Pokemon(row.speciesId,index,b);p.initialize(options.cp);
-  const selected=compatibleMoves(row,prior);p.selectMove('fast',selected[0]);selected.slice(1).forEach((m,j)=>{if(j<2)p.selectMove('charged',m,j);else if(p.hasThirdChargedMove())p.selectMove('extra-charged',m,j);});
-  if(row.form&&p.changeForm)p.changeForm(row.form);
-  p.hp=Math.round(p.stats.hp*row.hpFraction);p.energy=row.energy;p.statBuffs=row.buffs.slice();p.cooldown=row.fast?Math.max(0,p.fastMove.cooldown-(turn-row.lastFastTurn)*500):0;
-  return captureTeamLookaheadPokemon(p);
+  const selected=compatibleMoves(row,prior),key=JSON.stringify([row.speciesId,selected,row.form,index,b.getCP(),b.getLevelCap()]);
+  let template=optimized?templates.get(key):null;
+  if(!template){
+   const p=new Pokemon(row.speciesId,index,b,undefined,{selectedMovesOnly:true,moveset:selected});p.initialize(options.cp);
+   p.selectMove('fast',selected[0]);selected.slice(1).forEach((m,j)=>{if(j<2)p.selectMove('charged',m,j);else if(p.hasThirdChargedMove())p.selectMove('extra-charged',m,j);});
+   if(row.form&&p.changeForm)p.changeForm(row.form);
+   template={row:captureTeamLookaheadPokemon(p),fastCooldown:p.fastMove.cooldown};
+   // Templates hold public/default-IV metadata only; mutable HP, energy,
+   // stages and cooldown are copied below for each hypothesized world.
+   if(optimized){if(templates.size>=256)templates.delete(templates.keys().next().value);templates.set(key,template);}
+  }
+  const guess=cloneTeamLookaheadRow(template.row);
+  guess.hp=Math.round(guess.stats.hp*row.hpFraction);guess.energy=row.energy;guess.buffs=row.buffs.slice();guess.cooldown=row.fast?Math.max(0,template.fastCooldown-(turn-row.lastFastTurn)*500):0;
+  return guess;
  }
  function hypotheses(index,b,turn,r,count=3){
   if(!active)return [];
@@ -10172,11 +10294,11 @@ function teamObservedKnowledge(options){
  return {reveal,attack,hypotheses,activeGuess:(index,b,turn)=>guessed(seen.get(active),priorFor(active,b),index,b,turn),view:()=>({active,initialLead,seen:[...seen.values()].map(p=>({...p,charged:p.charged.slice(),buffs:p.buffs.slice()}))})};
 }
 
- const input={beliefRoster,beliefTeams,beliefSamples,plannerTeams,neutralPriority,lookahead,horizon,interval,audit,seed,data:structuredClone(data),teams:[teamA,teamB],policies:[policyA,policyB],cp};
+ const input={simulationOptimizations,trace,beliefRoster,beliefTeams,beliefSamples,plannerTeams,neutralPriority,lookahead,horizon,interval,audit,seed,data:structuredClone(data),teams:[teamA,teamB],policies:[policyA,policyB],cp};
 
  var gm=GameMaster.getInstance();gm.data=input.data;gm.originalData=gm.data;gm.createSearchMaps();gm.rankings={};
  installTeamSimulationSafety(input);
- var battle=new Battle();battle.setCP(input.cp);
+ var battle=new Battle();battle.simulationOptimizations=input.simulationOptimizations;battle.headless=input.simulationOptimizations&&!input.trace;battle.setCP(input.cp);
  var players=[new Player(0,3,battle),new Player(1,3,battle)];
  for(var i=0;i<2;i++){
    var team=input.teams[i].map(row=>{var p=new Pokemon(row.speciesId,i,battle);p.initialize(input.cp);p.selectMove('fast',row.moveset[0]);p.selectMove('charged',row.moveset[1],0);p.selectMove('charged',row.moveset[2]||'none',1);if(row.moveset[3]&&p.hasThirdChargedMove())p.selectMove('extra-charged',row.moveset[3],2);return p;});
