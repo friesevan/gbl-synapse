@@ -846,6 +846,7 @@ class Harvester:
 
     def extract_one(self, r):
         vid, path = r["id"], r["dl_path"]
+        source_sha = dict(r).get("sha256")  # Legacy replay callers may have no recorded hash.
         if not path or not os.path.exists(path):
             self.state.x("UPDATE videos SET x_status='failed', err='file missing' WHERE id=?", (vid,))
             self.remove_video_files(vid, "file missing")
@@ -864,17 +865,22 @@ class Harvester:
         if getattr(self.a, "ffmpeg_threads", 1):
             env["FFMPEG_THREADS"] = str(getattr(self.a, "ffmpeg_threads", 1))
         ok = os.path.exists(res)
+        reused_result = ok
         t = time.time()
         probe, plan = None, {}
         if not ok:
             # A reviewer-requested reanalysis ("battles are shown") always decodes the whole video.
             reprocess = bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,)))
+            if reprocess:
+                for restriction in ("RANGES", "START", "END"):
+                    env.pop(restriction, None)
+                env["FORCE_FULL"] = "1"
             labels = read_json(os.path.join(self.a.work_dir, "labels", vid + ".json"), {})
             if not getattr(self.a, "no_probe", False) and not reprocess:
-                probe = self.run_probe(vid, path, r["duration"], source_sha=r["sha256"])
+                probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)
                 plan = probe_plan(probe)
             elif reprocess and not getattr(self.a, "no_probe", False) and labels.get("perspective") in ("left", "right"):
-                probe = self.run_probe(vid, path, r["duration"], source_sha=r["sha256"])   # screens only; whole video is analysed
+                probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)   # screens only; whole video is analysed
                 plan = {"CROP": probe["box"] and ",".join(map(str, probe["box"]))} if probe and probe.get("box") else {}
             crop = perspective_crop(probe, labels.get("perspective"))
             if crop and plan is not None:
@@ -936,10 +942,14 @@ class Harvester:
         if ok:
             result = read_json(res, {})
             result["learningContext"] = {"gamemaster": gm, "league": cp, "uploadDate": r["upload_date"]}
-            result["media"] = {"path": path, "sha256": r["sha256"], "sha256Scope": "sha256-prefix-16",
-                               "sizeBytes": os.path.getsize(path), "retained": self.a.keep,
-                               "crop": env.get("CROP", "auto"), "ranges": env.get("RANGES", ""),
-                               "timestampBasis": "original-source-seconds"}
+            if not reused_result:
+                # Never relabel an existing extraction as originating from a newer
+                # download or this process's crop/range defaults.
+                sha_scope = "sha256" if isinstance(source_sha, str) and len(source_sha) == 64 else "sha256-prefix-16" if isinstance(source_sha, str) and len(source_sha) == 16 else "unknown"
+                result["media"] = {"path": path, "sha256": source_sha, "sha256Scope": sha_scope,
+                                   "sizeBytes": os.path.getsize(path), "retained": self.a.keep,
+                                   "crop": env.get("CROP", "auto"), "ranges": env.get("RANGES", ""),
+                                   "timestampBasis": "original-source-seconds"}
             atomic_json(res, result)
             try:
                 refined = write_league_refinement(res, lg, self.schedule, r["upload_date"])

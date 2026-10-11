@@ -3,13 +3,15 @@
 Existing download_dir is the durable cache. Default retention keeps complete ID-named
 videos, even when an old state row says deleted. --discard-videos is the explicit
 harvester opt-out. Run this module with --jobs OUTPUT.txt to prepare run-batch.cjs
-input plus OUTPUT.txt.manifest.json. Batch jobs process the original whole file:
-stored crop/ranges are preserved in the manifest, and timestamps stay unmodified.
+input plus OUTPUT.txt.manifest.json. Batch jobs process the original whole file by
+default. --use-saved-ranges with --verify-sha reuses padded ranges only when the
+recorded source hash matches; timestamps stay in original source seconds.
 """
 import argparse
 from contextlib import closing
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -140,7 +142,9 @@ def inventory(download_dir, work_dir, verify_sha=False, video_ids=None):
                 "duration": row.get("duration"), "sizeBytes": size,
                 "recordedSha256": recorded_sha, "recordedHashScope": "sha256-prefix-16" if recorded_sha and len(recorded_sha) == 16 else "sha256" if recorded_sha and len(recorded_sha) == 64 else "unknown",
                 "sha256": None, "hashVerified": None, "league": league, "cp": cp,
-                "gamemaster": context.get("gamemaster") or "", "crop": crop, "ranges": media.get("ranges") or probe.get("ranges") or [],
+                "gamemaster": context.get("gamemaster") or "", "crop": crop,
+                "ranges": media.get("ranges") if "ranges" in media else probe.get("ranges") or [],
+                "rangeSourceSha256": media.get("sha256"),
                 "timestampBasis": "original-source-seconds", "extractionStatus": row.get("x_status"),
                 "previouslyMarkedDeleted": bool(row.get("deleted_date")), "tracked": bool(row),
                 "alternatives": [str(p) for p in paths if p != path]}
@@ -159,7 +163,39 @@ def inventory(download_dir, work_dir, verify_sha=False, video_ids=None):
             "items": items, "counts": {key: sum(i["status"] == key for i in items) for key in ("available", "missing", "unsafe", "hash-mismatch", "unreadable")}}
 
 
-def batch_jobs(report, default_cp=None, gamemaster=None):
+def normalized_ranges(value):
+    if isinstance(value, str):
+        if not value:
+            return []
+        if value.strip().startswith('['):
+            value = json.loads(value)
+        else:
+            pairs = []
+            for part in value.split(','):
+                match = re.fullmatch(r'\s*(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)\s*', part)
+                if not match:
+                    raise ValueError('Invalid source-time ranges')
+                pairs.append([float(match[1]), float(match[2])])
+            value = pairs
+    if not isinstance(value, list):
+        raise ValueError('Ranges must be a list')
+    pairs = []
+    for pair in value:
+        if isinstance(pair, dict):
+            pair = [pair.get('start'), pair.get('end')]
+        if not isinstance(pair, list) or len(pair) != 2 or any(type(n) not in (int, float) or not math.isfinite(n) for n in pair) or pair[0] < 0 or pair[1] <= pair[0]:
+            raise ValueError('Invalid source-time ranges')
+        pairs.append(pair.copy())
+    merged = []
+    for a, b in sorted(pairs):
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(b, merged[-1][1])
+        else:
+            merged.append([a, b])
+    return merged
+
+
+def batch_jobs(report, default_cp=None, gamemaster=None, use_saved_ranges=False):
     """Generate compatible whole-source jobs; never silently guess an unknown league."""
     lines, skipped = [], []
     for item in report["items"]:
@@ -168,6 +204,20 @@ def batch_jobs(report, default_cp=None, gamemaster=None):
             skipped.append({"videoId": item["videoId"], "reason": item["status"] if item["status"] != "available" else "league-unknown; provide --default-cp"})
             continue
         fields = [item["path"], str(cp), gamemaster or item.get("gamemaster") or "", item.get("crop") or "auto"]
+        if use_saved_ranges:
+            # Old result summaries do not contain current probe identity. Reuse is
+            # explicit, source-verified and nonempty; unknown/invalid ranges fall
+            # back to full analysis rather than erasing possible short battles.
+            ranges = []
+            range_sha = str(item.get('rangeSourceSha256') or '').lower()
+            current_sha = str(item.get('sha256') or '').lower()
+            bound_source = bool(re.fullmatch(r'(?:[0-9a-f]{16}|[0-9a-f]{64})', range_sha) and current_sha.startswith(range_sha))
+            if bound_source and item.get('hashVerified') is True and item.get('recordedHashScope') in ('sha256', 'sha256-prefix-16'):
+                try:
+                    ranges = normalized_ranges(item.get('ranges') or [])
+                except (ValueError, TypeError):
+                    pass
+            fields.append(json.dumps(ranges, separators=(',', ':')) if ranges else '')
         if any(any(c in str(value) for c in ("|", "\n", "\r")) for value in fields):
             skipped.append({"videoId": item["videoId"], "reason": "job field contains a delimiter"})
             continue
@@ -198,17 +248,20 @@ def main(argv=None):
     parser.add_argument("--download-dir", required=True)
     parser.add_argument("--work-dir", required=True)
     parser.add_argument("--verify-sha", action="store_true", help="stream files to verify full SHA-256 against recorded hashes")
+    parser.add_argument("--use-saved-ranges", action="store_true", help="reuse nonempty padded source ranges; requires --verify-sha; use full analysis for changed detection/crop")
     parser.add_argument("--video-id", action="append", default=[])
     parser.add_argument("--jobs", help="write run-batch input plus .manifest.json at this explicit output path")
     parser.add_argument("--default-cp", type=int, choices=(500, 1500, 2500, 10000))
     parser.add_argument("--gamemaster", help="explicit game-master override for generated jobs")
     parser.add_argument("--overwrite", action="store_true", help="replace existing chosen output files")
     args = parser.parse_args(argv)
+    if args.use_saved_ranges and not args.verify_sha:
+        parser.error('--use-saved-ranges requires --verify-sha')
     report = inventory(args.download_dir, args.work_dir, args.verify_sha, args.video_id)
     if args.jobs:
-        text, skipped = batch_jobs(report, args.default_cp, args.gamemaster)
+        text, skipped = batch_jobs(report, args.default_cp, args.gamemaster, args.use_saved_ranges)
         report["jobsSkipped"] = skipped
-        report["jobsTimestampBasis"] = "whole-source-original-seconds; stored ranges are metadata only"
+        report["jobsTimestampBasis"] = "original-source-seconds; verified saved ranges enabled" if args.use_saved_ranges else "whole-source-original-seconds; stored ranges are metadata only"
         manifest = args.jobs + ".manifest.json"
         # Check both destinations before writing either to avoid partial output on conflicts.
         for name in (args.jobs, manifest):

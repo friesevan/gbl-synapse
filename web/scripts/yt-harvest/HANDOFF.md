@@ -222,3 +222,7 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
 - No "Is the HP bar here?" Validate question was added. The outline score separates bars from look-alikes
   cleanly (real ≥ 0.9, others < 0.1), and a visual check found no false bars, so labelled ground truth
   wasn't needed.
+
+## Offline retest speed follow-up
+
+See root `VIDEO-ANALYSIS-PERFORMANCE.md` and `HANDOFF-2026-10-11-OBSERVED-META.md` for current speed measurements. Retained-media inventory optionally emits verified, source-bound padded ranges with `--use-saved-ranges --verify-sha`. Batch jobs now accept a fifth JSON range column, clip per overlapping chunk, skip empty windows without launching a decoder and support FORCE_FULL=1. Existing saved extraction provenance is preserved on resume. Unknown legacy media identity stays full-source. Saved-feature refits avoid decoding/OCR for model-only changes; pixel detector changes still require retained originals. No existing process or live dataset was modified during this follow-up.

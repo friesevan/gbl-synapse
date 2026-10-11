@@ -225,7 +225,7 @@ class Pipeline(unittest.TestCase):
             h.export_validation=lambda vid,res,*a,**kw:seen.setdefault('result',json.loads(Path(res).read_text())) and 1
             def popen(*a,**kw):raise AssertionError('full analysis must be skipped')
             no_hud={'box':[0,0,10,20],'ranges':[],'samples':90,'hits':0,'coverage':0,'duration':600,'keyInterval':6}
-            with patch.object(H.Harvester,'run_probe',lambda self,*a:no_hud),patch('harvest.subprocess.Popen',popen),\
+            with patch.object(H.Harvester,'run_probe',lambda self,*a,**kw:no_hud),patch('harvest.subprocess.Popen',popen),\
                  patch('harvest.gamemaster_for',return_value=''),patch('harvest.write_league_refinement',return_value=None):
                 h.extract_one({'id':vid,'dl_path':str(path),'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
             self.assertEqual(seen['result']['battles'],[]);self.assertEqual(seen['result']['probe']['samples'],90)
@@ -238,10 +238,31 @@ class Pipeline(unittest.TestCase):
                 def __init__(self,command,**kwargs):
                     seen['env']=kwargs['env'];Path(command[-1]).write_text('{"battles":[]}');self.returncode=0
                 def poll(self):return 0
-            with patch.object(H.Harvester,'run_probe',lambda self,*a:ranged),patch('harvest.subprocess.Popen',Process),\
+            with patch.object(H.Harvester,'run_probe',lambda self,*a,**kw:ranged),patch('harvest.subprocess.Popen',Process),\
                  patch('harvest.gamemaster_for',return_value=''),patch('harvest.write_league_refinement',return_value=None):
                 h.extract_one({'id':vid,'dl_path':str(path),'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
             self.assertEqual((seen['env']['RANGES'],seen['env']['CROP'],seen['env']['FFMPEG_THREADS']),('30.0-400.0','0,0,10,20','1'))
+            h.state.db.close()
+
+    def test_reviewer_full_reanalysis_clears_inherited_timing_restrictions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            h=self.fake(directory);vid='abcdefghijk';path=Path(directory)/(vid+'.mp4');path.write_bytes(b'fake')
+            h.state.x('INSERT INTO videos(id) VALUES(?)',(vid,))
+            h.state.x('INSERT INTO reprocess(id,requested) VALUES(?,1)',(vid,))
+            h.export_validation=lambda *a,**kw:0
+            seen={}
+            class Process:
+                def __init__(self,command,**kwargs):
+                    seen.update(kwargs['env']);Path(command[-1]).write_text('{"battles":[],"full":[]}');self.returncode=0
+                def poll(self):return 0
+            with patch.dict(os.environ,{'START':'100','END':'200','RANGES':'stale-malformed-plan'}),\
+                 patch('harvest.subprocess.Popen',Process),patch('harvest.gamemaster_for',return_value=''),\
+                 patch('harvest.write_league_refinement',return_value=None):
+                h.extract_one({'id':vid,'dl_path':str(path),'sha256':'a'*64,'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
+            self.assertEqual(seen['FORCE_FULL'],'1')
+            self.assertFalse(any(key in seen for key in ('START','END','RANGES')))
+            result=json.loads((Path(directory)/'results'/(vid+'.json')).read_text())
+            self.assertEqual(result['media']['ranges'],'');self.assertEqual(result['media']['sha256'],'a'*64)
             h.state.db.close()
 
     def test_confirmed_league_survives_registry_export_and_retry(self):

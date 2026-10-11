@@ -9,7 +9,7 @@ The existing repository has no GitHub Pages deployment. No new hosting account o
 
 ## Implementation state
 
-Work is being integrated in `/private/tmp/gbl-synapse-harvester-work` before applying to `/Users/evanfries/Desktop/Projects/GBL Synapse` with original-file hash checks. Prior harvester/feedback changes from this conversation are included in the requested publication. `.claude/` is unrelated and must remain untouched/uncommitted.
+Authoritative local app repository: `/Users/evanfries/Desktop/Projects/GBL Synapse`. Earlier scratch checkouts are historical and must not overwrite newer concurrent classifier changes. Integrate new work in fresh isolated checkouts and apply only guarded source-file changes. `.claude/` and unstaged learned/registry data are unrelated and must remain untouched/uncommitted.
 
 Assigned work: observed_backend (normalization/API/cache/tests), observed_ui (team/cup/occurrence browser and import/shared preservation), ui_cleanup (Analyze harvester, simplified panels, artifact parity), root (integration, perspective labels in saved timeline, tests, publication, handoff).
 
@@ -66,3 +66,19 @@ Focused verification: 49 Node tests (extractor, exact OCR cache, decode plans) a
 Publication integration: Concurrent remote commit a70c9ae improves HP detection and widens Hp.BAND. Its classifier/UI/test/documentation changes were preserved. The only runner conflict was resolved by combining the decode plan with the new Hp.BAND-derived analysis band. Merge occurred in an isolated checkout before a fast-forward of the local app; no dirty classifier datasets were stashed or overwritten. The reported excerpt timings predate this HP change and are historical, not timings of the merged classifier.
 
 Merged verification: 50 Node + 58 Python focused tests, 108 total, pass with the concurrent HP classifier changes included.
+
+## Video speed next round: range-aware offline retests
+
+Three agents investigated safe range planning, lossless frame proxies and saved-feature refitting. Work integrated in `/private/tmp/gbl-video-next-integration`, based on published c03e78b. No existing app/harvester/classifier process was stopped, restarted or reconfigured, and no media was downloaded. No learned weights, labels, registry or live results were edited. Benchmarks ran sequentially at nice 19 with one worker/thread; only agent-owned benchmark subprocesses were managed.
+
+Implemented optional fifth JSON range column in offline batch jobs. Absolute source ranges are merged and clipped to chunk START/END including six-minute overlap. Empty tasks write empty mergeable outputs without spawning analysis; missing plans stay full. Inherited RANGES are clipped instead of repeated in every chunk. FORCE_FULL=1 always wins. Standalone extraction clips ranges too and rejects empty intersections. Batch sampled throughput and merged videoSeconds now reflect actual decoded work, with source duration and chunk metrics kept separately.
+
+Inventory `--use-saved-ranges` requires `--verify-sha`; original result.media.sha256 must match the verified current file in addition to the state hash. Unknown/legacy/unbound/corrupt/full-source context stays full. Resuming an old extraction no longer replaces its media source/crop/ranges with the current process defaults or a replacement download. Legacy extract callers without a source hash work conservatively. Existing service test mocks were updated for the probe source-hash keyword.
+
+Measurements: 21 saved battles from six CC runs refit in 0.817 s (0.865 s with reads/GM/integrity checks, 24.3 battles/s overall). Recorded old extraction totaled 1,280.5 s; this quantifies avoided work, not a controlled fresh pipeline speedup. Planning across 27 saved ranged sources: 113,112 → 70,265 sampled seconds (37.9% reduction), not measured runtime/recall. Their old unbound summaries are not automatically enabled. Aggregate evidence: `web/tests/meta-benchmark/sources/video-speed-next-report.json`; operational details: `VIDEO-ANALYSIS-PERFORMANCE.md`.
+
+Verification: 63 Node tests covering extractor/cache/decode/range plans and fake-process batch integration, plus all 92 Python harvester/service/inventory/probe tests pass (155 total). Existing ResourceWarnings come from old test fixtures; no failure remains. Range integration handles explicit empty plans, per-video override, overlapping chunks, original timestamps, reviewer full-pass (even with malformed ambient range plans) and malformed-input failure before classifiers start. Reviewer reprocess clears inherited START/END/RANGES and forces whole-source analysis. Original model/registry dirty files must remain excluded from the commit.
+
+Next priority: conservative cheap screening and false surrender-candidate gates with confirmed short-dialog/missed-battle fixtures, coordinated with the active classifier owners. Whole-frame downscaling remains experimental after lost detections. Do not enable a proxy cache just because it is lossless: decompression, hash validation, initial construction and larger disk footprints can exceed original H264 decoding cost.
+
+Proxy decision: experimental modules/tests remain only in `/private/tmp/gbl-video-next-proxy`; do not copy them into production as an approved optimization. FFV1/Huffyuv were slower; UtVideo 60 s warm total 7.702 s versus 7.873 s direct (~2.2%), cold preparation 21.118 s, cache 751 MB. Full opaque RGBA bytes matched; synthetic nonopaque alpha failed with UtVideo. Five prototype tests passed, but no proxy integration is shipped. Aggregate measurements are committed, with the explicit rejected-default decision and limits.

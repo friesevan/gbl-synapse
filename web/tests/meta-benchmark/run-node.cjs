@@ -17,14 +17,15 @@
 //   FPS=10 HUD_EVERY=5
 //   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
-const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs');
+const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs');
 const Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),C=require('../../includes/meta/core.js'),K=require('../../includes/meta/combat.js'),Hp=require('../../includes/meta/hp.js');
 const gm=(()=>{const g=process.env.GAMEMASTER?JSON.parse(fs.readFileSync(process.env.GAMEMASTER,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;})();
 const byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),movesById=new Map(gm.moves.map(m=>[m.moveId,m]));
 const learned=process.env.LEARNED_PATH?JSON.parse(fs.readFileSync(process.env.LEARNED_PATH,'utf8')):undefined;
 const [video,outPath]=process.argv.slice(2);
 const FPS=Number(process.env.FPS||10),HUD_EVERY=Number(process.env.HUD_EVERY||5),START=Number(process.env.START||0),END=process.env.END?Number(process.env.END):null;
-const RANGES=process.env.RANGES?process.env.RANGES.split(',').map(r=>r.split('-').map(Number)).filter(r=>r.length===2&&r.every(Number.isFinite)&&r[1]>r[0]):null;
+const rangePlan=Range.planWindow({ranges:Range.parseRanges(process.env.RANGES,{forceFull:process.env.FORCE_FULL==='1'}),start:START,end:END??Infinity,forceFull:process.env.FORCE_FULL==='1'}),RANGES=rangePlan.ranges;
+if(rangePlan.mode==='empty')throw Error('No planned ranges intersect START/END; use run-batch for empty tasks');
 const THREADS=process.env.FFMPEG_THREADS?['-threads',String(process.env.FFMPEG_THREADS)]:[];
 const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'meta-bench-'));
 const ocrDirectory=process.env.OCR_CACHE_DIR??path.join(os.homedir(),'.cache/gbl-synapse/ocr-v1'),ocrEngine=Ocr.createTesseractOcr({directory:ocrDirectory,enabled:ocrDirectory!=='off'});

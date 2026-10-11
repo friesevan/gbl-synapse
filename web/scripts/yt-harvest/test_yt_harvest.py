@@ -599,11 +599,12 @@ class RetentionAndProbeCache(unittest.TestCase):
             h.state.x("INSERT INTO videos(id,dl_status,dl_path,sha256,league,meta) VALUES('abcdefghijk','done',?,'abc123',?,?)",(source,json.dumps({'leagueId':'great'}),'{}'))
             # Match the fields claimed by the actual worker, including its source fingerprint.
             row=h.state.q("SELECT id,dl_path,sha256,upload_date,league,duration,meta FROM videos WHERE id='abcdefghijk'")[0]
-            H.atomic_json(os.path.join(d,'results','abcdefghijk.json'),{'battles':[],'full':[]})
+            origin={'sha256':'original-hash','crop':'1,2,3,4','ranges':'20-40','retained':True}
+            H.atomic_json(os.path.join(d,'results','abcdefghijk.json'),{'battles':[],'full':[],'media':origin})
             with patch.object(H,'gamemaster_for',return_value=''),patch.object(H,'write_league_refinement',return_value=None):
                 h.extract_one(row)
             h.export_validation.assert_called_once();self.assertTrue(os.path.isfile(source))
-            doc=H.read_json(os.path.join(d,'results','abcdefghijk.json'));self.assertEqual(doc['media']['sha256'],'abc123');self.assertTrue(doc['media']['retained'])
+            doc=H.read_json(os.path.join(d,'results','abcdefghijk.json'));self.assertEqual(doc['media'],origin)
             self.assertEqual(h.state.q("SELECT x_status FROM videos WHERE id='abcdefghijk'")[0][0],'done');h.state.db.close()
 
     def test_matching_probe_cache_avoids_subprocess(self):

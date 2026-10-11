@@ -96,5 +96,30 @@ class RetainedMediaTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):M.main(args)
         self.assertEqual(output.read_bytes(),before)
 
+    def test_saved_ranges_opt_in_requires_verified_recorded_source_hash(self):
+        item = {'videoId':VID, 'path':'/video.mp4', 'status':'available', 'cp':1500,
+                'crop':'0,0,560,1080', 'ranges':'20-40,35-60,90-100'}
+        report = {'items':[item]}
+        self.assertEqual(M.batch_jobs(report,use_saved_ranges=True)[0],'/video.mp4|1500||0,0,560,1080|\n')
+        item.update(hashVerified=True, recordedHashScope='sha256-prefix-16', sha256='a'*64,rangeSourceSha256='a'*16)
+        self.assertTrue(M.batch_jobs(report,use_saved_ranges=True)[0].endswith('|[[20.0,60.0],[90.0,100.0]]\n'))
+        self.assertEqual(len(M.batch_jobs(report)[0].strip().split('|')),4)
+        for ranges in ([], [[20,10]], '20-40,garbage', [[0,float('nan')]]):
+            item['ranges']=ranges
+            self.assertTrue(M.batch_jobs(report,use_saved_ranges=True)[0].endswith('|\n'))
+        item.update(ranges=[[20,40]],rangeSourceSha256='b'*16)
+        self.assertTrue(M.batch_jobs(report,use_saved_ranges=True)[0].endswith('|\n'))
+
+    def test_explicit_full_source_context_does_not_inherit_old_probe_ranges(self):
+        (self.downloads/(VID+'.mp4')).write_bytes(b'video');self.db()
+        results=self.work/'results';results.mkdir()
+        (results/(VID+'.json')).write_text(json.dumps({'media':{'ranges':'','sha256':'a'*16},'probe':{'ranges':[[20,40]]}}))
+        item=M.inventory(self.downloads,self.work)['items'][0]
+        self.assertEqual(item['ranges'],'');self.assertEqual(item['rangeSourceSha256'],'a'*16)
+
+    def test_saved_ranges_cli_requires_verification(self):
+        args=['--download-dir',str(self.downloads),'--work-dir',str(self.work),'--use-saved-ranges']
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):M.main(args)
+
 
 if __name__=='__main__':unittest.main()

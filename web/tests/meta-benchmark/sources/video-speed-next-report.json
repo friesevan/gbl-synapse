@@ -1,0 +1,331 @@
+{
+  "version": 1,
+  "createdAt": "2026-10-11T18:38:22.572Z",
+  "savedFeatureReplay": {
+    "version": 1,
+    "createdAt": "2026-10-11T18:38:22.572Z",
+    "mode": "single worker, one refit per saved CC source, no decode/OCR or live writes",
+    "niceRequested": 19,
+    "nice": 19,
+    "niceApplied": true,
+    "frozenLearnedSha256": "7785327097bdd9c168a8f9c95e450b59cea594f09c88240608fe8ae843df3776",
+    "moduleStartupSeconds": 0.0022735419273376464,
+    "contextLimit": "Original saved runs lack learningContext. League inferred from registry and checked against saved CP; historical GM selected by existing cached upload-date 1st/16th rule. No current-GM fallback.",
+    "comparisonLimit": "Historical extraction seconds from the same saved JSON; recorded earlier under different load/model context. Ratios quantify avoided historical work, not a new controlled extraction speedup or accuracy evaluation.",
+    "aggregate": {
+      "videos": 6,
+      "battles": 21,
+      "videoSeconds": 3852.6999999999994,
+      "historicalExtractionSeconds": 1280.521,
+      "totalRefitSeconds": 0.816510833978653,
+      "totalMeasuredSeconds": 0.8653543742895128,
+      "refitBattlesPerSecond": 25.719193335956433,
+      "measuredBattlesPerSecond": 24.267514701409766,
+      "historicalToRefitRatio": 1568.284150940584,
+      "historicalToMeasuredTotalRatio": 1479.7648663316158
+    }
+  },
+  "refitSources": [
+    {
+      "videoId": "1p_u7XyvWwU",
+      "sourceSha256": "9cc0eb630e345693dca004e625ae726bf04aca79ef0a87741226529670c80196",
+      "gamemasterSha256": "9ac6c2e9c8b748fba0d4304fc02602b3f6d65a108b49584fd937333a59e77d0d",
+      "league": 1500,
+      "uploadDate": "20261008",
+      "channel": "KZ FAM",
+      "creativeCommons": true,
+      "contextSource": "registry leagueGuess, confirmed by saved CP bounds; cached upload-date 1st/16th GM; old results lack learningContext",
+      "maximumSavedCP": 1500,
+      "historicalExtractionSeconds": 189.711,
+      "videoSeconds": 914.1,
+      "battleCount": 5,
+      "refitSeconds": 0.30165729200839997,
+      "readSeconds": 0.002990458011627197,
+      "gmLoadSeconds": 0.0077488340139389034,
+      "totalMeasuredSeconds": 0.31400508308410646,
+      "historicalToRefitRatio": 628.8957867947621,
+      "historicalToMeasuredTotalRatio": 604.1653789062574
+    },
+    {
+      "videoId": "2xvzDbWx-RE",
+      "sourceSha256": "05acec3eafd22c095decd7536aa4eaed6c79e221700e86159737b9fc7fad554d",
+      "gamemasterSha256": "f0acffc1996ed6944168f9cedb6a2409f7bac01c0622890824446c4ad395907c",
+      "league": 1500,
+      "uploadDate": "20250428",
+      "channel": "PokeDeeGO",
+      "creativeCommons": true,
+      "contextSource": "registry leagueGuess, confirmed by saved CP bounds; cached upload-date 1st/16th GM; old results lack learningContext",
+      "maximumSavedCP": 1500,
+      "historicalExtractionSeconds": 412.513,
+      "videoSeconds": 1123.6,
+      "battleCount": 5,
+      "refitSeconds": 0.22295874989032746,
+      "readSeconds": 0.00195550000667572,
+      "gmLoadSeconds": 0.004457249999046326,
+      "totalMeasuredSeconds": 0.2309427080154419,
+      "historicalToRefitRatio": 1850.1763227633521,
+      "historicalToMeasuredTotalRatio": 1786.2135745477508
+    },
+    {
+      "videoId": "CPUOA8ycrzo",
+      "sourceSha256": "508eb9547a5366e3561b694c58c713878b283759ac8563ef73cdc1aa1099da01",
+      "gamemasterSha256": "9ac6c2e9c8b748fba0d4304fc02602b3f6d65a108b49584fd937333a59e77d0d",
+      "league": 10000,
+      "uploadDate": "20261010",
+      "channel": "KZ FAM",
+      "creativeCommons": true,
+      "contextSource": "registry leagueGuess, confirmed by saved CP bounds; cached upload-date 1st/16th GM; old results lack learningContext",
+      "maximumSavedCP": 6672,
+      "historicalExtractionSeconds": 204.639,
+      "videoSeconds": 143.7,
+      "battleCount": 1,
+      "refitSeconds": 0.033166916966438295,
+      "readSeconds": 0.000327125072479248,
+      "gmLoadSeconds": 0.0055284169912338255,
+      "totalMeasuredSeconds": 0.04035291707515717,
+      "historicalToRefitRatio": 6169.973537397969,
+      "historicalToMeasuredTotalRatio": 5071.231891832271
+    },
+    {
+      "videoId": "D824yYeU3aY",
+      "sourceSha256": "933947931c3808184d4e2594e81d9e01c9e827a4d6d1bd96aa68b3da10769caf",
+      "gamemasterSha256": "9ac6c2e9c8b748fba0d4304fc02602b3f6d65a108b49584fd937333a59e77d0d",
+      "league": 1500,
+      "uploadDate": "20261010",
+      "channel": "KZ FAM",
+      "creativeCommons": true,
+      "contextSource": "registry leagueGuess, confirmed by saved CP bounds; cached upload-date 1st/16th GM; old results lack learningContext",
+      "maximumSavedCP": 1498,
+      "historicalExtractionSeconds": 191.354,
+      "videoSeconds": 136,
+      "battleCount": 1,
+      "refitSeconds": 0.04411666703224182,
+      "readSeconds": 0.0004062919616699219,
+      "gmLoadSeconds": 0.004613458037376404,
+      "totalMeasuredSeconds": 0.05036645805835724,
+      "historicalToRefitRatio": 4337.453685251259,
+      "historicalToMeasuredTotalRatio": 3799.2347958692503
+    },
+    {
+      "videoId": "KHAlckcgeu0",
+      "sourceSha256": "0b3e69070ff600ebac9d124487d50530314bed5cbdd532d0783eb5f95ed57649",
+      "gamemasterSha256": "9ac6c2e9c8b748fba0d4304fc02602b3f6d65a108b49584fd937333a59e77d0d",
+      "league": 1500,
+      "uploadDate": "20261009",
+      "channel": "KZ FAM",
+      "creativeCommons": true,
+      "contextSource": "registry leagueGuess, confirmed by saved CP bounds; cached upload-date 1st/16th GM; old results lack learningContext",
+      "maximumSavedCP": 1491,
+      "historicalExtractionSeconds": 18.416,
+      "videoSeconds": 141.7,
+      "battleCount": 1,
+      "refitSeconds": 0.0019583330154418943,
+      "readSeconds": 0.00026045799255371095,
+      "gmLoadSeconds": 0.005128375053405762,
+      "totalMeasuredSeconds": 0.008642958045005799,
+      "historicalToRefitRatio": 9403.91642013167,
+      "historicalToMeasuredTotalRatio": 2130.7519837657205
+    },
+    {
+      "videoId": "Mv4o3HC29iU",
+      "sourceSha256": "efa9388a38082f44f4fc0c69a624892f4a278b8d5f06e351ee6354d9f66780f2",
+      "gamemasterSha256": "9ac6c2e9c8b748fba0d4304fc02602b3f6d65a108b49584fd937333a59e77d0d",
+      "league": 10000,
+      "uploadDate": "20261009",
+      "channel": "KZ FAM",
+      "creativeCommons": true,
+      "contextSource": "registry leagueGuess, confirmed by saved CP bounds; cached upload-date 1st/16th GM; old results lack learningContext",
+      "maximumSavedCP": 7159,
+      "historicalExtractionSeconds": 263.888,
+      "videoSeconds": 1393.6,
+      "battleCount": 8,
+      "refitSeconds": 0.21265287506580352,
+      "readSeconds": 0.002194458961486816,
+      "gmLoadSeconds": 0.004440999984741211,
+      "totalMeasuredSeconds": 0.2210442500114441,
+      "historicalToRefitRatio": 1240.9331400684905,
+      "historicalToMeasuredTotalRatio": 1193.8243133957917
+    }
+  ],
+  "rangePlanning": {
+    "source": "read-only source duration from state.sqlite + saved ranges; not a speed benchmark",
+    "excluded": {
+      "MsAg4W5aGx8.json": "invalid/out-of-source range"
+    },
+    "sources": 27,
+    "fullSampledSeconds": 113112.0,
+    "rangedSampledSeconds": 70265.0,
+    "avoidedSeconds": 42847.0,
+    "avoidedPercent": 37.88015418346418
+  },
+  "rangeReusePolicy": "Optional; current verified digest must match original result.media.sha256. Legacy/unbound/empty/invalid metadata stays full-source. No detection recall claim.",
+  "losslessProxyExperiment": {
+    "date": "2026-10-11",
+    "fixture": {
+      "videoId": "1p_u7XyvWwU",
+      "source": "existing local Creative Commons H264 1920x1080",
+      "start": 20,
+      "crop": [
+        0,
+        0,
+        560,
+        1080
+      ],
+      "analysisWidth": 886,
+      "fps": 10
+    },
+    "method": "Sequential nice-19 one-worker experiments; decoder and encoder threads 1. Full RGBA SHA-256 and byte-count parity tested. Warm prepare includes complete original-source hash, original stat identity, and compressed-proxy integrity hash. No actual classifier or training run benchmarked.",
+    "trials": [
+      {
+        "duration": 10,
+        "direct": {
+          "seconds": 1.587,
+          "bytes": 605315200,
+          "sha256": "a81a12c69da9c84fb064375e8a1436957dc844f96eafabe7aa76b90ef752a75c"
+        },
+        "proxy": {
+          "seconds": 3.809,
+          "bytes": 605315200,
+          "sha256": "a81a12c69da9c84fb064375e8a1436957dc844f96eafabe7aa76b90ef752a75c"
+        },
+        "byteParity": true,
+        "cold": {
+          "prepareSeconds": 4.848,
+          "buildSeconds": 4.593,
+          "sizeBytes": 57236118,
+          "cacheHit": false,
+          "includesFullBuildParityVerification": false
+        },
+        "warm": {
+          "prepareSeconds": 0.258,
+          "buildSeconds": 0,
+          "sizeBytes": 57236118,
+          "cacheHit": true
+        },
+        "sourceHash": "608818c0e97e3e77776275f8eac0275f412703ec174e277db71efdc04c33635d",
+        "codec": "ffv1",
+        "warmTotalSeconds": 4.067,
+        "warmSpeedup": 0.390213916892058
+      },
+      {
+        "duration": 10,
+        "codec": "huffyuv",
+        "direct": {
+          "seconds": 1.586,
+          "bytes": 605315200,
+          "sha256": "a81a12c69da9c84fb064375e8a1436957dc844f96eafabe7aa76b90ef752a75c"
+        },
+        "proxy": {
+          "seconds": 2.077,
+          "bytes": 605315200,
+          "sha256": "a81a12c69da9c84fb064375e8a1436957dc844f96eafabe7aa76b90ef752a75c"
+        },
+        "byteParity": true,
+        "cold": {
+          "prepareSeconds": 1.959,
+          "buildSeconds": 1.719,
+          "sizeBytes": 177922591,
+          "cacheHit": false,
+          "includesFullBuildParityVerification": false
+        },
+        "warm": {
+          "prepareSeconds": 0.316,
+          "buildSeconds": 0,
+          "sizeBytes": 177922591,
+          "cacheHit": true
+        },
+        "sourceHash": "608818c0e97e3e77776275f8eac0275f412703ec174e277db71efdc04c33635d",
+        "warmTotalSeconds": 2.393,
+        "warmSpeedup": 0.6627664020058505
+      },
+      {
+        "duration": 10,
+        "codec": "utvideo",
+        "direct": {
+          "seconds": 1.56,
+          "bytes": 605315200,
+          "sha256": "a81a12c69da9c84fb064375e8a1436957dc844f96eafabe7aa76b90ef752a75c"
+        },
+        "proxy": {
+          "seconds": 1.257,
+          "bytes": 605315200,
+          "sha256": "a81a12c69da9c84fb064375e8a1436957dc844f96eafabe7aa76b90ef752a75c"
+        },
+        "byteParity": true,
+        "cold": {
+          "prepareSeconds": 2.932,
+          "buildSeconds": 2.682,
+          "sizeBytes": 121600780,
+          "cacheHit": false,
+          "includesFullBuildParityVerification": false
+        },
+        "warm": {
+          "prepareSeconds": 0.287,
+          "buildSeconds": 0,
+          "sizeBytes": 121600780,
+          "cacheHit": true
+        },
+        "sourceHash": "608818c0e97e3e77776275f8eac0275f412703ec174e277db71efdc04c33635d",
+        "warmTotalSeconds": 1.5439999999999998,
+        "warmSpeedup": 1.0103626943005184
+      },
+      {
+        "duration": 60,
+        "codec": "utvideo",
+        "direct": {
+          "seconds": 7.873,
+          "bytes": 3631891200,
+          "sha256": "88b1d42067a67b1814348775aa7fc58f6957e219958d50d7b5fe2e69182713e6"
+        },
+        "proxy": {
+          "seconds": 7.137,
+          "bytes": 3631891200,
+          "sha256": "88b1d42067a67b1814348775aa7fc58f6957e219958d50d7b5fe2e69182713e6"
+        },
+        "byteParity": true,
+        "cold": {
+          "prepareSeconds": 21.118,
+          "buildSeconds": 20.886,
+          "sizeBytes": 751116032,
+          "cacheHit": false,
+          "includesFullBuildParityVerification": true
+        },
+        "warm": {
+          "prepareSeconds": 0.565,
+          "buildSeconds": 0,
+          "sizeBytes": 751116032,
+          "cacheHit": true
+        },
+        "sourceHash": "608818c0e97e3e77776275f8eac0275f412703ec174e277db71efdc04c33635d",
+        "warmTotalSeconds": 7.702,
+        "warmSpeedup": 1.0222020254479356
+      }
+    ],
+    "tests": {
+      "passed": 5,
+      "covers": [
+        "fractional independent ranges",
+        "full RGBA parity",
+        "warm reuse",
+        "source identity change",
+        "safe concurrent publication",
+        "corruption failure",
+        "failed build cleanup",
+        "nonopaque alpha preservation / rejection"
+      ]
+    },
+    "decision": {
+      "adoptDefault": false,
+      "recommendation": "Do not integrate proxy into the default runner; retain as isolated research experiment.",
+      "reason": "FFV1 and Huffyuv were slower. Ut Video improved the 60-second warm total by only 2.2%, needs 751 MB per minute of footage and costs 21.118 seconds to prepare cold. Roughly 120 repeat passes would amortize that cold cost under this fixture; improvements could be lost to normal workload variation.",
+      "alphaCaveat": "Ut Video failed exact synthetic nonopaque-alpha parity. Hardened helper decodes and hashes every cold-built proxy against the original exact RGBA stream, rejecting differences before publication. Existing opaque H264 footage passed full 3,631,891,200-byte parity.",
+      "scope": "No actual repository, originals, live data or application processes modified. Only own superseded FFV1 temporary experiment stopped. No downloads."
+    },
+    "files": [
+      "frame-proxy.cjs",
+      "frame-proxy.test.cjs",
+      "INTEGRATION.md"
+    ],
+    "stoppedTrial": "60-second FFV1 build completed but replay was stopped at parent request; no full trial result is claimed."
+  }
+}
