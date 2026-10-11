@@ -215,6 +215,132 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(learned["shadow"]["claydol"]["yes"], 1)
         self.assertEqual(learned["modelVersion"], 1)
         self.assertEqual(state["resolutions"], {})
+        record = self.service.metrics()["records"][-1]   # the real runner's output also produces a history record
+        self.assertEqual((record["refit"], record["labels"], record.get("backfilled")), (1, {"shadow": 1}, None))
+        self.assertNotIn("heldOut", record, "No held-out labels: the record leaves the metric out instead of reporting 0")
+
+    def fit_result(self, resolutions=None):
+        return {"learned": {"moves": {}, "shadow": {}}, "predictions": {}, "resolutions": resolutions or {}, "runsRefit": 3, "errors": [],
+                "calibration": {"fastMove": {"heldOut": 197, "heldOutRight": 165, "logLoss": 0.39, "threshold": 0.8, "resolveAt": 0.9,
+                                             "sweep": [[0.8, 127, 131], [0.9, 98, 100]], "right": 127, "total": 131, "videoCount": 21, "lowerBound": 0.924,
+                                             "bins": [{"bin": "0.5-0.7", "n": 10, "meanP": 0.6, "acc": 0.5}]},
+                                "form": {"heldOut": 31, "heldOutRight": 27, "threshold": None, "sweep": [], "right": 21, "total": 22, "videoCount": 16, "lowerBound": 0}},
+                "shadowModel": {"n": 410, "videos": 125, "passes": {"regular": True, "shadow": False},
+                                "cv": {"old": {"n": 410, "right": 282, "logLoss": 0.646, "auc": 0.73, "brier": 0.217},
+                                       "new": {"n": 410, "right": 325, "logLoss": 0.458, "auc": 0.8705, "brier": 0.148},
+                                       "calibration": [{"bin": "0.0-0.1", "n": 67, "meanP": 0.043, "rate": 0.03}]},
+                                "thresholds": {"regular": {"confidence": 0.7275, "n": 132, "right": 126, "accuracy": 0.95, "lowerBound": 0.904, "videos": 56},
+                                               "shadow": {"confidence": 0.943, "n": 27, "right": 26, "accuracy": 0.96, "lowerBound": 0.817, "videos": 15}}}}
+
+    def test_every_refit_appends_a_durable_metrics_record(self):
+        self.service._fit = lambda q, a, v: self.fit_result({"q5": {"value": False, "source": "model"}, "q6": {"value": True, "source": "model"}})
+        self.service.answer_many([{"qid": "q0", "value": True}, {"qid": "q1", "value": None}])
+        self.service.retrain()
+        self.service.thread.join(5)
+        self.service.resolve_external([{"qid": "q7", "value": True, "source": "freellm", "providers": ["groq", "openrouter-nolog"], "agreement": 2}])
+        history = F.read_json(self.work / "metrics-history.json", {})
+        self.assertEqual(history["format"], "gbl-validation-metrics")
+        rec = history["records"][-1]
+        self.assertEqual((rec["refit"], rec["reason"], rec["runsRefit"]), (1, "Manual refit", 3))
+        self.assertEqual(rec["answers"], {"shadow": 2})
+        self.assertEqual(rec["labels"], {"shadow": 1}, "Not sure is an answer but not a label")
+        self.assertEqual(rec["heldOut"]["fastMove"], {"right": 165, "total": 197, "logLoss": 0.39})
+        self.assertEqual(rec["heldOut"]["shadow"]["auc"], 0.8705)
+        self.assertEqual(rec["heldOut"]["shadow"]["baseline"]["right"], 282)
+        self.assertEqual(rec["gates"]["fastMove"]["resolveAt"], 0.9)
+        self.assertIs(rec["gates"]["form"]["resolving"], False)
+        self.assertEqual({d: g["resolving"] for d, g in rec["gates"]["shadow"].items()}, {"regular": True, "shadow": False})
+        self.assertEqual(rec["calibration"]["shadow"], [[0.043, 0.03, 67]])
+        self.assertEqual(rec["calibration"]["fastMove"], [[0.6, 0.5, 10]])
+        self.assertEqual(rec["resolved"], {"model": {"shadow": 2}})   # the later free-LLM resolution is not part of refit 1
+        self.assertEqual(rec["shadowValues"], {"notShadow": 1, "shadow": 1})
+        self.assertEqual((rec["open"], rec["questions"]), ({"shadow": 5}, 8))
+        self.assertEqual(rec["models"]["shadowClassifier"], {"labels": 410, "videos": 125})
+        self.assertNotIn("backfilled", rec)
+        self.assertEqual(list(self.work.glob("metrics-history.json.*.tmp")), [])
+        summary = self.service.state()["learning"]["metrics"]
+        self.assertEqual((summary["records"], summary["latest"]["refit"]), (1, 1))
+        revision = summary["revision"]
+        self.service.retrain()
+        self.service.thread.join(5)
+        self.assertEqual([r["refit"] for r in self.service.metrics()["records"]], [1, 2])
+        self.assertEqual(self.service.state()["learning"]["metrics"]["revision"], revision + 1)
+        self.assertEqual(self.service.metrics()["records"][-1]["resolved"], {"freellm": {"shadow": 1}, "model": {"shadow": 2}})
+        self.service.close()   # the history survives a restart unchanged
+        self.service = F.FeedbackService(self.work, self.web)
+        self.assertEqual([r["refit"] for r in self.service.metrics()["records"]], [1, 2])
+
+    def test_metrics_failure_never_fails_a_saved_refit(self):
+        self.service._fit = lambda q, a, v: self.fit_result()
+        original = F.MH.build_record
+        def broken(*a, **k):
+            raise RuntimeError("disk full")
+        F.MH.build_record = broken
+        try:
+            self.service.retrain()
+            self.service.thread.join(5)
+        finally:
+            F.MH.build_record = original
+        learning = self.service.state()["learning"]
+        self.assertEqual((learning["status"], learning["version"]), ("idle", 1))
+        self.assertIn("disk full", learning["metricsError"])
+
+    def test_history_is_backfilled_once_from_saved_files_without_inventing_metrics(self):
+        self.service.close()
+        (self.work / "metrics-history.json").unlink()
+        data = F.read_json(self.work / "feedback.json", {})
+        base = lambda h, m=0: "2026-10-11T%02d:%02d:00+00:00" % (h, m)
+        data["answers"] = {"a1": {"qid": "a1", "kind": "shadow", "value": True, "answeredAt": base(5)},
+                           "a2": {"qid": "a2", "kind": "fastMove", "value": "MUD_SLAP", "answeredAt": base(6, 30)},
+                           "a3": {"qid": "a3", "kind": "form", "value": None, "answeredAt": base(6, 40)}}
+        reason = "Re-scored saved damage/timing/energy/icon evidence; held-out fastMove answers at p \u2265 0.9: 111/116 right over 21 videos (95% lower bound 90.3%)."
+        data["history"] = [{"qid": "q1", "resolution": {"value": "X", "source": "model", "modelVersion": 2, "reason": reason}, "reopenedAt": base(8)},
+                           {"answer": {"qid": "a2", "kind": "fastMove", "value": "OTHER", "answeredAt": base(5, 10)}, "replacedAt": base(6, 30)}]
+        fit = self.fit_result()
+        data["learning"] = {"status": "idle", "version": 3, "lastFit": base(9), "startedAt": base(8, 58), "reason": "Manual refit",
+                            "calibration": fit["calibration"], "shadowModel": fit["shadowModel"], "runsRefit": 3, "errors": []}
+        data["resolutions"] = {"q2": {"value": False, "source": "model", "modelVersion": 3}}
+        F.atomic_json(self.work / "feedback.json", data)
+        for n, t in ((1, base(6)), (2, base(7))):
+            folder = self.work / "learning" / ("refit-%d" % n)
+            folder.mkdir(parents=True)
+            for vid in ("v1", "v2")[:n]:
+                f = folder / (vid + ".json")
+                f.write_text("{}")
+                ts = F.dt.datetime.fromisoformat(t).timestamp()
+                F.os.utime(f, (ts, ts))
+        self.service = F.FeedbackService(self.work, self.web)
+        history = self.service.metrics()
+        r1, r2, r3 = history["records"]
+        self.assertEqual([r["refit"] for r in (r1, r2, r3)], [1, 2, 3])
+        self.assertTrue(all(r["backfilled"] and r["source"] for r in (r1, r2, r3)))
+        self.assertEqual((r1["at"], r1["runsRefit"]), (base(6), 1))
+        self.assertEqual(r1["labels"], {"fastMove": 1, "shadow": 1}, "The replaced fast-move answer counts while it was current")
+        self.assertEqual(r2["labels"], {"fastMove": 1, "shadow": 1})
+        self.assertEqual(r2["answers"], {"fastMove": 1, "form": 1, "shadow": 1})
+        self.assertEqual(r2["gates"]["fastMove"], {"resolveAt": 0.9, "right": 111, "total": 116, "videos": 21, "lowerBound": 0.903, "resolving": True})
+        for r in (r1, r2):
+            self.assertFalse({"heldOut", "open", "resolved", "calibration", "reason"} & set(r), "Unrecorded metrics stay blank")
+        self.assertEqual((r3["at"], r3["reason"], r3["heldOut"]["form"]), (base(9), "Manual refit", {"right": 27, "total": 31}))
+        self.assertEqual(r3["resolved"], {"model": {"shadow": 1}})
+        self.assertTrue(history["milestones"] and all(m["source"] for m in history["milestones"]))
+        self.service.close()   # created once: a restart keeps it as it is
+        self.service = F.FeedbackService(self.work, self.web)
+        self.assertEqual(self.service.metrics()["createdAt"], history["createdAt"])
+
+    def test_second_server_reads_metrics_read_only(self):
+        sys.path.insert(0, str(HERE))
+        try:
+            import service as S
+        finally:
+            sys.path.remove(str(HERE))
+        self.service._fit = lambda q, a, v: self.fit_result()
+        self.service.retrain()
+        self.service.thread.join(5)
+        other = S.HarvestService(work_dir=self.work, web_root=self.web)
+        out = other.validation_metrics()   # this server holds the lease; the other reads the file
+        self.assertTrue(out["readOnly"])
+        self.assertEqual(out["records"][-1]["refit"], 1)
 
 
 if __name__ == "__main__":

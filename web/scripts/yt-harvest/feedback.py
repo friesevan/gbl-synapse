@@ -15,6 +15,14 @@ import threading
 import time
 import uuid
 
+try:
+    import metrics_history as MH
+except ImportError:  # loaded by file path (tests, tools)
+    import importlib.util as _importlib_util
+    _spec = _importlib_util.spec_from_file_location("metrics_history", Path(__file__).resolve().parent / "metrics_history.py")
+    MH = _importlib_util.module_from_spec(_spec)
+    _spec.loader.exec_module(MH)
+
 # Footage answers that mean the video has battle footage worth analysing (validate.REPROCESS).
 REPROCESS_VALUES = ("battles", "partial", "rocket", "championship")
 
@@ -104,6 +112,26 @@ class FeedbackService:
             atomic_json(baseline_path, read_json(self.web / "tests/meta-benchmark/learned.json", {"moves": {}, "shadow": {}}))
         self.thread = None
         self.requested = False
+        self.history_metrics = self._load_metrics()
+
+    def _load_metrics(self):
+        """Per-refit metrics history (metrics_history.py). Created once, backfilled from saved files; a refit
+        that saved results without a record (older code) is added as a backfilled record. Never blocks review."""
+        history = MH.load(self.work)
+        try:
+            version = int(self.data["learning"].get("version") or 0)
+            if history is None:
+                history = MH.new_history(MH.backfill(self.work, self.data, self._questions()))
+                history["backfilledAt"] = now()
+                MH.save(self.work, history)
+            elif version > max([r.get("refit", 0) for r in history["records"]] or [0]) and self.data["learning"].get("calibration"):
+                record = MH.build_record(version, self.data["learning"], self._questions(), self.data["answers"], self.data["resolutions"])
+                record.update(backfilled=True, source="stored by refit %d in feedback.json; counts when this server started" % version)
+                MH.save(self.work, MH.append(history, record))
+        except Exception as ex:  # metrics are a view; labels and refits must keep working
+            self.data["learning"]["metricsError"] = str(ex)[:300]
+            history = history or MH.new_history()
+        return history
 
     def _ensure_open(self):
         if self._closing or self._lease is None:
@@ -173,11 +201,17 @@ class FeedbackService:
             learning = {**self.data["learning"], "pending": len(pending), "minimum": MINIMUM, "target": TARGET,
                         "confidenceNote": "Posterior confidence is a heuristic; held-out checks guard automatic resolution.",
                         "totalConfirmed": sum(confirmed(a) for a in self.data["answers"].values()),
-                        "remaining": max(0, MINIMUM - len(pending)), "autoRefit": True}
+                        "remaining": max(0, MINIMUM - len(pending)), "autoRefit": True, "metrics": MH.summary(self.history_metrics)}
             return {"revision": self.data.get("revision", 0), "questions": list(questions.values()), "answers": dict(self.data["answers"]),
                     "resolutions": dict(self.data["resolutions"]), "learning": learning}
 
     snapshot = state
+
+    def metrics(self):
+        """The full per-refit metrics history (GET /api/validation/metrics)."""
+        with self.lock:
+            self._ensure_open()
+            return json.loads(json.dumps(self.history_metrics))
 
     def answer_many(self, answers):
         if not isinstance(answers, list) or len(answers) > 5000:
@@ -306,6 +340,7 @@ class FeedbackService:
     def _queue_locked(self, reason):
         self.requested = True
         if self.thread and self.thread.is_alive():
+            self.data["learning"]["reason"] = reason   # the follow-up refit's reason; the running one kept its own
             return
         self.data["learning"].update(status="queued", reason=reason, error=None, progress="Waiting briefly to combine incoming answers")
         self._save()
@@ -325,6 +360,7 @@ class FeedbackService:
                 self.requested = False
                 questions = list(self._questions().values())
                 answers = list(self.data["answers"].values())
+                reason = self.data["learning"].get("reason")
                 version = int(self.data["learning"].get("version") or 0) + 1
                 self.data["learning"].update(status="running", progress="Refitting saved evidence and checking held-out videos", startedAt=now())
                 self._save()
@@ -353,7 +389,10 @@ class FeedbackService:
                     atomic_json(self.web / "tests/meta-benchmark/learned.json", result["learned"])
                     atomic_json(self.work / "learned.json", result["learned"])
                     self._save()
+                    self._record_metrics(version, answers, reason)
                     if not self._closing and len(self._pending()) >= MINIMUM:
+                        if not self.requested:
+                            self.data["learning"]["reason"] = "8 new useful reviewer answers"
                         self.requested = True
                     refit_params = not self._closing and self._params_due()
                 if refit_params:
@@ -362,6 +401,16 @@ class FeedbackService:
                 with self.lock:
                     self.data["learning"].update(status="error", error=str(ex)[:500], progress="Answers are saved; retry model refit")
                     self._save()
+
+    def _record_metrics(self, version, snapshot, reason):
+        """Append this refit's record to the metrics history (caller holds the lock)."""
+        try:
+            record = MH.build_record(version, self.data["learning"], self._questions(), self.data["answers"],
+                                     self.data["resolutions"], snapshot=snapshot, reason=reason)
+            MH.save(self.work, MH.append(self.history_metrics, record))
+            self.data["learning"].pop("metricsError", None)
+        except Exception as ex:  # never fail a saved refit over its metrics record
+            self.data["learning"]["metricsError"] = str(ex)[:300]
 
     def _params_due(self):
         """True when enough fast-move/form labels arrived since the evidence settings were last fitted."""
@@ -388,7 +437,8 @@ class FeedbackService:
                 self._save()
             return
         with self.lock:
-            self.data["learning"].update(paramsFit=now(), paramsError=None, paramsLabels=labels)
+            self.data["learning"].update(paramsFit=now(), paramsError=None, paramsLabels=labels,
+                                         reason="Fast-move and form evidence settings refitted")
             self.requested = True
             self._save()
 

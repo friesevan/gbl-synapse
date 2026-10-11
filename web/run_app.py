@@ -69,6 +69,8 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 self._json(200, {'revision': state['revision'], 'unchanged': True} if since == state['revision'] else state)
             elif path == '/api/validation':
                 self._json(200, self.service.feedback().state())
+            elif path == '/api/validation/metrics':
+                self._json(200, self.service.validation_metrics())
             else:
                 self._json(404, {'error': 'Unknown API route.'})
         except Exception as ex:

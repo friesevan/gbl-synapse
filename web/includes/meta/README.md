@@ -659,6 +659,44 @@ The **Validate** tab lists every open question, whether it came from a video you
 - **Accuracy.** Each answer is compared with the model’s pick, and the view reports how often the model was right per question kind, so improvements (or regressions) are visible.
 - **Claude’s test runs.** After a benchmark run, `node tests/meta-benchmark/export-questions.cjs RUN.json VIDEO OUTDIR` writes one question document per open question, which Claude uploads to the artifact’s store. Answers are read back from `answers` (saved to a folder) and folded in with `node tests/meta-benchmark/fold-answers.cjs FOLDER`, which writes `learned.json` for refits/exports and records each answer under `verified` in the matching benchmark label.
 
+### Model performance view (`validation-metrics.js`, 2026-10-11)
+Validate has two views: **Questions** (default, the answering flow) and **Model performance**. Switching
+views keeps the player and the selected question; the choice is remembered in this browser.
+
+- **Per-refit history.** After every successful refit `feedback.py` appends one record to
+  `WORK/metrics-history.json` (`scripts/yt-harvest/metrics_history.py`, atomic write). Each record has:
+  - the refit number, time, duration and reason;
+  - human answers and confirmed labels per kind in the fit snapshot;
+  - held-out-by-video right/total per kind (fast moves and forms add log-loss; Shadow adds log-loss, AUC,
+    Brier and the old posterior as a baseline);
+  - resolution gates (chosen and effective thresholds, support, lower bound, whether each kind resolves);
+  - calibration bins (Shadow classifier, and the top pick for fast moves and forms);
+  - resolved counts per source (model or free LLM) and kind, open counts per kind;
+  - Shadow classifier and evidence-settings (movefit) versions.
+  `GET /api/validation/metrics` serves the history. `/api/validation` carries only its revision and the
+  latest record, so the page fetches the history once per refit. A second local server reads the file
+  read-only.
+- **Backfill.** The history file is created once, from saved files. For refits that ran before it existed:
+  - time and runs come from `learning/refit-N/`;
+  - label counts come from answer times, so they may include answers saved during that refit;
+  - thresholds come from the reasons quoted in model resolutions.
+  The newest refit's held-out metrics come from what it stored in `feedback.json`. These records are
+  marked `backfilled` with their sources, and anything not recorded stays blank.
+  Earlier offline evaluations (v4 moves, the Shadow classifier, HP bars, focus shots) are listed as
+  milestones, not as refits.
+- **View.**
+  - Tiles: held-out accuracy per kind with the change since the previous refit; live answers,
+    model-resolved and open counts.
+  - Line charts over refits: accuracy per kind; Shadow AUC and log-loss against the old posterior.
+  - Stacked columns: human answered, model resolved and open after each refit.
+  - Calibration panels for the latest refit. Bins with fewer than 5 labels appear only in the table.
+  - The resolution gates in words, plain-language notes, the milestones, and the full refit history.
+  Every chart has a crosshair tooltip, arrow-key reading and a data table. The Meta card is dark in both
+  page themes, so the chart colours are the dark-surface steps, validated against the card colours.
+- **Hosted artifact.** With no local API, the view shows the counts it can see. It draws the charts from a
+  shared-store document `metrics/<id>` with `format: "gbl-validation-metrics"`, if one was uploaded.
+  Otherwise it says where the history comes from.
+
 ### Validate only what the model is unsure of
 After a browser analysis finishes, everything below the question thresholds is sent to the Validate tab automatically, so nobody has to rewatch whole battles. The thresholds are the same as in the review pane:
 - a fast move below 85%;

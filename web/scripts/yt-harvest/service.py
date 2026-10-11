@@ -289,3 +289,14 @@ class HarvestService:
                 from feedback import FeedbackService
                 self._feedback = FeedbackService(work_dir=self.work_dir, web_root=self.web_root)
             return self._feedback
+
+    def validation_metrics(self):
+        """Per-refit model metrics. A second server (another one owns validation) reads the history file
+        read-only, so the charts still show; the owning server serves its in-memory copy."""
+        from feedback import FeedbackUnavailable
+        try:
+            return self.feedback().metrics()
+        except FeedbackUnavailable:
+            import metrics_history
+            history = metrics_history.load(self.work_dir) or metrics_history.new_history()
+            return {**history, 'readOnly': True}

@@ -61,6 +61,10 @@ function applyLeagueLabels(raw,answers,vid,cupCP={}){
   if(a.allBattles)for(const b of run.full||[])b.leagueCP=Number(cp);else if(run.full?.[a.battle])run.full[a.battle].leagueCP=Number(cp);
  }return run;
 }
+// Probability the held-out model gave the labelled value; log-loss and top-pick calibration bins as in movefit-eval.cjs.
+function pTrue(run,l,norm){const m=run.full?.[l.battle]?.[l.side]?.find(x=>x.key===l.key),dist=(l.kind==='form'?m?.inference?.forms:m?.inference?.moves)||[];return dist.filter(d=>norm(d.value)===norm(l.value)).reduce((s,d)=>s+(Number.isFinite(d.p)?d.p:0),0);}
+const logLoss=rs=>rs.length?+(rs.reduce((s,r)=>s-Math.log(Math.max(1e-3,r.pTrue??0)),0)/rs.length).toFixed(4):null;
+const moveBins=rs=>[[0,.5],[.5,.7],[.7,.85],[.85,.95],[.95,.99],[.99,1.01]].map(([lo,hi])=>{const b=rs.filter(r=>r.p>=lo&&r.p<hi);return b.length?{bin:`${lo}-${Math.min(1,hi)}`,n:b.length,meanP:+(b.reduce((s,r)=>s+r.p,0)/b.length).toFixed(3),acc:+(b.filter(r=>r.right).length/b.length).toFixed(3)}:null;}).filter(Boolean);
 // Held-out fast-move/form predictions over every traceable human label (reviewer answers plus archived
 // legacy labels in WORK/labels), each video refit with priors from the other videos only.
 function moveCalibration(input,answers,runs,gmFor,errors){const kinds=['fastMove','form'],seen=new Set(answers.map(a=>a.qid)),labels=answers.filter(a=>kinds.includes(a.kind)).map(a=>({...a,video:video(a)}));
@@ -70,9 +74,9 @@ function moveCalibration(input,answers,runs,gmFor,errors){const kinds=['fastMove
   if(!raw&&input.workDir){const c=D.runContext(vid,input.workDir,reg);if(c){raw=c.raw;ctx={league:c.league||1500,gamemaster:c.gamemaster,channel:c.channel};}}if(!raw&&e){raw=e.raw;ctx=e.r;}if(!raw)continue;
   const others=all.filter(l=>l.video!==vid),learned=Q.learnedFromAnswers([],new Map(others.map(l=>[l.qid,l])));learned.channels=D.channelLearned(others,v=>reg.get(v)?.channel);if(input.fit)learned.fit=input.fit;
   let run;try{run=refitRun(raw,{learned,league:ctx.league||1500,gm:gmFor(ctx),channel:ctx.channel});}catch(e){errors.push({videoId:vid,error:e.message});continue;}
-  for(const l of labels.filter(l=>l.video===vid)){const p=prediction(run,l);if(!p)continue;const norm=v=>l.kind==='form'?String(v).replace(/_shadow$/,''):v;rows.push({kind:l.kind,video:vid,p:p.p,right:norm(p.value)===norm(l.value)});}}
+  for(const l of labels.filter(l=>l.video===vid)){const p=prediction(run,l);if(!p)continue;const norm=v=>l.kind==='form'?String(v).replace(/_shadow$/,''):v;rows.push({kind:l.kind,video:vid,p:p.p,pTrue:pTrue(run,l,norm),right:norm(p.value)===norm(l.value)});}}
  const out={};for(const kind of kinds){const rs=rows.filter(r=>r.kind===kind),{pick,sweep}=T.choose(rs,MOVE_POLICY.target),ok=pick&&pick.n>=MOVE_POLICY.minTotal&&pick.videos>=MOVE_POLICY.minVideos&&pick.lower>=MOVE_POLICY.minLower;
-  out[kind]={heldOut:rs.length,heldOutRight:rs.filter(r=>r.right).length,threshold:ok?pick.t:null,sweep:sweep.map(x=>[x.t,x.right,x.n]),right:pick?.right||0,total:pick?.n||0,videoCount:pick?.videos||0,lowerBound:ok?pick.lower:0};}
+  out[kind]={heldOut:rs.length,heldOutRight:rs.filter(r=>r.right).length,logLoss:logLoss(rs),bins:moveBins(rs),threshold:ok?pick.t:null,resolveAt:ok?Math.max(MOVE_POLICY.floor,pick.t):null,sweep:sweep.map(x=>[x.t,x.right,x.n]),right:pick?.right||0,total:pick?.n||0,videoCount:pick?.videos||0,lowerBound:ok?pick.lower:0};}
  return out;}
 function execute(input){
  const answers=input.answers.filter(eligible),newOnly=learnedFor(answers),learned=mergeLearned(input.baseline,newOnly);if(input.fitParams&&fs.existsSync(input.fitParams)){try{input.fit=JSON.parse(fs.readFileSync(input.fitParams,'utf8')).params;}catch{}}if(input.fit)learned.fit=input.fit;learned.channels=D.channelLearned(answers.map(a=>({...a,channel:a.video?.channel})));
@@ -100,7 +104,7 @@ function execute(input){
  const independent=prediction(independentFits.get(video(q)),q);if(!independent||independent.value!==p.value||(!['shadow','fastMove','form'].includes(q.kind)&&p.p<.98))continue;
  const resolution=canResolve(q,independent,{answers,calibration,version:input.version,shadowModel:learned.shadowModel});if(resolution){resolution.liveConfidence=p.p;resolutions[q.qid]=resolution;}}
  if(input.outputDir){fs.mkdirSync(input.outputDir,{recursive:true});for(const [vid,run]of fitted)fs.writeFileSync(path.join(input.outputDir,vid+'.json'),JSON.stringify(run));}
- return {learned,predictions,resolutions,calibration,errors,runsRefit:fitted.size,shadowModel:shadowModel&&{cv:shadowModel.cv,thresholds:shadowModel.thresholds,n:shadowModel.n,videos:shadowModel.videos}};
+ return {learned,predictions,resolutions,calibration,errors,runsRefit:fitted.size,shadowModel:shadowModel&&{cv:shadowModel.cv,thresholds:shadowModel.thresholds,n:shadowModel.n,videos:shadowModel.videos,passes:{regular:!!shadowGate(shadowModel,false),shadow:!!shadowGate(shadowModel,true)}}};
 }
 module.exports={execute,prediction,canResolve,canResolveShadow,shadowGate,shadowRows,archivedLabels,SHADOW_GATE,learnedFor,mergeLearned,applyLeagueLabels,wilson};
 if(require.main===module){const [src,dst]=process.argv.slice(2);fs.writeFileSync(dst,JSON.stringify(execute(JSON.parse(fs.readFileSync(src,'utf8')))));}

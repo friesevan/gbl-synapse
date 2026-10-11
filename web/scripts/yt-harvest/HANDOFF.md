@@ -260,3 +260,14 @@ private. Details are in `scripts/freellm/README.md`.
   - A human answer or Reopen wins.
   - **The app must be restarted to load the route.** Then run
     `python3 -I web/scripts/freellm/validate_llm.py run --kind footage`; it uses the cached answers.
+
+## Model performance tracking (2026-10-11)
+
+- **Validate › Model performance** shows held-out accuracy per kind, Shadow AUC and log-loss, queue status
+  per refit, calibration and the resolution gates. Details are in `includes/meta/README.md`, *Model
+  performance view*.
+- Every refit appends a record to `WORK/metrics-history.json` (`metrics_history.py`). The first start of
+  the new code backfills refits 1–51 from `learning/refit-N/`, answer times and resolution reasons; only
+  refit 51 has held-out metrics. The learning loop now also reports fast-move and form log-loss,
+  calibration bins and the effective resolution threshold.
+- **Restart the app** to load it. The backfill runs once on start-up and writes only `metrics-history.json`.
