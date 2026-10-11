@@ -2,6 +2,50 @@
 
 The classifier processes and running app were not stopped or restarted. No model weights, human labels, live results or source videos were overwritten. New defaults apply to new harvester/analysis processes; an already-running harvester keeps its previous retention setting until its next normal start.
 
+## Second round: per-frame HP-bar work and frame transport (2026-10-11, after fa57ad7)
+
+Every change below gives **identical results**. `web/tests/meta-benchmark/parity.cjs` runs run-node.cjs from a base commit and from the working tree on seven 4-minute stretches and compares the JSON outputs, ignoring timings, metrics, decoding metadata and random battle UUIDs. The stretches cover 1080p, 720p and 1440-wide YouTube crops, 296- and 340-wide phone crops, a short screen and an owner HEVC recording at 886×1920 without a crop. All seven were identical to fa57ad7: battles, species, CP, results, HP series, fast-move hits, effect reads, aura values and fits. `web/tests/meta-hp-speed.test.cjs` compares the new findBars with the old implementation on 240 seeded synthetic scenes, custom settings and canvas arrays.
+
+**Benchmark:** `relabel-cache/bB0ZrWjwdZw.mp4`, 0–240 s, 3 battles, 2,400 frames, of which 2,290 were dense. One worker, nice 10, `FFMPEG_THREADS=1`, warm OCR cache. The runs were interleaved base/new three times while other agents kept the 12-core M2 Max at a load of 12–14, so wall times vary by about ±10%. CPU is user+sys of node plus ffmpeg.
+
+| | fa57ad7 | now |
+| --- | ---: | ---: |
+| bars: HP bars, aura and effect texts per dense frame | 19.9 s (19.4–20.2) | 8.0 s (7.9–8.1) |
+| decode wait | 34.9 s (28.3–40.0) | 26.7 s (23.5–33.0) |
+| HUD | 0.69 s | 0.63 s |
+| OCR | 0.12 s | 0.11 s |
+| wall | 56.4 s, **4.3× real time** (3.9–4.9) | 36.2 s, **6.7×** (5.6–7.3); paired speed-up 1.45–1.76× |
+| CPU, node + ffmpeg | 112 s | 86 s (−23%) |
+
+**8-worker estimate:** 8 workers need more than 12 cores, so throughput is CPU-bound. At 0.468 → 0.358 CPU-s per video-second, the aggregate rises from about 26× to 34× real time, or 3.2× → 4.2× per worker (+31%). This is arithmetic from the single-worker CPU figures for an otherwise idle machine; no saturation run was made.
+
+Sources where bars dominated gain most. Small phone crops gain 1.0–1.3× on wall time: they decode faster and the bar work was already small. The owner's HEVC 886×1920 60 fps recording is limited by software HEVC decoding (88 s of 94 s), so its wall time is unchanged. Its bar time fell from 4.5 s to 3.0 s.
+
+What changed:
+- **findBars (hp.js)** costs 4.5 → 2.1 ms per frame on 480 dumped band frames from four videos, an isolated, repeatable micro-benchmark.
+  - cls is memoised in a lazily filled 16M-colour table, 2 bits per colour (4 MB). Dark pixels skip the table.
+  - The coarse row pass tests only every R-th sample, then its neighbours. Any R consecutive samples include exactly one multiple of 2R.
+  - Blob linking searches only the blobs that reached the previous row, in creation order, instead of `blobs.find` over all blobs.
+- **Rows below the last one read are not decoded into the frame.** ffmpeg emits `…,format=rgba,crop=W:rows:0:0`. The kept rows are byte-identical (checked by hash on H.264 crops and owner HEVC). The cut is below the HP-bar band, the result/surrender band and the top half. That moves 23% fewer bytes on 16:9 screens and saves about 2.4 s of ffmpeg+node CPU per minute of video. `DECODE_ROWS=full` restores full frames.
+- **`FFMPEG_THREADS=n` also sets `-filter_threads n`.** The output is byte-identical, and ffmpeg uses about 7% less CPU with n=1.
+
+Measured and rejected:
+- **Restricting the fine scan to columns where bars can start**, with an exact fall-back. A row only links to rows starting within spanX of it, but scenery runs start everywhere: 314 of 480 frames needed the fall-back, which made it slower.
+- **Reusing the previous frame's bar position.** findBars returns every bar candidate, and track/assignBars use the full list. Searching a window first can't guarantee identical output, so it isn't done.
+- **32-bit pixel reads.** They were slower: the closure became polymorphic.
+- **rgb24 output plus expansion to RGBA in node.** The bytes are identical, but expanding cost 4 ms per frame and cancelled the transport saving: 20.3 vs 20.0 CPU-s per minute.
+- **Other transports.**
+  - A FIFO read with fs streams doubled node CPU.
+  - Blocking readSync from a FIFO saves about 1.5 s per minute, but it hangs if ffmpeg never opens the FIFO.
+  - Node's child pipe is a Unix socket with 8 KB buffers. Fewer bytes was the reliable lever.
+- **VideoToolbox (`FFMPEG_HWACCEL=videotoolbox`, still opt-in).** On 1080p H.264 it gives byte-identical frames and cuts ffmpeg CPU by about 30% (16.7 → 11.3 CPU-s per minute). It is **not** identical on the owner's HEVC yuvj420p recordings. With 8 concurrent decodes on the loaded machine, throughput was no better (19.5–20.1 vs 20.6–21.6 video-s per second), and single-stream wall time was about 10% worse.
+- **Scale-filter threads, lower resolution and skipping frames.** `scale=…:threads=4` gave no gain. Any change to the scaler, the resolution or frame skipping (`-skip_frame nonref`) changes the pixels. The ffmpeg scale and RGBA conversion (about 8 CPU-s per minute at 886 px) and H.264 decoding (about 7 CPU-s per minute) are now the largest costs. The native-resolution proposal (`ANALYSIS_WIDTH=native`) stays off by default because it would shift aura and HP measurements while the Shadow model is retrained.
+
+Zero-battle screening, checked on 850 saved analyses:
+- Zero-battle runs are still 54% of recorded extraction time, but 441 of those 493 runs (28.6 of 35 worker-hours) predate the keyframe probe. They have no `probe` record.
+- The 52 probed zero-battle full passes (6.3 worker-hours) all had HUD hits: 46 had more than 20 keyframes with the battle HUD, and the median was 116 for full-coverage runs. A no-HUD screen therefore can't drop them. They look like detection failures or non-GBL battles, and need review with footage answers rather than a cheaper skip.
+- These runs averaged a median 106 surrender OCR reads each. The exact surrender-pixel cache (fa57ad7) already reuses identical reads. Approximate negative caching still needs short-dialog recall fixtures, so no change was made.
+
 ## What was measured
 
 462 saved analyses contained 1,585 battles. The 396 full passes recorded 236,587 seconds of work over 614,691 sampled video-seconds (2.60× realtime). The latest 100 full passes were similar (2.58×). These are historical measurements across loads and extractor versions, not an isolated sustained benchmark.
@@ -70,6 +114,8 @@ The next highest-impact extraction work is conservative no-HUD screening and neg
 Lossless proxy experiments preserved complete RGBA bytes on existing opaque H264 footage. FFV1 and Huffyuv were slower than original decoding. A 60-second UtVideo proxy took **7.702 s including source/cache verification versus 7.873 s direct** (only 2.2% faster), required **751 MB** and cost **21.118 s** to prepare with full parity validation. This is a decoder/stream comparison, not a complete classifier benchmark; the marginal gain could disappear under load variation. UtVideo also failed a synthetic nonopaque-alpha parity case. Proxies were therefore **not integrated into the runner or enabled by default**; tested prototypes remain isolated research code. Retained originals, exact OCR/probe caches and saved features provide storage reuse without that disk expansion. Measurements and aggregate evidence are recorded in `web/tests/meta-benchmark/sources/video-speed-next-report.json`.
 
 ## Highest-impact next steps
+
+Updated after the second round: the per-frame bar work is no longer the largest cost. Decoding is: about 7 CPU-s per minute for H.264 decoding plus about 8 for the ffmpeg scale and RGBA conversion, against about 2 for bars. Item 2 (native-size HP/aura with enlarged OCR crops) is now the largest remaining lever, once the Shadow retraining allows aura measurement changes. Item 1 should target the 52 probed zero-battle runs, which have HUD hits.
 
 1. Improve cheap screen/HUD screening and false-positive dialog detection before full passes; keep padded result/countdown windows and explicit reviewer full-pass fallback. Validate recall on footage containing short/edited battles before tightening cuts.
 2. Separate spatial resolution: HP/aura can use native/smaller phone pixels, while OCR text crops are enlarged to the existing reference size. This is a classifier-owner change requiring species/CP/move/outcome parity and Shadow calibration checks. Whole-frame downscaling already failed the small trial.

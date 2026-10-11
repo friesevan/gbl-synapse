@@ -13,8 +13,9 @@
 //   CROP=auto | x0,y0,x1,y1   phone screen inside a wide video (YouTube etc.), scaled to 886 wide
 //   START=s END=s     analyse part of the file (run-batch.cjs splits long files this way)
 //   RANGES=s-e,s-e    analyse only these stretches (probe.cjs battle ranges), one tracker throughout
-//   FFMPEG_THREADS=n  decoder threads (default: ffmpeg's auto)
+//   FFMPEG_THREADS=n  decoder and filter threads (default: ffmpeg's auto)
 //   FPS=10 HUD_EVERY=5
+//   DECODE_ROWS=full  also decode the rows below the last one the analysis reads (default: cropped)
 //   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
 const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs'),Dialog=require('./surrender-cache.cjs'),Calibration=require('./calibration-cache.cjs');
@@ -26,7 +27,8 @@ const [video,outPath]=process.argv.slice(2);
 const FPS=Number(process.env.FPS||10),HUD_EVERY=Number(process.env.HUD_EVERY||5),START=Number(process.env.START||0),END=process.env.END?Number(process.env.END):null;
 const rangePlan=Range.planWindow({ranges:Range.parseRanges(process.env.RANGES,{forceFull:process.env.FORCE_FULL==='1'}),start:START,end:END??Infinity,forceFull:process.env.FORCE_FULL==='1'}),RANGES=rangePlan.ranges;
 if(rangePlan.mode==='empty')throw Error('No planned ranges intersect START/END; use run-batch for empty tasks');
-const THREADS=process.env.FFMPEG_THREADS?['-threads',String(process.env.FFMPEG_THREADS)]:[];
+// FFMPEG_THREADS also caps the filter graph's threads: with 1, ffmpeg spends ~7% less CPU on the same bytes.
+const THREADS=process.env.FFMPEG_THREADS?['-threads',String(process.env.FFMPEG_THREADS),'-filter_threads',String(process.env.FFMPEG_THREADS)]:[];
 const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'meta-bench-'));
 const ocrDirectory=process.env.OCR_CACHE_DIR??path.join(os.homedir(),'.cache/gbl-synapse/ocr-v1'),ocrEngine=Ocr.createTesseractOcr({directory:ocrDirectory,enabled:ocrDirectory!=='off'});
 const exactCacheEnabled=process.env.VIDEO_EXACT_CACHE!=='off',targetGateEnabled=process.env.SURRENDER_TARGET_GATE!=='off';
@@ -41,11 +43,15 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
 (async()=>{const started=Date.now();
  const [W0,H0]=execFileSync('ffprobe',['-v','error','-select_streams','v','-show_entries','stream=width,height','-of','csv=p=0',video]).toString().trim().split(',').map(Number);
  let crop=null;if(process.env.CROP==='auto'){const r=require('./locate-screen.cjs').locateVideo(video);crop=r.box;metrics.screen=r;}else if(process.env.CROP)crop=process.env.CROP.split(',').map(Number);
- const decode=Decode.plan({width:W0,height:H0,crop,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),W=decode.width,H=decode.height;
+ const decodeFull=Decode.plan({width:W0,height:H0,crop,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),W=decodeFull.width,H=decodeFull.height;
  // Bars and aura use the classifier's current reference band.
  const Y0=Math.round(Hp.BAND[0]*W/886),Hh=Math.min(H-Y0,Math.round((Hp.BAND[1]-Hp.BAND[0])*W/886));
+ // Every pixel read sits above the bottom of the HP-bar band (bars, aura, effect texts), the result and
+ // surrender band (700–1180 of 1920) or the top half (HUD, banners at any calibrated offset). Lower rows
+ // aren't decoded into the frame (they stay 0); DECODE_ROWS=full restores them.
+ const rowsUsed=process.env.DECODE_ROWS==='full'?H:Math.min(H,Math.max(Y0+Hh,Math.ceil(H*1180/1920)+1,Math.ceil(H/2))),decode=Decode.keepRows(decodeFull,rowsUsed);
  const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
- let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*H*4,frame=Buffer.alloc(frameBytes);
+ let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*rowsUsed*4,frame=Buffer.alloc(W*H*4);
  function readSurrender(t,img,box){
   metrics.surrenderCandidates=(metrics.surrenderCandidates||0)+1;
   if(targetGateEnabled&&!Dialog.hasSurrenderTarget(tracker,t)){metrics.surrenderSkippedNoBattle=(metrics.surrenderSkippedNoBattle||0)+1;return;}
@@ -142,7 +148,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  metrics.ocrCache={...ocrEngine.metrics};metrics.ocrCalls=metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads+(metrics.effectReads||0)+(metrics.surrenderReads||0);
  metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};
  const seconds=(Date.now()-started)/1000,videoSeconds=k/FPS;
- const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,decoding:{width:W,height:H,fps:FPS,hudEvery:HUD_EVERY,hwaccel:decode.hwaccel,experimental:!!(process.env.ANALYSIS_WIDTH||process.env.FFMPEG_HWACCEL)},calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
+ const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,decoding:{width:W,height:H,rows:rowsUsed,fps:FPS,hudEvery:HUD_EVERY,hwaccel:decode.hwaccel,experimental:!!(process.env.ANALYSIS_WIDTH||process.env.FFMPEG_HWACCEL)},calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
  // Matchup fits are kept (compactly) so pooling and priors can be re-evaluated without re-decoding.
  out.full=finished.map(b=>({...b,matchups:b.matchups.map(({result,...g})=>g)}));
  fs.writeFileSync(outPath,JSON.stringify(out));fs.rmSync(tmp,{recursive:true,force:true});

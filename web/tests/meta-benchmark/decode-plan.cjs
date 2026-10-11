@@ -12,4 +12,10 @@ function plan({width,height,crop=null,fps=10,analysisWidth='',hwaccel=''}={}){
  if(!['','none','auto','videotoolbox'].includes(hwaccel))throw Error('FFMPEG_HWACCEL must be none, auto or videotoolbox');
  return {width:w,height:h,filters:[`fps=${fps}`,...pre],inputArgs:hwaccel&&hwaccel!=='none'?['-hwaccel',hwaccel]:[],hwaccel:hwaccel||'none',pixelRatio:w*h/(width*height)};
 }
-module.exports={plan};
+// Keeps only the top `rows` rows of each decoded frame. format=rgba makes the scaler emit the final pixels
+// before crop (a plain copy), so the kept rows are byte-identical to the full frame's: checked on H.264
+// YouTube crops (scaled) and the owner's HEVC recordings (unscaled), 2026-10-11. Fewer bytes through the
+// pipe: about 23% less on 16:9 screens, where the analysis never reads below the HP-bar band.
+function keepRows(p,rows){if(!Number.isInteger(rows)||rows<2||rows>p.height)throw Error('Invalid decoded row count');
+ return rows===p.height?{...p,rows}:{...p,rows,filters:[...p.filters,'format=rgba',`crop=${p.width}:${rows}:0:0`]};}
+module.exports={plan,keepRows};

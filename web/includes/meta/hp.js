@@ -24,19 +24,32 @@ function cls(d,i,P=BAR){const r=d[i],g=d[i+1],b=d[i+2],mx=r>g?(r>b?r:b):(g>b?g:b
 // blobs at the bars' x positions had no outline (score < 0.1), while real bars score ≥ 0.9.
 // img: {data RGBA, width, height}; yOffset: frame y of row 0. Returns bars left to right with
 // fill and trail as fractions of the full bar width, and `frame`, the outline score.
-function findBars(img,yOffset=0,P=BAR){const s=img.width/REF_W,w=img.width,h=img.height,d=img.data,rows=[],minRun=P.minRun*s,maxRun=FILL_W*s*1.04,gapMax=P.gapPx*s;
+// Speed (2026-10-11): cls depends only on a pixel's RGB, so findBars memoises it in a 16M-colour table
+// packed 2 bits per colour (class + 1; 0 = not computed yet, 4 MB): identical classes without repeating
+// the hue arithmetic. Dark pixels (cls's first test) skip the table. One table per settings object.
+const LUTS=new Map();
+function classTable(P){const key=JSON.stringify(P);let t=LUTS.get(key);if(!t){if(LUTS.size>=2)LUTS.clear();t=new Uint8Array(1<<22);LUTS.set(key,t);}return t;}
+function findBars(img,yOffset=0,P=BAR){const s=img.width/REF_W,w=img.width,h=img.height,d=img.data,rows=[],minRun=P.minRun*s,maxRun=FILL_W*s*1.04,gapMax=P.gapPx*s,lut=classTable(P);
+ const vm=Math.ceil(P.vMin*255),C=i=>{const r=d[i],g=d[i+1],b=d[i+2];if(r<vm&&g<vm&&b<vm)return 0;const q=r<<16|g<<8|b,sh=(q&3)<<1;let c=lut[q>>2]>>sh&3;if(c===0){c=cls(d,i,P)+1;lut[q>>2]|=c<<sh;}return c-1;};
  // Speed: bars are at least 9 rows tall, so a coarse pass over every 3rd row (every 2nd pixel) finds
  // the rows worth scanning; only rows within 3 of a coarse hit are scanned in full.
- const want=new Uint8Array(h);for(let y=0;y<h;y+=3){let run=0,hit=false;for(let x=0;x<w;x+=2){if(cls(d,(y*w+x)*4,P)){if(++run*2>=minRun){hit=true;break;}}else run=0;}if(hit)for(let k=Math.max(0,y-3);k<=Math.min(h-1,y+3);k++)want[k]=1;}
- for(let y=0;y<h;y++){if(!want[y])continue;let x=0;while(x<w){const c=cls(d,(y*w+x)*4,P);if(!c){x++;continue;}const x0=x;let fillEnd=x0,end=x0,gap=0;
+ // A hit is R consecutive classified samples (even x). Any R consecutive samples include exactly one
+ // x that is a multiple of 2R, so only those are tested first, then the samples on either side.
+ const R=Math.max(1,Math.ceil(minRun/2)),want=new Uint8Array(h);
+ for(let y=0;y<h;y+=3){const r0=y*w*4;let hit=false;for(let x=0;x<w&&!hit;x+=2*R){if(!C(r0+x*4))continue;let n=1;for(let u=x-2;u>=0&&n<R&&C(r0+u*4);u-=2)n++;for(let u=x+2;u<w&&n<R&&C(r0+u*4);u+=2)n++;hit=n>=R;}
+  if(hit)for(let k=Math.max(0,y-3);k<=Math.min(h-1,y+3);k++)want[k]=1;}
+ for(let y=0;y<h;y++){if(!want[y])continue;const r0=y*w*4;let x=0;while(x<w){const c=C(r0+x*4);if(!c){x++;continue;}const x0=x;let fillEnd=x0,end=x0,gap=0;
    // A few unclassified pixels (compression ringing between fill and trail) don't end a run.
-   while(x<w){const k=cls(d,(y*w+x)*4,P);if(!k){if(++gap>gapMax)break;x++;continue;}gap=0;if(k===1&&end===fillEnd)fillEnd=x+1;end=x+1;x++;}
+   while(x<w){const k=C(r0+x*4);if(!k){if(++gap>gapMax)break;x++;continue;}gap=0;if(k===1&&end===fillEnd)fillEnd=x+1;end=x+1;x++;}
    if(end-x0>=minRun&&end-x0<=maxRun)rows.push({y,x0,fillEnd,end});}}
  // Rows join a blob when the left edge moves ≤ 2 px from the previous row and stays within 4 px overall
- // (blurred edges wobble), and the fill or the trail end lines up.
- const blobs=[];for(const r of rows){const b=blobs.find(b=>b.last===r.y-1&&Math.abs(b.lastX0-r.x0)<=P.linkX*s&&Math.max(b.maxX0,r.x0)-Math.min(b.minX0,r.x0)<=P.spanX*s&&(Math.abs(b.ends.at(-1)-r.end)<=3*s||Math.abs(b.fills.at(-1)-r.fillEnd)<=3*s));
-  if(b){b.last=r.y;b.lastX0=r.x0;b.minX0=Math.min(b.minX0,r.x0);b.maxX0=Math.max(b.maxX0,r.x0);b.x0s.push(r.x0);b.ends.push(r.end);b.fills.push(r.fillEnd);}
-  else blobs.push({first:r.y,last:r.y,lastX0:r.x0,minX0:r.x0,maxX0:r.x0,x0s:[r.x0],ends:[r.end],fills:[r.fillEnd]});}
+ // (blurred edges wobble), and the fill or the trail end lines up. Only blobs that reached the previous
+ // row can take a row, so they are kept in their own list (in creation order, as a full search finds them).
+ const blobs=[],linkX=P.linkX*s,spanX=P.spanX*s,endTol=3*s;let open=[],next=[],cur=-1;
+ for(const r of rows){if(r.y!==cur){if(r.y===cur+1){open=next;open.sort((p,q)=>p.id-q.id);}else open=[];next=[];cur=r.y;}let b=null;
+  for(let j=0;j<open.length;j++){const o=open[j];if(o.last!==r.y-1)continue;if(Math.abs(o.lastX0-r.x0)<=linkX&&Math.max(o.maxX0,r.x0)-Math.min(o.minX0,r.x0)<=spanX&&(Math.abs(o.ends[o.ends.length-1]-r.end)<=endTol||Math.abs(o.fills[o.fills.length-1]-r.fillEnd)<=endTol)){b=o;break;}}
+  if(b){b.last=r.y;b.lastX0=r.x0;b.minX0=Math.min(b.minX0,r.x0);b.maxX0=Math.max(b.maxX0,r.x0);b.x0s.push(r.x0);b.ends.push(r.end);b.fills.push(r.fillEnd);next.push(b);}
+  else{b={id:blobs.length,first:r.y,last:r.y,lastX0:r.x0,minX0:r.x0,maxX0:r.x0,x0s:[r.x0],ends:[r.end],fills:[r.fillEnd]};blobs.push(b);next.push(b);}}
  // Fill and trail ends: trimmed mean over rows (middle half) gives sub-pixel steps on small hits.
  const med=a=>[...a].sort((p,q)=>p-q)[a.length>>1],mid=a=>{const s=[...a].sort((p,q)=>p-q),k=a.length>>2,m=s.slice(k,a.length-k);return m.reduce((p,q)=>p+q,0)/m.length;},near=x=>Object.values(P.sides).some(([lo,hi])=>x>=(lo-5)*s&&x<=(hi+5)*s),out=[];
  for(const b of blobs){const bh=b.last-b.first+1;if(bh<P.hMin*s||bh>P.hMax*s)continue;const x0=med(b.x0s);if(!near(x0))continue;
