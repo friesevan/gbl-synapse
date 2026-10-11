@@ -22,7 +22,7 @@ GAME = re.compile(r"(pok[eé]mon\s*go|\bpogo\b|\bgbl\b|go battle league|ポケ�
                   r"スーパーリーグ|ハイパーリーグ|マスターリーグ)", re.I)
 NEGATIVE = re.compile(r"(#shorts?\b|\braids?\b|shiny (?:hunt|check)|community day|spotlight hour|unboxing|pack opening|"
                       r"\btcg\b|pocket|scarlet|violet|showdown|\bvgc\b|\bunite\b|legends? (?:arceus|z-a|za)|anime|"
-                      r"pok[eé]mon sleep|egg hatch|hatching|rocket (?:leader|boss)|giovanni|max battle|dynamax raid|"
+                      r"pok[eé]mon sleep|egg hatch|hatching|max battle|dynamax raid|"
                       r"gigantamax|research|spoofing|spoofer|\bnews\b|\bleaks?\b|datamine|catch(?:ing)? (?:every|all)|"
                       r"mewtwo raid|minecraft|palworld|fortnite|roblox)", re.I)
 # Learned from reviewer footage answers (relevance-feedback.json, 2026-10-11): 28 of 36 "no battles
@@ -42,7 +42,10 @@ PVP_MARKER = re.compile(r"(great league|ultra league|master league|little (?:cup
                         r"go battle league|battle league|\bpvp\b|\bgbl\b|liga (?:super|ultra|master|ball)|super ?liga|hyper ?liga|"
                         r"ligue (?:super|hyper|master)|meisterliga|スーパーリーグ|ハイパーリーグ|マスターリーグ|リトルカップ|バトルリーグ|"
                         r"\blegend\b|\bveteran\b|\bexpert\b|\belo\b|\branked\b|leaderboard|\bremix\b|\bpremier\b|"
-                        r"regionals?|worlds|internationals?|\bnaic\b|\beuic\b|\blaic\b|\bocic\b|play!? ?pok[eé]mon)", re.I)
+                        r"regionals?|worlds|internationals?|\bnaic\b|\beuic\b|\blaic\b|\bocic\b|play!? ?pok[eé]mon|"
+                        # Team GO Rocket battles look like GBL and train the extractor (never the meta).
+                        r"rocket grunts?|\bgrunts?\b|team (?:go )?rocket|rocket (?:leaders?|boss|battles?)|giovanni|"
+                        r"\b(?:sierra|cliff|arlo)\b)", re.I)
 TALK = re.compile(r"(tier list|rankings? update|\bguide\b|explained|\bnews\b|\bpodcast\b|\breaction\b|"
                   r"\bupdate\b|\bpredictions?\b)", re.I)
 NO_BATTLE_FOOTAGE_DURATION_S = 120   # Shorts and teasers

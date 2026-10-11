@@ -169,3 +169,26 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
      format plus "perspective" question, observed-meta exclusion.
 - **When they finish:** `git pull`, run the tests in "Files and checks", then restart the harvester
   (Stop safely in the UI, or SIGTERM the PID in run.json) so it picks up the new extractor code.
+
+## Status 2026-10-11 ~09:00 (after the model-improvement round)
+- Pushed: Shadow classifier (6a11f05), fast-move/form model v4 (13279f9), pre-screen, backlog cap,
+  cleanup and Rocket/championship/perspective/lead questions (a811a09); Rocket battle videos allowed
+  through relevance for training (this commit). Harvester and web app (port 65246) restarted on it.
+- Held-out results (each video scored by a model that never saw it):
+  - fast moves: 153 → 161/197;
+  - forms: 15 → 23/31;
+  - Shadow after the merge: 147 → 158/209, AUC 0.75 → 0.82.
+- Model resolved after the first refit: **55 fast-move questions**, 0 forms, 0 Shadow.
+  - Shadow "not Shadow" calls are 15/15 right at ≥0.93 and 24/26 at ≥0.90 (held out), but the gate
+    needs ≥25 calls at ≥95% with a Wilson lower bound ≥0.80, so none resolve yet. That's a data
+    limit, not a bug: they'll resolve automatically as more Shadow answers arrive.
+  - Forms need ≥30 held-out answers at the threshold; there are 16–17 so far.
+- Throughput: the pre-screen skips about 30 of 109 queued videos with no battle screen and analyses only
+  the battle stretches of 14 more. That's about 1.5× fewer worker-hours. The default is now 8 workers.
+- Open items:
+  - worker-count benchmark on an idle machine (`tests/meta-benchmark/bench-workers.cjs`);
+  - Japanese-UI videos give 0 battles (extractor);
+  - a nameplate species-check question;
+  - re-measuring HP bars on low-resolution YouTube crops (bars found in only about 24% of frames, which
+    limits both the fast-move and Shadow evidence);
+  - the Shadow classifier flips two forms (Hisuian Typhlosion, Palkia Origin); see the README note.
