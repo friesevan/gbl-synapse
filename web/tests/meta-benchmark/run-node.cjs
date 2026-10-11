@@ -39,8 +39,8 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  let crop=null;if(process.env.CROP==='auto'){const r=require('./locate-screen.cjs').locateVideo(video);crop=r.box;metrics.screen=r;}else if(process.env.CROP)crop=process.env.CROP.split(',').map(Number);
  const pre=crop?[`crop=${crop[2]-crop[0]}:${crop[3]-crop[1]}:${crop[0]}:${crop[1]}`,'scale=886:-2:flags=bicubic']:[];
  const W=crop?886:W0,H=crop?Math.round((crop[3]-crop[1])*886/(crop[2]-crop[0])/2)*2:H0;
- // Bars and aura live in the middle band of the screen (reference y 450–1350).
- const Y0=Math.round(450*W/886),Hh=Math.min(H-Y0,Math.round(900*W/886));
+ // Bars and aura live in the middle band of the screen (hp.js BAND, reference y 300–1450).
+ const Y0=Math.round(Hp.BAND[0]*W/886),Hh=Math.min(H-Y0,Math.round((Hp.BAND[1]-Hp.BAND[0])*W/886));
  const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*H*4,frame=Buffer.alloc(frameBytes);
  // RANGES (from probe.cjs): decode only these stretches, in order, with one tracker; frame times stay

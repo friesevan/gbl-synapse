@@ -227,9 +227,47 @@ node tests/meta-benchmark/score.cjs tests/meta-benchmark/labels/10min.json run.j
 Two type icons sit above each nameplate (yours at x 37/81, the opponent’s at 801/850 of an 886-wide frame; a single type sits in the outer slot). `core.js` reads each disc’s colour from its lower half (the phone status bar can cover the top) and matches it to 18 fitted type colours, rejecting anything more than 40 apart. Icons lag a switch by up to a second, so votes are only taken once a name has held for two samples. On 368 icon samples from the benchmark recordings, colour alone was right 357 times; all 11 misses were sampling the previous Pokémon’s icons or a frame without icons, which the stable-name rule removes. The majority type set keeps only matching forms (e.g. ghost → Galarian Corsola; ground/electric → regular Stunfisk). Shadow and regular forms share types, so Shadow is decided separately. Since v4 the icons also enter as a likelihood. A confusion model allows for missed icons and for colour shifts within a video, so a reading that matches no form still counts as evidence (see *Fast moves and forms from 228 human labels* below).
 
 ### Fast moves from HP bars (`hp.js`, `combat.js`)
-Each matchup (the same two Pokémon facing each other for ≥ 3 s) is sampled ~10 times per second. HP bars are found from their fill (teal, yellow or red), a solid rectangle 9–18 rows tall with straight edges, because the outline is thin and translucent and bars bob with flying Pokémon. Your bar starts near the left edge; the opponent’s mid-screen; the bar whose left edge recurs through the window is kept. HP never rises within a matchup, so the fill is read as a descending staircase: upward readings (attack glow sweeping over a bar) are ignored and a step counts once two readings confirm it. The orange trail that appears with a hit equals the HP lost and gives the size when no earlier trail remains. Damage that appears after the bars were hidden for more than 1.2 s is a charged attack and is excluded.
+Each matchup (the same two Pokémon facing each other for ≥ 3 s) is sampled ~10 times per second. HP bars are found from their fill (teal, yellow or red), a solid rectangle 9–18 rows tall with a straight left edge, and must show their outline (see *HP bars on YouTube footage* below). Your bar starts near the left edge; the opponent’s mid-screen; the bar whose left edge recurs through the window is kept. HP never rises within a matchup, so the fill is read as a descending staircase: upward readings (attack glow sweeping over a bar) are ignored and a step counts once two readings confirm it. The orange trail that appears with a hit equals the HP lost and gives the size when no earlier trail remains. Damage that appears after the bars were hidden for more than 1.2 s is a charged attack and is excluded.
 
 Each hit is compared with PvPoke’s formula, `⌊power × STAB × attack/defense × effectiveness × 0.5 × 1.3⌋ + 1` (Shadow: ×1.2 attack, ×0.833 defense), over every level/IV combination consistent with both nameplate CPs. One combination per side must explain both directions at once (its attack sets the damage it deals; its defense and HP the damage it takes). The spacing of hits must fit the move’s duration in 0.5 s turns. PvPoke’s recommended moveset and simulated move usage give a gentle prior. Matchups with the same opponent Pokémon are combined; your own Pokémon are pooled across all battles in the recording. Example: Claydol (CP 1492) against Guzzlord (CP 1498) hit for 5.6–6.0% every 3 turns: Mud Slap predicts 5.2–6.2% per 3 turns; Confusion and Extrasensory don’t fit.
+
+### HP bars on YouTube footage (`hp.js` findBars, 2026-10-11)
+Why bars were missed or misread on YouTube crops (223 nameplate-visible frames from 7 labelled videos):
+- **Colour test.** Re-encoding shifts the teal fill from (30,254,194) to about (0,228,172), outside the old
+  RGB distance of 70. Pixels are now classed by hue windows (teal 148–186°, yellow 47–72°, red ≥ 344° or
+  ≤ 12°, trail 20–46°) with value ≥ 0.7 and saturation ≥ 0.38.
+- **Split blobs.** Blurred left edges wobble by 3 px; each row was compared with the blob's *first* row
+  (≤ 2 px), so a 14-row fill broke into two 7-row pieces, both rejected as too short. Rows now link to the
+  previous row (≤ 2 px, ≤ 4 px overall), on the fill or the trail end; a 1–3 px gap (ringing between fill
+  and trail) no longer ends a run.
+- **False bars.** Grass, attack effects and Pokémon make fill-coloured rectangles. 55% of the opponent bars
+  and 10% of your bars the old detector assigned had no outline at all. Every blob must now show the bar's
+  outline (white for the opponent, light blue for you): a line 2–10 px above or below the fill, brighter
+  than the rows 3 px above and below it, along ≥ 50% of the bar. The score is bimodal: 94% of other blobs
+  score < 0.1, real bars ≥ 0.9. The best-outlined bar wins each side.
+- **Band.** Bars sit above the Pokémon: Primal Kyogre, Necrozma and short 16:9 screens put them at
+  y ≈ 370, above the old 450–1350 search band. `BAND` is now 300–1450 (run-node and the browser).
+- **Sub-pixel fill.** Fill and trail ends are a trimmed mean over the fill's rows, not one row's pixel.
+- **Flicker.** On heavy compression the fill end flickers 1–3% between frames. A step must also clear 3× the
+  series' median frame-to-frame jitter (`hits` noiseK); clean footage is unaffected.
+- Not a cause: crops and scale (outline width is 246 px in every probed video), dy calibration (bars don't
+  use it; nameplates are absent mainly during charged-attack cutscenes).
+
+Results (the same 223 frames; valid = outline present):
+
+| | Your bar found (valid) | Opponent bar found (valid) | False bars |
+| --- | --- | --- | --- |
+| Old | 94 (85) | 139 (62) | 9 + 77 |
+| New | 139 | 131 | 0 in a 40-frame visual check |
+
+Re-extracting the 9 labelled videos available locally (6 YouTube, 3 of yours), with the same crops,
+ranges and battle structure (`reextract-labelled.cjs`): matchup frames with a bar 40% → 48% (yours) and
+36% → 39% (opponent; the old count included false bars); hits on labelled Pokémon 353 → 701; fast-move
+labels with < 2 hits 45 → 19 of 108. Per-hit measured/predicted damage for the true move: IQR 0.83–1.25 →
+0.79–1.17, stray readings (< 0.6 or > 1.5) 21% → 20%; no matchup has more hits than the true move allows.
+Held out by video, all labels, only these 9 videos changed: fast moves 161 → 160/197 (log-loss 0.428 →
+0.425), forms 23 → 23/31 (0.352 → 0.362), Shadow classifier 157 → 161/208 (log-loss 0.495 → 0.465, AUC
+0.823 → 0.846). The other 28 labelled videos (all 89 feedback fast-move answers) await a re-download.
 
 Measured on the benchmark recordings (no fast-move labels yet): your team’s fast moves were consistent across battles (Azumarill Bubble, Galarian Corsola Astonish, Registeel Lock-On, Corviknight Sand Attack, Electivire Thunder Shock in 17 of 19 battles, Scrafty Counter in 15 of 18, Ferroseed Metal Claw in 14 of 16). Confirming them with the contributor is the next validation step.
 
@@ -484,8 +522,8 @@ The app applies this at its next refit once it runs this code.
 
 **Remaining failures** (35 fast moves, 6 forms):
 - Fast moves with fewer than two measured hits: 18 of 84 wrong (prior and energy only). The root cause
-  is HP-bar detection on YouTube crops (24% frame coverage). This is an extraction problem that needs
-  video to fix.
+  is HP-bar detection on YouTube crops (24% frame coverage). Fixed in `hp.js` (see *HP bars on YouTube
+  footage*); 28 labelled videos still need re-extraction with `reextract-labelled.cjs`.
 - Fast moves with 4+ hits: 13 of 70 wrong, mostly pairs that hit equally hard on the same turns, such
   as Psywave/Tackle on Inkay and Shadow Claw/Metal Claw on Necrozma, or moves with mixed stray steps.
 - Forms with identical types and no deciding move or icon:

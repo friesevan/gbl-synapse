@@ -101,6 +101,22 @@ test('charged-move evidence: energy rules out slow-charging fast moves; illegal 
  const checks=[{spent:150,fight:20}];assert.equal(K.energyFactor(M('MUD_SHOT'),checks),1);assert.ok(K.energyFactor({energyGain:3,turns:1},checks)<1);
  assert.ok(K.movesetFactor(P('weezing'),'TACKLE',['PLAY_ROUGH'])<.1);assert.equal(K.movesetFactor(P('weezing_galarian'),'FAIRY_WIND',['PLAY_ROUGH']),1);
  assert.ok(K.movesetFactor(P('swampert'),'MUD_SHOT',['FRUSTRATION'])<.1);assert.equal(K.movesetFactor(P('swampert_shadow'),'MUD_SHOT',['FRUSTRATION']),1);});
+test('HP bars: YouTube-shifted fill colours are found inside an outline; outline-less look-alikes are not',()=>{
+ const Hp=require('../includes/meta/hp.js'),W=886,H=400,data=new Uint8ClampedArray(W*H*4);
+ const rect=(x0,y0,x1,y1,c)=>{for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const i=(y*W+x)*4;data[i]=c[0];data[i+1]=c[1];data[i+2]=c[2];data[i+3]=255;}};
+ rect(0,0,W,H,[70,110,60]);// grass
+ // Opponent bar at x 447–702: white outline rows 100–101 / 125–126, dark inside, fill 60% teal as YouTube
+ // encodes it (0,228,172; the old RGB test rejected it), a blurred left edge, then a 4% orange trail.
+ rect(447,100,703,127,[215,215,215]);rect(449,102,701,125,[40,42,38]);
+ for(let y=106;y<121;y++)rect(453+(y%3===0?1:0),y,453+148,y+1,[0,228,172]);rect(601,106,611,121,[235,160,20]);
+ // Your bar (light-blue outline) at red, low HP.
+ rect(47,250,303,277,[110,160,250]);rect(49,252,301,275,[45,40,40]);rect(53,256,53+20,271,[245,105,100]);
+ // A teal blob the size of a bar fill with no outline (scenery / attack effect).
+ rect(300,330,500,345,[10,230,170]);
+ const bars=Hp.findBars({data,width:W,height:H},1000),as=Hp.assignBars(bars,W);
+ assert.equal(bars.length,2,JSON.stringify(bars));
+ assert.ok(Math.abs(as.opponent.fill-.6)<.02&&Math.abs(as.opponent.trail-.04)<.015&&as.opponent.y0===1106,JSON.stringify(as.opponent));
+ assert.ok(as.my&&Math.abs(as.my.fill-20/246)<.02,JSON.stringify(as.my));});
 test('HP hits: a step with no visible damage trail is measured by the step, never as a zero-size hit',()=>{
  const Hp=require('../includes/meta/hp.js'),series=[];let f=.8;for(let k=0;k<40;k++){const t=k*.1;if(k===10||k===25)f-=.04;series.push({t,fill:f,trail:0});}
  const h=Hp.hits(series);assert.equal(h.length,2);for(const x of h)assert.ok(Math.abs(x.size-.04)<.005,String(x.size));});

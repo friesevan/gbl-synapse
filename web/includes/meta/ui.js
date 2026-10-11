@@ -73,7 +73,7 @@ const denseCanvas=document.createElement('canvas');const bannerCanvas=document.c
 // landed. Each distinct look of the text is read once: new ones are copied out here and read after the
 // sampling pass (effectQueue), repeats reuse the answer.
 let effectCache=new C.NameCache(.05),effectQueue=[],effectsSeen=[],effectQueued={};
-function denseFrame(t){const s=SW()/886,y0=Math.round(450*s),img=grab(denseCanvas,y0,Math.min(SH(),1500*s)),bars=MetaHp.findBars(img,y0),as=MetaHp.assignBars(bars,SW());
+function denseFrame(t){const s=SW()/886,y0=Math.round(MetaHp.BAND[0]*s),img=grab(denseCanvas,y0,Math.min(SH(),MetaHp.BAND[1]*s)),bars=MetaHp.findBars(img,y0),as=MetaHp.assignBars(bars,SW());
  for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=MetaHp.effectBox(bar,SW()),e=MetaHp.effectSig(img,box,y0);if(e.share<.03||e.share>.45||!MetaHp.effectShape(e.sig))continue;
   const entry=effectCache.find(e.sig);if(entry){if(entry.value?.kind)effectsSeen.push({t,side,kind:entry.value.kind});else if(entry.value?.pending)entry.value.pending.push({t,side});continue;}
   // A new look of the text appears every few frames while it animates: queue at most one per 0.3 s per side.
