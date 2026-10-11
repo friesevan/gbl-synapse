@@ -242,11 +242,20 @@ Each distinct look is read by OCR once and cached. After a successful read, that
 
 | Move vs target | P(super text) | P(not-very text) | P(no text) |
 | --- | --- | --- | --- |
-| Super effective | .80 | .03 | .17 |
-| Not very effective | .03 | .80 | .17 |
+| Super effective | .25 | .03 | .72 |
+| Not very effective | .03 | .25 | .72 |
 | Neutral | .03 | .03 | .94 |
 
-The text is sometimes shown in error, and sometimes missed (it overlaps the bar animation and arena effects), so no reading is treated as certain. The term is scaled by 0.5 and added to the damage, cadence and energy evidence. It separates moves with equal damage but different types, such as Water Gun and Peck on Cramorant against a Fire type. `NOEFFECTS=1` turns it off in `tune-learned.cjs` for comparison.
+The text is sometimes shown in error and often missed: it is brief and overlaps the bar animation and arena effects. So no reading is treated as certain, and a missing text says little. These rates were tuned on the v23 benchmark (99 confirmed fast moves, leave-one-out):
+
+| Fast moves right | Without priors | With learned priors | log p (with priors) |
+| --- | --- | --- | --- |
+| v21 (before) | 69/99 | 82/99 | −0.599 |
+| v23 without effect text | 75/99 | 87/99 | −0.343 |
+| v23 with effect text (P=.80 when visible) | 79/99 | 87/99 | −0.473 (overconfident) |
+| **v23 with effect text (P=.25, chosen)** | **78/99** | **89/99** | **−0.334** |
+
+Shadow accuracy is unchanged (53/66 with priors). The term is scaled by 0.5 and added to the damage, cadence and energy evidence. It separates moves with equal damage but different types, such as Water Gun and Peck on Cramorant against a Fire type. `NOEFFECTS=1` turns it off in `tune-learned.cjs` for comparison.
 
 ### HP at every turn (`hp.js` hpTimeline)
 Each battle gets an HP timeline: every Pokémon's remaining HP (0–1) at every half-second turn from the battle start. The readings are the dense HP-bar samples of every matchup that Pokémon was in. Processing:
@@ -287,12 +296,13 @@ All 75 questions from the three benchmark recordings were answered (Shadow 41, f
 
 `tune-learned.cjs` reproduces the leave-one-out comparison; `fold-answers.cjs` folds new answers into `learned.json` and the benchmark labels.
 
-### Current accuracy (v3, 2026-10-10)
+### Current accuracy (v3 + effect text, 2026-10-11)
 Leave-one-out over 195 answers on 9 videos: 6 YouTube uploads from 3 channels, plus 3 of your phone
 recordings.
-- **Fast moves:** 87 of 99. Damage, timing, the first 12 s of each matchup, learned priors, and
-  charged-move energy and movesets all contribute.
-- **Shadow:** 52 of 66. Damage, charged-attack damage, the purple aura and learned priors contribute.
+- **Fast moves:** 89 of 99 (87 before the effect text). Damage, timing, the first 12 s of each
+  matchup, the SUPER EFFECTIVE / NOT VERY EFFECTIVE text, learned priors, and charged-move energy and
+  movesets all contribute.
+- **Shadow:** 53 of 66 (v23 run). Damage, charged-attack damage, the purple aura and learned priors contribute.
   Charged hits raised it from 50, and improved confidence in the right answer (log score −0.504 → −0.462).
 - **Battle level, all 9 videos:**
   - every battle, opponent species and result is correct, except the battle where you left the app;

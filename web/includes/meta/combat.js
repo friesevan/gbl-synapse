@@ -61,11 +61,13 @@ const combosFor=(p,cp,league,n)=>spread(cp?statCombos(p,cp):[defaultStats(p,leag
 // scale: correction for systematic under-measurement of hits.
 // Effectiveness text as evidence for the fast move's type: per fast-move hit the game shows "super
 // effective", "not very effective" or nothing, by the move's type against the target's types. The text
-// is occasionally wrong or missed, so each class allows the other outcomes (3%), and the evidence is
+// is occasionally wrong and often missed, so each class allows the other outcomes (3%), and the evidence is
 // tempered by half because texts on one bar aren't independent. counts: {super, notVery, hits}.
-const EFFECT_P={super:{super:.8,notVery:.03,none:.17},notVery:{super:.03,notVery:.8,none:.17},neutral:{super:.03,notVery:.03,none:.94}};
+// Tuned on the v23 benchmark (99 confirmed fast moves): the text is caught on about a quarter of the
+// hits where it shows (it is brief and overlaps the bar animation), so a missing text says little.
+const EW=.5,EH=.25,EF=.03;const EFFECT_P={super:{super:EH,notVery:EF,none:1-EH-EF},notVery:{super:EF,notVery:EH,none:1-EH-EF},neutral:{super:EF,notVery:EF,none:1-2*EF}};
 function effectLogL(counts,move,targetTypes){if(!counts||!(counts.hits>0||counts.super||counts.notVery))return 0;const e=effectiveness(move.type,targetTypes),c=e>1.01?'super':e<.99?'notVery':'neutral',P=EFFECT_P[c],none=Math.max(0,(counts.hits||0)-(counts.super||0)-(counts.notVery||0));
- return .5*((counts.super||0)*Math.log(P.super)+(counts.notVery||0)*Math.log(P.notVery)+none*Math.log(P.none));}
+ return EW*((counts.super||0)*Math.log(P.super)+(counts.notVery||0)*Math.log(P.notVery)+none*Math.log(P.none));}
 // charged: {onMy:[{move,size}], onOpp:[{move,size}]}: unshielded charged attacks in this matchup whose
 // move is known from its banner. Their damage depends on both sides' stats and Shadow status (not on
 // the fast moves), and is large enough to measure with little rounding error.
