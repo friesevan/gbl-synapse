@@ -8,12 +8,13 @@
 const $=id=>document.getElementById(id),Q=window.MetaQuestions,P=window.MetaValidationPolicy;
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const LOCAL='pvp-meta-validation-v1';
+const observationListeners=new Set();
 const state={files:new Map(),player:null,db:null,userId:null,questions:new Map(),answers:new Map(),analyses:new Map(),showing:null,filter:'open',source:'all',current:null,skipped:new Set(),ready:false,writeError:'',resolutions:new Map(),learning:{},pending:new Map(),api:false,apiError:'',playerError:'',harvest:null,mode:'priority',kind:'all',editing:null};
 const safeHref=value=>{try{const u=new URL(value);return /^https?:$/.test(u.protocol)?u.href:null;}catch(e){return null;}};
 const safeId=s=>String(s).replace(/[^A-Za-z0-9_\-.~:@+]/g,'-').slice(0,200);
 // ---- storage ----
 function loadLocal(){try{const d=JSON.parse(localStorage.getItem(LOCAL)||'{}');for(const q of d.questions||[])state.questions.set(q.qid,q);for(const a of d.answers||[])state.answers.set(a.qid,a);for(const x of d.analyses||[])state.analyses.set(x.aid,x);for(const a of d.pending||[])state.pending.set(a.qid,a);}catch(e){}}
-function saveLocal(){try{localStorage.setItem(LOCAL,JSON.stringify({questions:[...state.questions.values()].filter(q=>!q._inbox),answers:[...state.answers.values()],analyses:[...state.analyses.values()],pending:[...state.pending.values()]}));}catch(e){state.writeError='This browser could not save answers (storage full or blocked).';}}
+function saveLocal(){for(const fn of observationListeners){try{fn();}catch{}}try{localStorage.setItem(LOCAL,JSON.stringify({questions:[...state.questions.values()].filter(q=>!q._inbox),answers:[...state.answers.values()],analyses:[...state.analyses.values()],pending:[...state.pending.values()]}));}catch(e){state.writeError='This browser could not save answers (storage full or blocked).';}}
 async function putQuestion(doc){state.questions.set(doc.qid,doc);saveLocal();if(state.db){try{await state.db.doc('validation/'+safeId(doc.qid)).set(doc);}catch(e){state.writeError=writeMessage(e);}}else saveLocal();}
 async function putAnswer(doc){state.answers.set(doc.qid,doc);state.editing=null;state.resolutions.delete(doc.qid);state.pending.set(doc.qid,{...doc,question:state.questions.get(doc.qid)});saveLocal();render();
  if(state.api){await flushAnswers();return;}
@@ -62,10 +63,10 @@ async function record(q,value,{recording,frames=[],frameTimes=[]}={}){const qid=
 // Queues every below-threshold detection of a finished analysis (questions.js decides which) and
 // stores each battle's summary and HP timeline, so the analysis can be shown once it is validated.
 // Questions already answered for this recording keep their answers.
-async function submit(questions,summaries,{recording}){const rec=recording||'video',now=new Date().toISOString();let n=0;
+async function submit(questions,summaries,{recording,context={}}){const rec=recording||'video',now=new Date().toISOString();let n=0;
  for(const q of questions){const qid=safeId(`browser:${rec}:${q.id}`);if(state.answers.has(qid))continue;n++;
   await putQuestion({qid,source:'browser',recording:rec,createdAt:now,kind:q.kind,side:q.side||'',key:q.key||'',battle:q.battle,allBattles:!!q.allBattles,species:q.species||'',title:q.title,detail:q.detail,options:q.options||[],modelTop:q.modelTop??null,modelP:q.modelP??null,purple:q.purple??null,clip:q.clip||null,frameTimes:q.frames||[],frames:[],focus:q.focus||''});}
- for(const sm of summaries)await putAnalysis({...sm,aid:`${rec}#${sm.battle}`,recording:rec,createdAt:now,by:state.userId||''});
+ for(const sm of summaries)await putAnalysis({...sm,aid:`${rec}#${sm.battle}`,recording:rec,context,createdAt:now,by:state.userId||''});
  render();return n;}
 // The answer to a stored question about this battle's Pokémon (your own Pokémon: any battle).
 function answerFor(rec,battle,side,key,kind){for(const q of state.questions.values()){if(q.recording!==rec||q.kind!==kind)continue;if(kind==='result'?q.battle!==battle:(q.side!==side||q.key!==key||(side!=='my'&&q.battle!==battle)))continue;const a=state.answers.get(q.qid);if(a)return a;}return null;}
@@ -74,6 +75,7 @@ const openFor=rec=>[...state.questions.values()].filter(q=>q.source==='browser'&
 function validated(sm){const out=structuredClone(sm),res=answerFor(sm.recording,sm.battle,null,null,'result');if(res&&res.value){const [r,e]=String(res.value).split(':');out.result=r;out.ending=e||'normal';}
  for(const side of ['my','opponent'])for(const p of out[side]){const f=answerFor(sm.recording,sm.battle,side,p.key,'fastMove'),sh=answerFor(sm.recording,sm.battle,side,p.key,'shadow'),fo=answerFor(sm.recording,sm.battle,side,p.key,'form');
   if(f&&f.value){p.fastMove=f.value;p.fastMoveName=f.label;p.fastP=1;p.confirmed=true;}if(sh&&sh.value!==null)p.shadowP=sh.value?1:0;if(fo&&fo.value){p.species=fo.value;p.label=fo.label;}}return out;}
+function observations(){return [...state.analyses.values()].map(sm=>{const v=validated(sm),qs=[...state.questions.values()].filter(q=>q.recording===sm.recording&&(q.allBattles||q.battle===sm.battle));const complete=qs.length>0&&qs.every(isAnswered);const members=side=>(v[side]||[]).map(p=>({id:p.species||'',key:p.key,label:p.label,shadow:p.shadowP===1?true:p.shadowP===0?false:null,uncertain:!p.species||(p.shadowP!==0&&p.shadowP!==1)}));return {id:sm.observationId||'validation:'+sm.aid,source:{title:sm.recording},context:sm.context||{},reviewed:complete,timeline:v,battle:{start:v.start,end:v.start+v.duration,result:v.result,ending:v.ending,my:members('my'),opponent:members('opponent'),context:sm.context||{},leadConfirmed:false},validation:{answered:qs.filter(isAnswered).length,total:qs.length}};});}
 function analysesView(host){const recs=new Map();for(const a of state.analyses.values()){if(!recs.has(a.recording))recs.set(a.recording,[]);recs.get(a.recording).push(a);}if(!recs.size)return;
  const box=el('details',undefined,'meta-v-analyses meta-advanced');box.append(el('summary','Your saved analyses'));
  for(const [rec,list] of [...recs].sort((a,b)=>String(b[1][0].createdAt).localeCompare(String(a[1][0].createdAt)))){const open=openFor(rec),row=el('div',undefined,'meta-event');
@@ -162,5 +164,5 @@ function render(){const host=$('metaValidatePane'),all=[...state.questions.value
  const choices=el('div',undefined,'meta-q-options'),opts=q.kind==='result'?Q.RESULT_OPTIONS:(q.options||[]),answer=o=>{state.current=null;state.autoplay=true;if(o.value===null)state.skipped.add(q.qid);putAnswer({qid:q.qid,purple:q.purple??null,value:o.value,label:o.label,kind:q.kind,species:q.species||'',side:q.side||'',modelTop:q.modelTop??null,answeredAt:new Date().toISOString(),by:state.userId||'',source:q.source});};
  for(const o0 of opts){const o=q.attribution?{...o0,label:o0.label.replace(/^You (won|lost|forfeited)/,'Creator $1')}:o0,b=el('button');b.type='button';b.append(el('span',o.label));const top=q.modelTop!==null&&q.modelTop!==undefined&&String(q.modelTop)===String(o.value),hint=top?`Model’s pick${q.modelP?` · ${pct(q.modelP)}`:''}`:(o.hint||'').replace(/^model /,'Model ');if(hint)b.append(el('small',hint));b.onclick=()=>answer(o);if(o.parent){b.classList.add('meta-q-sub');const group=[...choices.children].find(g=>g.dataset.value===o.parent);if(group){group.append(b);continue;}}const group=el('div',undefined,'meta-q-group');group.dataset.value=o.value;group.append(b);choices.append(group);}
  const actions=el('div',undefined,'meta-actions'),unsure=el('button','Not sure','secondary'),skip=el('button','Skip for now','secondary');unsure.onclick=()=>answer({value:null,label:'Not sure'});skip.onclick=()=>{state.skipped.add(q.qid);if(visible.length<=1)state.skipped.clear();state.current=null;state.autoplay=true;render();};actions.append(unsure,skip);card.append(choices,actions);shell.content.append(card);}
-window.MetaValidation={learned,record,submit,render,ready:connect()};
+window.MetaValidation={learned,record,submit,render,observations,subscribe:fn=>{observationListeners.add(fn);return ()=>observationListeners.delete(fn);},ready:connect()};
 })();
