@@ -17,7 +17,7 @@
 //   FPS=10 HUD_EVERY=5
 //   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
-const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs');
+const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs'),Dialog=require('./surrender-cache.cjs'),Calibration=require('./calibration-cache.cjs');
 const Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),C=require('../../includes/meta/core.js'),K=require('../../includes/meta/combat.js'),Hp=require('../../includes/meta/hp.js');
 const gm=(()=>{const g=process.env.GAMEMASTER?JSON.parse(fs.readFileSync(process.env.GAMEMASTER,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;})();
 const byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),movesById=new Map(gm.moves.map(m=>[m.moveId,m]));
@@ -29,12 +29,13 @@ if(rangePlan.mode==='empty')throw Error('No planned ranges intersect START/END; 
 const THREADS=process.env.FFMPEG_THREADS?['-threads',String(process.env.FFMPEG_THREADS)]:[];
 const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'meta-bench-'));
 const ocrDirectory=process.env.OCR_CACHE_DIR??path.join(os.homedir(),'.cache/gbl-synapse/ocr-v1'),ocrEngine=Ocr.createTesseractOcr({directory:ocrDirectory,enabled:ocrDirectory!=='off'});
+const exactCacheEnabled=process.env.VIDEO_EXACT_CACHE!=='off',targetGateEnabled=process.env.SURRENDER_TARGET_GATE!=='off';
+const calibrationCache=Calibration.createCalibrationCache({enabled:exactCacheEnabled});
+const surrenderCache=Dialog.createSurrenderCache({isSurrender:C.isSurrender,settings:'fixed-engine:grayscale-v1:psm6:tsv'});
 const metrics={frames:0,hudFrames:0,denseFrames:0,nameReads:0,cpReads:0,cpSkipped:0,resultReads:0,bannerReads:0,cached:0,matchups:0,ms:{decodeWait:0,hud:0,bars:0,ocr:0,fit:0}};
 const now=()=>Number(process.hrtime.bigint())/1e6;
-function ocr(img,box,{whiteText=false,lines=1}={}){const t0=now(),[x0,y0,x1,y1]=box.map(Math.round),w=x1-x0,h=y1-y0,buf=Buffer.alloc(w*h);
- for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=((y0+y)*img.width+x0+x)*4,d=img.data;buf[y*w+x]=whiteText?(Math.min(d[i],d[i+1],d[i+2])>215?0:255):Math.round((d[i]+d[i+1]+d[i+2])/3);}
- const file=path.join(tmp,'crop.pgm'),pgm=Buffer.concat([Buffer.from(`P5 ${w} ${h} 255\n`),buf]);
- const result=ocrEngine.recognize(pgm,{inputPath:file,args:['-','--psm',lines>1?'6':'7','tsv']});
+function recognizePgm(pgm,{lines=1}={}){return ocrEngine.recognize(pgm,{inputPath:path.join(tmp,'crop.pgm'),args:['-','--psm',lines>1?'6':'7','tsv']});}
+function ocr(img,box,{whiteText=false,lines=1}={}){const t0=now(),pgm=Dialog.grayscalePgm(img,box,{whiteText}),result=recognizePgm(pgm,{lines});
  metrics.ms.ocr+=now()-t0;return result;}
 const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i]!==b[i];return n/a.length;};
 (async()=>{const started=Date.now();
@@ -45,6 +46,14 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const Y0=Math.round(Hp.BAND[0]*W/886),Hh=Math.min(H-Y0,Math.round((Hp.BAND[1]-Hp.BAND[0])*W/886));
  const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*H*4,frame=Buffer.alloc(frameBytes);
+ function readSurrender(t,img,box){
+  metrics.surrenderCandidates=(metrics.surrenderCandidates||0)+1;
+  if(targetGateEnabled&&!Dialog.hasSurrenderTarget(tracker,t)){metrics.surrenderSkippedNoBattle=(metrics.surrenderSkippedNoBattle||0)+1;return;}
+  const t0=now(),pgm=Dialog.grayscalePgm(img,box),compute=()=>{metrics.surrenderReads=(metrics.surrenderReads||0)+1;return recognizePgm(pgm,{lines:2});};
+  const positive=exactCacheEnabled?surrenderCache.evaluate({t,identity:pgm,compute}).isSurrender:C.isSurrender(compute().text);
+  metrics.ms.ocr+=now()-t0;
+  if(positive){lastSurrender=t;tracker.surrender(t);}
+ }
  // RANGES (from probe.cjs): decode only these stretches, in order, with one tracker; frame times stay
  // video times, so the gap between ranges looks like footage without a HUD.
  const ranges=RANGES||[[START,END]];let base=START,k0=0,waitFrom=now();
@@ -56,7 +65,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
   while(off<chunk.length){const n=Math.min(chunk.length-off,frameBytes-filled);chunk.copy(frame,filled,off,off+n);filled+=n;off+=n;if(filled<frameBytes)break;filled=0;
    metrics.ms.decodeWait+=now()-waitFrom;const t=base+(k-k0)/FPS,isHud=k%HUD_EVERY===0;k++;metrics.frames++;const img={data:frame,width:W,height:H};
    if(isHud){const t0=now();metrics.hudFrames++;
-    if(dy===null)dy=C.calibrate(img);
+    if(dy===null)dy=calibrationCache.run(img,()=>C.calibrate(img));
     const hud=dy===null?null:C.readHud(img,dy);
     if(hud){for(const side of ['my','opponent']){const s=hud[side];let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;const r=ocr(img,s.nameBox);const m=C.match(r.text,dict);hit=m&&r.confidence>=45?{...m,confidence:r.confidence,raw:r.text}:null;names.set(s.bits,hit);}else metrics.cached++;s.hit=hit;
       // CP: a CP read the same twice for this side and species is reused while the CP digits look the
@@ -68,7 +77,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
      tracker.observe(t,hud);}
     else{const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});if(band.black>.9)tracker.blackout(t);
      if(tracker.awaitingResult(t)&&C.resultCandidate(band)){metrics.resultReads++;const r=ocr(img,[0,y0,W,y1],{whiteText:true,lines:2});const value=C.outcome(r.text.replace(/\s+/g,' '));if(value)tracker.result(t,value);else if(/finding opponent|battle starting/i.test(r.text))tracker.matchmaking();}
-     else if(C.surrenderCandidate(band)&&t-lastSurrender>4){metrics.surrenderReads=(metrics.surrenderReads||0)+1;const r=ocr(img,[0,y0,W,y1],{lines:2});if(C.isSurrender(r.text)){lastSurrender=t;tracker.surrender(t);}}
+     else if(C.surrenderCandidate(band)&&t-lastSurrender>4)readSurrender(t,img,[0,y0,W,y1]);
 }
     // Banners ("X used Y!", "Go, X!"), with or without nameplates on screen; OCR only new text.
     if(tracker.current&&dy!==null){const bn=C.bannerRead(img,dy);if(bn.textPixels>=.03&&bn.textPixels<=.5&&diffShare(bn.sig,lastBanner)>=.04){lastBanner=bn.sig;metrics.bannerReads++;const r=ocr(img,bn.box,{whiteText:true});if(!tracker.go(t,r.text,dict))tracker.move(t,r.text,r.confidence,gm.moves);}}
@@ -76,7 +85,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
    // The surrender dialog shows for under a second, so it is looked for on every frame of a battle
    // (cheap band statistics; OCR only when a white card fills the middle band).
    if(!isHud&&tracker.current&&t-lastSurrender>4&&t-lastSurrenderCheck>=.3){const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});
-    if(C.surrenderCandidate(band)){lastSurrenderCheck=t;metrics.surrenderReads=(metrics.surrenderReads||0)+1;const r=ocr(img,[0,y0,W,y1],{lines:2});if(C.isSurrender(r.text)){lastSurrender=t;tracker.surrender(t);}}}
+    if(C.surrenderCandidate(band)){lastSurrenderCheck=t;readSurrender(t,img,[0,y0,W,y1]);}}
    // HP bars + aura on every frame of a battle (and briefly after the nameplates go, for faints).
    if(tracker.current&&t-tracker.lastHud<30){const t0=now(),band={data:frame.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0),as=Hp.assignBars(bars,W);dense.push({t,bars,aura:Aura.measure(band,as,Y0)});
     // "SUPER EFFECTIVE!" / "NOT VERY EFFECTIVE…" above a bar: the attack on that Pokémon. Each distinct
@@ -131,6 +140,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
  const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
  metrics.ocrCache={...ocrEngine.metrics};metrics.ocrCalls=metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads+(metrics.effectReads||0)+(metrics.surrenderReads||0);
+ metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};
  const seconds=(Date.now()-started)/1000,videoSeconds=k/FPS;
  const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,decoding:{width:W,height:H,fps:FPS,hudEvery:HUD_EVERY,hwaccel:decode.hwaccel,experimental:!!(process.env.ANALYSIS_WIDTH||process.env.FFMPEG_HWACCEL)},calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
  // Matchup fits are kept (compactly) so pooling and priors can be re-evaluated without re-decoding.

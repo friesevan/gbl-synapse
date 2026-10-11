@@ -16,6 +16,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
 const Screen=require('../../includes/meta/screen.js'),C=require('../../includes/meta/core.js');
+const Scan=require('./hud-scan-plan.cjs');
 const SCAN_W=443;          // half the 886-px reference width: HUD boxes stay ≥10 px
 const LOCATE_FRAMES=32,LOCATE_W=960;
 const num=(k,d)=>{const v=Number(process.env[k]);return Number.isFinite(v)&&process.env[k]!==''?v:d;};
@@ -24,11 +25,14 @@ function probeInfo(video){const out=execFileSync('ffprobe',['-v','error','-selec
  const j=JSON.parse(out),s=(j.streams||[])[0]||{};return {W:s.width,H:s.height,duration:Number(j.format?.duration)||0};}
 
 // Streams raw RGBA frames of size w×h from ffmpeg; showinfo's pts_time lines give each frame's time.
-function frames(args,w,h,onFrame){return new Promise((resolve,reject)=>{const size=w*h*4,buf=Buffer.alloc(size),times=[];let filled=0,n=0,err='';
+function frames(args,w,h,onFrame,{requireTimes=false}={}){return new Promise((resolve,reject)=>{const size=w*h*4,buf=Buffer.alloc(size),times=[];let filled=0,n=0,err='';
  const ff=spawn('ffmpeg',args,{stdio:['ignore','pipe','pipe']});
  ff.stderr.on('data',d=>{err+=d;let i;while((i=err.indexOf('\n'))>=0){const line=err.slice(0,i);err=err.slice(i+1);const m=/showinfo.*\bn:\s*(\d+).*\bpts_time:\s*([-\d.e]+)/.exec(line);if(m)times[Number(m[1])]=Number(m[2]);}});
  ff.stdout.on('data',chunk=>{let off=0;while(off<chunk.length){const k=Math.min(chunk.length-off,size-filled);chunk.copy(buf,filled,off,off+k);filled+=k;off+=k;if(filled===size){filled=0;onFrame({data:buf,width:w,height:h},n++);}}});
- ff.on('error',reject);ff.on('close',code=>code===0||n>0?resolve({count:n,times}):reject(Error('ffmpeg exit '+code)));});}
+ ff.on('error',reject);ff.on('close',code=>{
+  if(code!==0||filled||!n){reject(Error(`Incomplete keyframe stream (exit ${code}, ${filled} trailing bytes, ${n} frames)`));return;}
+  if(requireTimes&&(times.length!==n||Array.from({length:n},(_,i)=>times[i]).some(t=>!Number.isFinite(t)))){reject(Error('Incomplete keyframe timestamps'));return;}
+  resolve({count:n,times});});});}
 
 const evenH=(w,W,H)=>Math.max(2,Math.round(H*w/W/2)*2);
 
@@ -64,16 +68,16 @@ async function probe(video,opts={}){const started=Date.now(),info=probeInfo(vide
  const box=toSrc(found.box),second=secondScreen(L.frames,found.box,found.score),screens=[{box,score:found.score}];
  if(second)screens.push({box:toSrc(second.box),score:second.score});screens.sort((a,b)=>a.box[0]-b.box[0]);
  // Pass 2: every keyframe, cropped to the screen.
- const cw=box[2]-box[0],ch=box[3]-box[1],h=evenH(SCAN_W,cw,ch),hits=[],dys=[found.dy??0];let misses=0;
- const scan=await frames(['-v','info','-nostats','-hide_banner','-threads','1','-skip_frame','nokey','-i',video,'-an','-fps_mode','passthrough','-vf',`crop=${cw}:${ch}:${box[0]}:${box[1]},scale=${SCAN_W}:${h},showinfo`,'-f','rawvideo','-pix_fmt','rgba','-'],SCAN_W,h,(img,i)=>{
+ const cw=box[2]-box[0],ch=box[3]-box[1],h=evenH(SCAN_W,cw,ch),scanH=Scan.hudScanHeight(SCAN_W,h,found.dy),hits=[],dys=[found.dy??0];let misses=0;
+ const scan=await frames(['-v','info','-nostats','-hide_banner','-threads','1','-skip_frame','nokey','-i',video,'-an','-fps_mode','passthrough','-vf',`crop=${cw}:${ch}:${box[0]}:${box[1]},scale=${SCAN_W}:${h},crop=${SCAN_W}:${scanH}:0:0,showinfo`,'-f','rawvideo','-pix_fmt','rgba','-'],SCAN_W,scanH,(img,i)=>{
   // Known offsets first (±8 reference px around them); a full calibration on every 4th miss.
   let dy=hudAt(img,dys.flatMap(d=>[d,d-4,d+4,d-8,d+8]));
   if(dy===null&&(misses++%4===0)){const c=C.calibrate(img);if(c!==null){dy=c;if(!dys.includes(c)&&dys.length<6)dys.push(c);}}
-  hits[i]=dy!==null;});
+  hits[i]=dy!==null;},{requireTimes:true});
  const times=scan.times.slice(0,scan.count);
  const gaps=times.slice(1).map((t,i)=>t-times[i]).filter(x=>x>0).sort((a,b)=>a-b),keyInterval=gaps.length?gaps[gaps.length>>1]:null;
  const ranges=rangesFrom(times,hits,info.duration,{pre,post,gap}),covered=ranges.reduce((a,r)=>a+r.end-r.start,0);
- return {...base,box,screens,dy:found.dy,locateScore:found.score,locateMethod,locateFrames:L.frames.length,samples:scan.count,keyInterval:keyInterval&&+keyInterval.toFixed(2),
+ return {...base,box,screens,dy:found.dy,locateScore:found.score,locateMethod,locateFrames:L.frames.length,scanHeight:scanH,scanFullHeight:h,scanBytes:scan.count*SCAN_W*scanH*4,scanMode:'hud-band-v1',samples:scan.count,keyInterval:keyInterval&&+keyInterval.toFixed(2),
   hits:hits.filter(Boolean).length,hitTimes:times.filter((_,i)=>hits[i]).map(t=>+t.toFixed(1)),ranges,coverage:info.duration?+(covered/info.duration).toFixed(3):0,seconds:+((Date.now()-started)/1000).toFixed(1)};}
 
 // How run-node.cjs should be called for a probe: null = skip (no battle HUD), {} = whole video,
@@ -82,7 +86,7 @@ function plan(p,{fullAbove=.8,maxKeyInterval=12}={}){if(!p)return {};if(p.keyInt
  if(!p.box||!p.ranges.length)return null;const crop=p.box.join(',');
  if(p.coverage>=fullAbove)return {CROP:crop};return {CROP:crop,RANGES:p.ranges.map(r=>`${r.start}-${r.end}`).join(',')};}
 
-module.exports={probe,plan,rangesFrom,secondScreen,locateFrames,probeInfo};
+module.exports={probe,plan,rangesFrom,secondScreen,locateFrames,probeInfo,frames};
 if(require.main===module){const [video,out]=process.argv.slice(2);if(!video){console.error('usage: node probe.cjs VIDEO [OUT.json]');process.exit(2);}
  probe(video).then(p=>{const s=JSON.stringify(p);if(out)fs.writeFileSync(out,s);console.log(`${p.recording}: ${p.hits}/${p.samples} keyframes with HUD, ${p.ranges.length} ranges, ${(p.coverage*100).toFixed(0)}% of ${(p.duration/60).toFixed(0)} min, screens ${p.screens.length}, ${p.seconds} s`);})
   .catch(e=>{console.error(e.message);process.exit(1);});}

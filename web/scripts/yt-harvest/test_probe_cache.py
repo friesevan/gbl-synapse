@@ -14,6 +14,9 @@ class Cache(unittest.TestCase):
    a=C.identity(video,root,{'PROBE_PRE':'30'});self.assertEqual(a,C.identity(video,root,{'PROBE_PRE':'30'}))
    self.assertNotEqual(a,C.identity(video,root,{'PROBE_PRE':'60'}));video.write_bytes(b'changed');self.assertNotEqual(a,C.identity(video,root,{'PROBE_PRE':'30'}))
    (root/C.DEPENDENCIES[0]).write_text('new');self.assertNotEqual(a,C.identity(video,root,{'PROBE_PRE':'30'}))
+   current=C.identity(video,root,{'PROBE_PRE':'30'})
+   (root/'tests/meta-benchmark/hud-scan-plan.cjs').write_text('new geometry')
+   self.assertNotEqual(current,C.identity(video,root,{'PROBE_PRE':'30'}))
  def test_corrupt_data_or_stale_key_misses(self):
   with tempfile.TemporaryDirectory() as d:
    p=Path(d)/'cache.json';key={'schema':1};probe={'box':[0,0,10,20],'ranges':[]};p.write_text(json.dumps(C.document(key,probe)))

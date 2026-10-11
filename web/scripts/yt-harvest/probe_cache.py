@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 DEPENDENCIES = ('tests/meta-benchmark/probe.cjs', 'tests/meta-benchmark/locate-screen.cjs',
-                'includes/meta/screen.js', 'includes/meta/core.js')
+                'tests/meta-benchmark/hud-scan-plan.cjs', 'includes/meta/screen.js', 'includes/meta/core.js')
 
 
 def identity(video, web, env=None, source_sha=None):
