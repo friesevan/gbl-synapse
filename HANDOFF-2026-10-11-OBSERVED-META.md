@@ -82,3 +82,43 @@ Verification: 63 Node tests covering extractor/cache/decode/range plans and fake
 Next priority: conservative cheap screening and false surrender-candidate gates with confirmed short-dialog/missed-battle fixtures, coordinated with the active classifier owners. Whole-frame downscaling remains experimental after lost detections. Do not enable a proxy cache just because it is lossless: decompression, hash validation, initial construction and larger disk footprints can exceed original H264 decoding cost.
 
 Proxy decision: experimental modules/tests remain only in `/private/tmp/gbl-video-next-proxy`; do not copy them into production as an approved optimization. FFV1/Huffyuv were slower; UtVideo 60 s warm total 7.702 s versus 7.873 s direct (~2.2%), cold preparation 21.118 s, cache 751 MB. Full opaque RGBA bytes matched; synthetic nonopaque alpha failed with UtVideo. Five prototype tests passed, but no proxy integration is shipped. Aggregate measurements are committed, with the explicit rejected-default decision and limits.
+
+## Observed teams as the Full Team Neural Network's meta
+
+This change feeds the opponent teams from the harvested YouTube battles into the trainer as its main opponent meta, in place of PvPoke's per-Pokémon weights, which was the project's original purpose.
+
+- **Exporter:** `web/scripts/yt-harvest/usage_export.py` builds on `observed.py`, so human answers override detections. Its eligibility rules are in the module docstring and tested in `test_usage_export.py`:
+  - open Great League and Great League: Mega Edition only;
+  - no Team Rocket, championship, no-footage or obscured videos;
+  - complete opponent teams only; Shadow form only when confirmed;
+  - members mapped to the pool's speciesIds;
+  - dated by recording date, else upload date;
+  - split and re-uploaded battles removed;
+  - each channel capped at 10% of the weight.
+
+  The output goes outside git to `~/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json`, with `.report.md` and `.report.json` beside it.
+- **Trainer:** `meta.cjs` accepts an optional per-row `weight` in (0, 1]. It records distinct teams, creators and the date range in the run's meta. `report.html` and the site's Full Team Neural Network report show a line like "Opponent meta: 75% observed teams, 25% PvPoke prior · 190 teams (181 distinct) from 18 creators · dates".
+- **First export (2026-10-11):**
+  - 1,585 battles in the catalog, 965 of them at 1,500 CP.
+  - 190 eligible opponent teams (181 distinct) from 46 videos by 18 creators, dated 2026-09-20 to 2026-10-11.
+  - Exclusions among the 1,500 CP battles:
+    - restricted cups: 501
+    - partial teams: 166
+    - unmapped members: 62 (mostly Megas)
+    - boundary flags: 21
+    - mid-battle start: 8
+    - no date: 16 (the owner's legacy recordings)
+    - duplicates: 1
+  - Exclusions across all battles: other leagues 602, Team Rocket 14, championship 4.
+  - Species observed more often than PvPoke predicts include Marowak, Quagsire, Charjabug, Ninetales and Sableye. Their Shadow forms are under-counted because 43% of members have an unknown Shadow status and are mapped to the base form.
+- **Smoke run:** two workers under `nice`, about one minute, in `web/training/runs/observed-meta-smoke-20261011` (git-ignored). The file loaded, the observed share was 0.749, 12 of 24 final fixtures and 12 of 16 screening fixtures were observed teams, and 75% of the 2,048 belief-prior teams matched observed teams. The report shows the source.
+- **Full overnight run (not started):** run it from `web/`. Copy the prepared pool once (the PvPokeTeamTrainer pool has the same input hash), then refresh the export and use the as-of date and prior strength it prints:
+
+```bash
+mkdir -p training/runs/team-search
+cp ~/Desktop/Projects/PvPokeTeamTrainer/training/runs/team-search/pool.json training/runs/team-search/pool.json
+python3 -I scripts/yt-harvest/usage_export.py
+node training/team-search/launch-next.cjs --hours 8 --out training/runs/team-search-v4-observed-20261011 \
+  --usage-file "$HOME/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json" \
+  --usage-half-life-days 30 --usage-as-of 2026-10-11 --usage-prior-strength 43
+```

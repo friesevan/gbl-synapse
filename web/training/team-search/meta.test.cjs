@@ -45,3 +45,22 @@ test('meta rejects invalid probabilities and never samples zero-weight members',
  assert.throws(()=>createMeta(species).fixtures(1.5,1),/count/);
  assert.throws(()=>createMeta(species).fixtures(1,-1),/seed/);
 });
+test('per-row weights cap a reporter without changing raw counts, and the description records provenance',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'pvp-meta-')),file=path.join(dir,'usage.json');
+ try {
+  fs.writeFileSync(file,JSON.stringify({source:'test',cp:1500,cup:'all',teams:[
+   {members:['melmetal','cramorant','jumpluff'],count:4,weight:.25,collectedAt:'2026-10-02',creator:'A'},
+   {members:['jumpluff','quagsire','melmetal'],count:1,collectedAt:'2026-10-10',creator:'B'}
+  ]}));
+  const usage=require('./meta.cjs').loadUsage(file,species);
+  assert.equal(usage.total,5); assert.equal(usage.weightedCount,2); assert.equal(usage.effectiveObservations,4/(4*.0625+1));
+  assert.deepEqual(usage.dateRange,{from:'2026-10-02',to:'2026-10-10'}); assert.equal(usage.creators,2); assert.equal(usage.distinctTeams,2); assert.equal(usage.creatorWeighted,true);
+  const m=createMeta(species,{usageFile:file,priorStrength:2});
+  assert.equal(m.description.observedShare,.5); assert.equal(m.description.creators,2); assert.deepEqual(m.description.dateRange,{from:'2026-10-02',to:'2026-10-10'});
+  assert.equal('creators' in createMeta(species).description,false);
+  for (const weight of [0,1.5,-1,'1',null]) {
+   fs.writeFileSync(file,JSON.stringify({source:'test',cp:1500,cup:'all',teams:[{members:['melmetal','cramorant','jumpluff'],count:1,weight}]}));
+   assert.throws(()=>require('./meta.cjs').loadUsage(file,species),/weight/);
+  }
+ } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});

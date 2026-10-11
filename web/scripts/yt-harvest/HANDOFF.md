@@ -155,6 +155,8 @@ Team-card OCR, lower-resolution decode trials, and uncertain schedule gaps remai
 
 The new **Observed meta** dashboard reads `/api/observed-meta` automatically, alongside reviewed browser/shared observations. League/cup/time-range grouping, selected team occurrences, team-perspective outcomes, source timestamps and saved battle graphs are documented in the root `HANDOFF-2026-10-11-OBSERVED-META.md`. Detected lineups are provisional; incomplete teams stay separate.
 
+**Trainer meta export:** `python3 -I web/scripts/yt-harvest/usage_export.py` turns the same catalog into the Full Team Neural Network's opponent usage file, written to `WORK/usage/`. It is read-only on the harvest data. Its rules and the overnight command are in `web/training/team-search/README.md` ("Observed opponent meta"); its tests are in `test_usage_export.py`.
+
 ## Status 2026-10-11 03:40 (model-improvement round)
 - Human answers so far (feedback.json): 136 Shadow, 95 fast move, 25 form, 52 result, 36 footage, 1 league.
   The model's pick was right on 54/101 Shadow (coin flip), 61/89 fast move and 13/22 form. 28 of 36

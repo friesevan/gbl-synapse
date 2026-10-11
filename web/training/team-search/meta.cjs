@@ -64,24 +64,29 @@ function loadUsage(file,species,{halfLifeDays=0,asOf=''}={}) {
  if (data.cp!==1500 || data.cup!=='all' || typeof data.source!=='string' || !data.source.trim() || !Array.isArray(data.teams) || !data.teams.length || data.teams.length>100000) throw Error('Usage file needs source, cp:1500, cup:"all", and nonempty teams (at most 100,000 rows)');
  const at=halfLifeDays?dateValue(asOf,'usage-as-of'):null;
  const combined=new Map(); let rawCount=0, weightedCount=0;
+ // Optional row.weight in (0, 1] down-weights each appearance, e.g. to cap one
+ // reporter's (YouTube creator's) influence; count stays the raw appearances.
+ let squareSum=0, first=null, last=null; const creators=new Set();
  for (const row of data.teams) {
   if (!Array.isArray(row.members) || row.members.length!==3 || !Number.isInteger(row.count) || row.count<=0) throw Error('Usage row needs three lead-first species IDs and a positive integer appearance count');
+  if (row.weight!==undefined && !(typeof row.weight==='number' && Number.isFinite(row.weight) && row.weight>0 && row.weight<=1)) throw Error('Usage row weight must be a number in (0, 1]');
   const team=row.members.map(id=>{if (!map.has(id)) throw Error('Observed opponent outside prepared pool: '+id); return map.get(id);});
   if (new Set(team.map(p=>p.dex)).size!==3) throw Error('Usage team violates Species Clause');
   const collectedAt=row.collectedAt||data.collectedAt;
   const age=halfLifeDays?(at-dateValue(collectedAt,'Observed team collectedAt'))/DAY:0;
   if (age<0) throw Error('Observed team date is later than usage-as-of');
-  const count=row.count*Math.pow(.5,age/(halfLifeDays||1));
-  rawCount+=row.count; weightedCount+=count;
+  // For weighted individual observations, Kish effective N is (sum w)^2 /
+  // sum w^2. Aggregated rows repeat each observation's weight count times.
+  const w=(row.weight??1)*Math.pow(.5,age/(halfLifeDays||1)), count=row.count*w;
+  rawCount+=row.count; weightedCount+=count; squareSum+=row.count*w*w;
+  if (typeof collectedAt==='string' && /^\d{4}-\d{2}-\d{2}/.test(collectedAt)) { const day=collectedAt.slice(0,10); if (!first||day<first) first=day; if (!last||day>last) last=day; }
+  if (typeof row.creator==='string' && row.creator) creators.add(row.creator);
   const canonical=[team[0],...team.slice(1).sort((a,b)=>a.speciesId.localeCompare(b.speciesId))], key=canonical.map(p=>p.speciesId).join('|');
   const entry=combined.get(key)||{team:canonical,count:0,rawCount:0}; entry.count+=count; entry.rawCount+=row.count; combined.set(key,entry);
  }
  if (!(weightedCount>0) || !Number.isFinite(weightedCount) || !Number.isSafeInteger(rawCount)) throw Error('Usage appearance counts exceed supported range or decay to zero');
- // For weighted individual observations, Kish effective N is (sum w)^2 /
- // sum w^2. Aggregated rows repeat each observation's weight count times.
- let squareSum=0;
- for (const row of data.teams) { const age=halfLifeDays?(at-dateValue(row.collectedAt||data.collectedAt,'Observed team collectedAt'))/DAY:0; const w=Math.pow(.5,age/(halfLifeDays||1)); squareSum+=row.count*w*w; }
- return {rows:[...combined.values()],source:data.source,collectedAt:data.collectedAt||null,rank:data.rank||null,total:rawCount,weightedCount,effectiveObservations:weightedCount*weightedCount/squareSum,halfLifeDays,asOf:halfLifeDays?asOf:null,hash:crypto.createHash('sha256').update(raw).digest('hex')};
+ return {rows:[...combined.values()],source:data.source,collectedAt:data.collectedAt||null,rank:data.rank||null,total:rawCount,weightedCount,effectiveObservations:weightedCount*weightedCount/squareSum,halfLifeDays,asOf:halfLifeDays?asOf:null,hash:crypto.createHash('sha256').update(raw).digest('hex'),
+  distinctTeams:combined.size,dateRange:first?{from:first,to:last}:null,creators:creators.size||(Number.isInteger(data.creators)&&data.creators>0?data.creators:null),creatorWeighted:data.teams.some(row=>row.weight!==undefined&&row.weight<1)};
 }
 
 function createMeta(species,{mode='hybrid',usageFile='',weightPower=1.25,halfLifeDays=0,asOf='',priorStrength=500}={}) {
@@ -99,6 +104,7 @@ function createMeta(species,{mode='hybrid',usageFile='',weightPower=1.25,halfLif
  // observation source: a large stale archive must not dominate current play.
  const observedShare=observed?Math.min(.8,observed.weightedCount/(observed.weightedCount+priorStrength)):0;
  const description={version:'meta-v3-recency',mode,weightPower,observedShare:mode==='observed'?1:mode==='independent'?0:observedShare,source:observed?.source||'Synthetic PvPoke prior',usageHash:observed?.hash||null,observedCount:observed?.total||0,weightedObservations:observed?.weightedCount||0,effectiveObservations:observed?.effectiveObservations||0,usageHalfLifeDays:halfLifeDays,usageAsOf:halfLifeDays?asOf:null,usagePriorStrength:priorStrength,collectedAt:observed?.collectedAt||null,rank:observed?.rank||null,
+  ...(observed?{distinctTeams:observed.distinctTeams,dateRange:observed.dateRange,creators:observed.creators,creatorWeighted:observed.creatorWeighted}:{}),
   proportions:mode==='observed'?{observed:1}:mode==='independent'?{independent:1}:observed?{observed:observedShare,independent:(1-observedShare)/2,coherent:(1-observedShare)/2}:{independent:.5,coherent:.5},movesets:'Published recommended movesets; observed moves are not inferred as fact'};
  const firstDraw=sampler(species,species.map(p=>p.weight)), observedDraw=observed?sampler(observed.rows,observed.rows.map(p=>p.count)):null;
  function fixtures(n,seed) {

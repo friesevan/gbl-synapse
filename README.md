@@ -31,7 +31,18 @@ node --test training/*.test.cjs training/next/*.test.cjs training/team-search/*.
 
 When a run finishes, open the **Full Team Neural Network** tab and import `training/runs/<run>/report.pvpteams.json.gz` to view the report. Runs stay local in `web/training/runs/`, which git ignores. The full guide is in `web/training/team-search/README.md`, and the simulator speed work is in `PERFORMANCE.md` next to it.
 
-**Opponent meta.** For now, opponent teams are built from PvPoke's per-Pokémon default weights (`--meta hybrid` without a usage file): half are drawn member by member in proportion to weight, and half are built like real teams, favouring members that cover the earlier picks' weaknesses (sometimes in an ABB shape). When the Meta Extractor's observed team data is complete, export it with **Observed meta → Export team-training data** (`observed-meta-teams.json`: real, complete teams with verified leads, dated by recording day) and pass that file as is with `--usage-file`, optionally with `--usage-half-life DAYS --usage-as-of YYYY-MM-DD`; the format is `web/training/next/usage-template.json`, and every member must be in the trainer's prepared pool. Observed teams then make up part of the opponents, or all of them with `--meta observed`.
+**Opponent meta.** Without a usage file, opponent teams are built from PvPoke's per-Pokémon default weights (`--meta hybrid`): half are drawn member by member in proportion to weight, and half are built like real teams, favouring members that cover the earlier picks' weaknesses (sometimes in an ABB shape). The main source is now the **opponent teams observed in harvested YouTube battles**. `python3 -I web/scripts/yt-harvest/usage_export.py` writes them as a usage file outside git (`~/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json`) with a quality report beside it. Its rules: Great League and Great League: Mega Edition only; complete opponent teams; human answers first; Shadow form only when confirmed; one date per team; repeated battles removed; each YouTube channel capped at 10% of the weight. They are documented at the top of the script. The file's format is `web/training/next/usage-template.json` plus an optional per-row `weight`. Pass it with `--usage-file FILE --usage-half-life-days 30 --usage-as-of YYYY-MM-DD --usage-prior-strength N`; the exporter prints the date and the N that make observed teams 75% of the opponents. With `--meta observed` they make up all of them. The reviewed-only export, **Observed meta → Export team-training data** (`observed-meta-teams.json`), loads the same way.
+
+Full overnight run with the observed meta (from `web/`; the 2026-10-11 export gave as-of 2026-10-11 and N = 43):
+
+```bash
+mkdir -p training/runs/team-search   # one-time: same pool hash as the bundled data, or run prepare.cjs
+cp ~/Desktop/Projects/PvPokeTeamTrainer/training/runs/team-search/pool.json training/runs/team-search/pool.json
+python3 -I scripts/yt-harvest/usage_export.py        # refresh the usage file; note the as-of date and prior strength
+node training/team-search/launch-next.cjs --hours 8 --out training/runs/team-search-v4-observed-20261011 \
+  --usage-file "$HOME/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json" \
+  --usage-half-life-days 30 --usage-as-of 2026-10-11 --usage-prior-strength 43
+```
 
 The trainer was developed separately as PvPokeTeamTrainer and merged here on 2026-10-10.
 

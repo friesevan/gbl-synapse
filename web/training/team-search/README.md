@@ -21,6 +21,41 @@ See [the v4 information-boundary guide](../next/OBSERVATION_CONTROLLER.md) for p
 
 The search acquisition improvements below remain active in v4. Their measured benchmark was performed under v3 and must not be reported as a v4 accuracy measurement. All instructions below this section that reference v1–v3 are historical context.
 
+## Observed opponent meta (YouTube harvest)
+
+The opponents can now come mainly from real teams. `web/scripts/yt-harvest/usage_export.py` reads the harvested YouTube battles: results, labels, human answers in `feedback.json`, the registry and league sidecars. It writes the opponents' complete Great League teams as a usage file outside git, at `~/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json`. A quality report (`.report.md`, `.report.json`) is written beside it. The eligibility rules are at the top of the script and are covered by `test_usage_export.py`:
+
+- **League:** open Great League and Great League: Mega Edition (`--cups`). No Team Rocket, championship, or no-footage/obscured videos.
+- **Teams:** complete opponent teams only (`--include-creator-teams` adds each creator team once per video). Human answers come first, and the Shadow form is used only when confirmed (otherwise the base form). Every member must be in the pool; Megas and other unmapped species drop the team and are reported.
+- **Dates and repeats:** each team is dated by its recording date, else its upload date. Split and re-uploaded battles are removed.
+- **Creator cap:** each channel's rows carry `weight = min(1, K / n)`, so no channel holds more than 10% of the weight (`--max-creator-share`).
+
+`meta.cjs` accepts that optional per-row `weight` in (0, 1]: it scales the observation, while `count` stays the raw appearances. The run's meta description, `report.html` and the site report show the source, team count, distinct teams, creators and date range.
+
+```sh
+python3 -I scripts/yt-harvest/usage_export.py      # prints the as-of date and the prior strength for a 75% observed share
+node training/team-search/launch-next.cjs --hours 8 --out training/runs/team-search-v4-observed-20261011 \
+  --usage-file "$HOME/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json" \
+  --usage-half-life-days 30 --usage-as-of 2026-10-11 --usage-prior-strength 43
+```
+
+`launch-next.cjs` needs the prepared pool at `training/runs/team-search/pool.json`. The PvPokeTeamTrainer copy has the same input hash; copy it, or rebuild it with `prepare.cjs`. The hybrid observed share is `min(0.8, W / (W + prior strength))`, where W is the creator-weighted, time-decayed observation total. With the default prior strength of 500, the first export (W = 128) would give only 20%. `--usage-prior-strength 43` raises it to 75% and leaves 25% to the PvPoke prior, which covers teams nobody was seen using.
+
+**First export, 2026-10-11:** 190 opponent teams (181 distinct) from 46 videos by 18 creators, 2026-09-20 to 2026-10-11. Of the 965 battles at 1,500 CP, 20% were eligible:
+
+- 52% were restricted cups (Mega Color, Color, Retro, Willpower).
+- 17% had partial teams.
+- 6% had unmapped species (mostly Megas).
+- 3% had boundary or lead flags.
+- 2% had no date.
+
+**Known biases:**
+
+- These are top-tier players' opponents.
+- 43% of members have an unknown Shadow status and count as the base form. Shadow Quagsire, Ninetales and Sableye therefore appear as their base forms until the Shadow classifier improves.
+- Two channels can belong to one person; for example, Juanchopolis Plus and Juanchopolis 21 are capped separately.
+- Most teams were seen once. Re-run the exporter after each harvest or review session and use the values it prints.
+
 # October 10 search refinement
 
 The latest acquisition algorithm is `interaction-neural-v6-promising-exploration`. The simulator, candidate pool, feature representation and neural architecture are unchanged. The report's plateau does not establish that the best team was found. This update targets poor exploration and uneven contender evidence rather than claiming a larger network will help.
