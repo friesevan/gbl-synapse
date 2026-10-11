@@ -117,7 +117,8 @@ class ObservedCatalog:
     def _occurrence(self, vid, index, b, raw, video, labels, leagues, feedback, schedule):
         b = copy.deepcopy(b)
         source_b = (raw.get('battles') or [{}])[index] if index < len(raw.get('battles') or []) else {}
-        answers = [a for a in feedback.get('answers', {}).values()
+        merged_answers = {**labels.get('verified', {}), **feedback.get('answers', {})}
+        answers = [a for a in merged_answers.values()
                    if self._video(a) == vid and human(a) and (a.get('allBattles') or a.get('battle') == index)]
         result = b.get('result') or source_b.get('result') or 'Unknown'
         result_source = b.get('resultSource') or source_b.get('resultSource') or 'Unresolved'
