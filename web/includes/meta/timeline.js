@@ -16,9 +16,9 @@ const COLORS=['var(--meta-tl-1, #2f7de1)','var(--meta-tl-2, #e0752d)','var(--met
 const make=(tag,attrs={},text)=>{const n=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;return n;};
 const clock=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 // Two stacked panels (your team above, the opponent below) sharing one time axis.
-function render(s,{width=720}={}){const pad={l:40,r:12,t:12},ph=110,gap=34,axis=22,H=pad.t+ph*2+gap+axis,W=width,iw=W-pad.l-pad.r,dur=Math.max(1,s.duration),x=t=>pad.l+Math.max(0,Math.min(1,t/dur))*iw;
- const svg=make('svg',{viewBox:`0 0 ${W} ${H}`,class:'meta-tl',role:'img','aria-label':`HP timeline, ${s.result||'unknown result'}`});
- const panels=[['my','You',pad.t],['opponent','Opponent',pad.t+ph+gap]];
+function render(s,{width=720,sideLabels={my:'You',opponent:'Opponent'}}={}){const pad={l:40,r:12,t:12},ph=110,gap=34,axis=22,H=pad.t+ph*2+gap+axis,W=width,iw=W-pad.l-pad.r,dur=Math.max(1,s.duration),x=t=>pad.l+Math.max(0,Math.min(1,t/dur))*iw;
+ const svg=make('svg',{viewBox:`0 0 ${W} ${H}`,class:'meta-tl',role:'img','aria-label':`HP timeline, ${sideLabels.my&&sideLabels.my!=='You'?sideLabels.my+': ':''}${s.result||'unknown result'}`});
+ const panels=[['my',sideLabels.my||'You',pad.t],['opponent',sideLabels.opponent||'Opponent',pad.t+ph+gap]];
  for(const [side,name,top] of panels){const y=v=>top+ph-(v/100)*ph;
   svg.append(make('rect',{x:pad.l,y:top,width:iw,height:ph,class:'meta-tl-panel'}));
   for(const v of [0,50,100]){svg.append(make('line',{x1:pad.l,x2:pad.l+iw,y1:y(v),y2:y(v),class:'meta-tl-grid'}));svg.append(make('text',{x:pad.l-6,y:y(v)+4,'text-anchor':'end',class:'meta-tl-tick'},`${v}%`));}
@@ -34,9 +34,9 @@ function render(s,{width=720}={}){const pad={l:40,r:12,t:12},ph=110,gap=34,axis=
    else if(e.kind==='effect'){const m=make('circle',{cx:ex,cy:top+16,r:3,class:e.effect==='super'?'meta-tl-super':'meta-tl-weak'});m.append(make('title',{},`${clock(e.t)} · ${e.effect==='super'?'Super effective':'Not very effective'} hit`));svg.append(m);}}}
  // time axis
  const ay=pad.t+ph*2+gap+4,step=dur>150?30:dur>60?15:10;for(let t=0;t<=dur;t+=step){svg.append(make('text',{x:x(t),y:ay+12,'text-anchor':'middle',class:'meta-tl-tick'},clock(t)));}
- const res=s.result&&s.result!=='Unknown'?`${s.result}${s.ending&&s.ending!=='normal'?` (${s.ending==='you-forfeit'?'you forfeited':'opponent forfeited'})`:''}`:null;if(res)svg.append(make('text',{x:pad.l+iw,y:pad.t+ph+gap-4,'text-anchor':'end',class:'meta-tl-result'},res));
+ const customPerspective=sideLabels.my&&sideLabels.my!=='You';const res=s.result&&s.result!=='Unknown'?`${customPerspective?sideLabels.my+': ':''}${s.result}${s.ending&&s.ending!=='normal'?` (${s.ending==='you-forfeit'?(customPerspective?sideLabels.my+' forfeited':'you forfeited'):(sideLabels.opponent||'Opponent')+' forfeited'})`:''}`:null;if(res)svg.append(make('text',{x:pad.l+iw,y:pad.t+ph+gap-4,'text-anchor':'end',class:'meta-tl-result'},res));
  return svg;}
-function legend(s){const box=document.createElement('div');box.className='meta-tl-legend';for(const [side,name] of [['my','You'],['opponent','Opponent']]){const row=document.createElement('div');row.append(Object.assign(document.createElement('strong'),{textContent:name+': '}));(s[side]||[]).forEach((p,i)=>{const sw=document.createElement('span');sw.className='meta-tl-swatch';sw.style.background=COLORS[i%3];const t=document.createElement('span');const bits=[p.label];if(p.fastMoveName)bits.push(p.fastMoveName);if(p.shadowP!=null&&p.shadowP>=.5)bits.push('Shadow');t.textContent=bits.join(' · ');row.append(sw,t);});box.append(row);}
+function legend(s,{sideLabels={my:'You',opponent:'Opponent'}}={}){const box=document.createElement('div');box.className='meta-tl-legend';for(const [side,name] of [['my',sideLabels.my||'You'],['opponent',sideLabels.opponent||'Opponent']]){const row=document.createElement('div');row.append(Object.assign(document.createElement('strong'),{textContent:name+': '}));(s[side]||[]).forEach((p,i)=>{const sw=document.createElement('span');sw.className='meta-tl-swatch';sw.style.background=COLORS[i%3];const t=document.createElement('span');const bits=[p.label];if(p.fastMoveName)bits.push(p.fastMoveName);if(p.shadowP!=null&&p.shadowP>=.5)bits.push('Shadow');t.textContent=bits.join(' · ');row.append(sw,t);});box.append(row);}
  const key=document.createElement('p');key.className='hint';key.textContent='▼ charged attack · ▮ shield · ✕ faint · │ switch · ● super effective / ○ not very effective';box.append(key);return box;}
 const api={summarize,render,legend};if(typeof module!=='undefined')module.exports=api;root.MetaTimeline=api;
 })(typeof window==='undefined'?globalThis:window);

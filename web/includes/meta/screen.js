@@ -24,12 +24,20 @@ function hudScore(frames,box){let ok=0,dys=[];for(const f of frames){const c=cro
 // Phones run from about 9:16 to 9:21; letterboxed or cropped uploads may lose some height, so
 // widths from 0.38 to 0.75 of the height are tried.
 function locate(frames,{minAspect=.38,maxAspect=.75}={}){if(!frames.length)return null;
- const xs=peaks(frames.map(f=>edgeProfile(f,'x'))),ys=peaks(frames.map(f=>edgeProfile(f,'y')),.35,4);
- const tried=[];for(let i=0;i<ys.length;i++)for(let j=i+1;j<ys.length;j++){const y0=ys[i],y1=ys[j],h=y1-y0;if(h<frames[0].height*.5)continue;
+ const xp=frames.map(f=>edgeProfile(f,'x')),yp=frames.map(f=>edgeProfile(f,'y'));
+ const candidates=(xs,ys)=>{const tried=[];for(let i=0;i<ys.length;i++)for(let j=i+1;j<ys.length;j++){const y0=ys[i],y1=ys[j],h=y1-y0;if(h<frames[0].height*.5)continue;
   for(let a=0;a<xs.length;a++)for(let b=a+1;b<xs.length;b++){const x0=xs[a],x1=xs[b],r=(x1-x0)/h;if(r<minAspect||r>maxAspect)continue;tried.push([x0,y0,x1,y1]);}}
+  return tried;};
+ const tried=candidates(peaks(xp),peaks(yp,.35,4));
  // Full-frame portrait recordings: the whole frame is always a candidate.
  const full=[0,0,frames[0].width,frames[0].height];if(!tried.some(b=>b.join()===full.join()))tried.push(full);
- let best=null;for(const box of tried){const s=hudScore(frames,box);if(s.ok&&(!best||s.ok>best.score||(s.ok===best.score&&(box[2]-box[0])>(best.box[2]-best.box[0]))))best={box,score:s.ok,dy:s.dy};}
+ let best=null;const checked=new Set();const check=(boxes,minFrames)=>{for(const box of boxes){const key=box.join();if(checked.has(key))continue;checked.add(key);const s=hudScore(frames,box),w=box[2]-box[0],bw=best?best.box[2]-best.box[0]:0;
+  if(s.ok>=minFrames&&(!best||s.ok>best.score||(s.ok===best.score&&(w>bw||(w===bw&&box[3]-box[1]>best.box[3]-best.box[1])))))best={box,score:s.ok,dy:s.dy};}};
+ check(tried,1);
+ // Branded layouts may have one phone edge against a background of similar brightness. Try
+ // weaker persistent boundaries only after the cheap pass fails; require repeated HUD evidence
+ // so a pale team card cannot stand in for the actual battle screen.
+ if(!best)check(candidates(peaks(xp,.12,16),peaks(yp,.18,6)),Math.min(frames.length,Math.max(2,Math.ceil(frames.length*.2))));
  if(!best)return null;best.box=snap(frames,best.box);return {...best,frames:frames.length,aspect:+((best.box[2]-best.box[0])/(best.box[3]-best.box[1])).toFixed(3)};}
 // A scaled border usually smears over two columns; the screen starts after the last strong column on
 // its left side and ends before the first on its right (same for rows).

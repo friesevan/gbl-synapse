@@ -40,6 +40,7 @@ import league as L  # noqa: E402
 import policy as P  # noqa: E402
 import validate as V  # noqa: E402
 import ytapi  # noqa: E402
+from service import Lifecycle, atomic_json, read_json, file_lock  # noqa: E402
 
 WEB = os.path.normpath(os.path.join(HERE, "..", ".."))
 REGISTRY = os.path.join(WEB, "tests", "meta-benchmark", "sources", "registry.json")
@@ -132,6 +133,7 @@ class State:
     CREATE INDEX IF NOT EXISTS v_meta ON videos(meta_status, approx_ts);
     CREATE INDEX IF NOT EXISTS v_dl ON videos(allowed, dl_status, upload_date);
     CREATE INDEX IF NOT EXISTS v_sha ON videos(sha256);
+    CREATE TABLE IF NOT EXISTS reprocess(id TEXT PRIMARY KEY, requested REAL);
     CREATE TABLE IF NOT EXISTS queries(q TEXT, mode TEXT, done REAL, n INTEGER, PRIMARY KEY(q, mode));
     CREATE TABLE IF NOT EXISTS channels(id TEXT PRIMARY KEY, url TEXT, name TEXT, hits INTEGER DEFAULT 0,
       crawled REAL, n INTEGER);
@@ -296,6 +298,12 @@ class Harvester:
         self.ytdlp = None
         self.api_key = None if a.no_api else ytapi.api_key()
         self.api_off_until = 0.0
+        self.draining = False
+        self._feedback_stamp = None
+        self._relevance_feedback = {}
+        self.summary_lock = threading.RLock()
+        self.validation_lock = threading.RLock()
+        self.validation_count = len((read_json(a.inbox, {}) or {}).get("questions", [])) if a.inbox else 0
 
     # ---- helpers
     def inc(self, k, n=1):
@@ -360,10 +368,31 @@ class Harvester:
                 return None, f"{kind}: {str(ex)[:300]}"
         return None, "ratelimit: gave up for now"
 
-    def relevance_of(self, title, duration, tags=(), desc="", cats=(), cid=None):
+    def relevance_of(self, title, duration, tags=(), desc="", cats=(), cid=None, vid=None):
+        feedback_path = os.path.join(self.a.work_dir, "relevance-feedback.json")
+        try:
+            stamp = os.stat(feedback_path).st_mtime_ns
+        except OSError:
+            stamp = None
+        if stamp != self._feedback_stamp:
+            self._relevance_feedback = (read_json(feedback_path, {}) or {}).get("videos", {})
+            self._feedback_stamp = stamp
+        reviewed = self._relevance_feedback.get(vid, {})
+        if reviewed.get("value") is True:
+            return 10.0, "relevant"
+        if reviewed.get("value") is False:
+            return -10.0, "no"
         hits = self.state.channel_hits(cid) if cid else 0
         sp = bool(self.species_re.search(title or ""))
-        return P.relevance(title, duration, tags, desc, cats, channel_battle_hits=hits, species_hit=sp)
+        score, label = P.relevance(title, duration, tags, desc, cats, channel_battle_hits=hits, species_hit=sp)
+        # A repeated reviewer-negative title pattern gets a small penalty, never a channel-wide veto.
+        tokens = set(re.findall(r"[a-z]{4,}", (title or "").lower()))
+        shared = [set(re.findall(r"[a-z]{4,}", (f.get("title") or "").lower())) & tokens
+                  for f in self._relevance_feedback.values() if f.get("value") is False]
+        if sum(len(t) >= 3 for t in shared) >= 3:
+            score -= .5
+            label = "relevant" if score >= 2.5 else "maybe" if score >= 1.25 else "no"
+        return score, label
 
     # ---- discovery
     def _iter_flat(self, url, limit):
@@ -389,7 +418,7 @@ class Harvester:
                 e.setdefault("channel_id", channel["id"])
                 e.setdefault("channel_url", channel["url"])
                 e.setdefault("channel", channel["name"])
-            score, label = self.relevance_of(e.get("title"), e.get("duration"), cid=e.get("channel_id"))
+            score, label = self.relevance_of(e.get("title"), e.get("duration"), cid=e.get("channel_id"), vid=e["id"])
             self.inc("flat")
             if self.state.add_flat(e, source, score, label):
                 new += 1
@@ -528,9 +557,9 @@ class Harvester:
     def apply_meta(self, vid, meta):
         """Store full metadata, relevance, league guess and the download decision. Returns allowed."""
         rel_score, rel_label = self.relevance_of(meta["title"], meta["durationS"], meta["tags"], meta["description"],
-                                                 meta["categories"], meta["channelId"])
+                                                 meta["categories"], meta["channelId"], vid=vid)
         meta["relevanceLabel"], meta["relevance"] = rel_label, rel_score
-        lg = L.guess_league(meta, self.schedule)
+        lg = self._reviewed_league(vid, L.guess_league(meta, self.schedule))
         prior = self.registry.get(vid, {})
         meta["permission"] = prior.get("permission") or ("CC license (reuse allowed with attribution)" if meta["creativeCommons"] else "not requested")
         ok, why = P.download_allowed(meta, cc_only=self.a.cc_only, max_duration_s=self.a.max_duration_min * 60)
@@ -544,6 +573,26 @@ class Harvester:
                       meta["channel"], meta["channelUrl"], meta["durationS"], meta["views"], time.time(), vid))
         self.inc("enriched")
         return ok
+
+    def _reviewed_league(self, vid, guessed):
+        """A confirmed video-wide label takes precedence over title/schedule guesses on every retry."""
+        # Registry writes are atomic; refresh here because feedback can arrive between download jobs.
+        latest = self._load_registry().get(vid, {})
+        if latest:
+            self.registry[vid] = latest
+        labels = read_json(os.path.join(self.a.work_dir, "labels", vid + ".json"), {})
+        pending = labels.get("leagueId")
+        reviewed = latest if latest.get("reviewerLeague") else {}
+        key = pending if pending and pending != "other" else reviewed.get("leagueId")
+        if not key:
+            return guessed
+        _, cup = L.get_format(key, self.schedule.get("cups", {}))
+        if not cup:
+            return guessed
+        evidence = reviewed.get("leagueEvidence") or [{"source": "human-validation", "leagueId": key}]
+        name = reviewed.get("leagueGuess") if reviewed.get("leagueId") == key else cup.get("name", key)
+        return {**guessed, "leagueId": key, "leagueGuess": name, "leagueConfidence": 1,
+                "leagueEvidence": evidence, "reviewerLeague": True, "cupCandidates": []}
 
     # ---- download
     def used_bytes(self):
@@ -583,7 +632,8 @@ class Harvester:
     def download_one(self, row):
         vid, meta = row["id"], json.loads(row.get("meta") or "{}")
         prior = self.registry.get(vid, {})
-        if prior.get("status") in ("downloaded", "processed", "deleted") or prior.get("sha256"):
+        reprocess = bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,)))
+        if not reprocess and (prior.get("status") in ("downloaded", "processed", "deleted") or prior.get("sha256")):
             self.state.x("UPDATE videos SET dl_status='prior', sha256=? WHERE id=?", (prior.get("sha256"), vid))
             return
         # Near-duplicate re-upload: same channel, same normalised title, duration within 2 s.
@@ -632,7 +682,8 @@ class Harvester:
             return
         size, secs = os.path.getsize(path), time.time() - t
         sha = sha256_prefix(path)
-        dup = self.reg_sha.get(sha) or next((r["id"] for r in self.state.q(
+        prior_dup = self.reg_sha.get(sha)
+        dup = (prior_dup if prior_dup != vid else None) or next((r["id"] for r in self.state.q(
             "SELECT id FROM videos WHERE sha256=? AND id<>?", (sha, vid))), None)
         if dup:
             os.remove(path)
@@ -670,10 +721,15 @@ class Harvester:
             return
         out_dir = os.path.join(self.a.work_dir, "results")
         res = os.path.join(out_dir, f"{vid}.json")
-        lg = json.loads(r["league"] or "{}")
+        lg = self._reviewed_league(vid, json.loads(r["league"] or "{}"))
+        self.state.x("UPDATE videos SET league=? WHERE id=?", (json.dumps(lg), vid))
         cp = (L.get_format(lg.get("leagueId") or "", self.schedule["cups"])[1] or {}).get("cp", 1500)
         gm = gamemaster_for(r["upload_date"]) or ""
-        env = {**os.environ, "LEAGUE": str(cp if cp in (500, 1500, 2500, 10000) else 1500), "GAMEMASTER": gm, "CROP": "auto"}
+        cp = cp if cp in (500, 1500, 2500, 10000) else 1500
+        learned_snapshot = os.path.join(out_dir, f"{vid}.learned.json")
+        learned = read_json(LEARNED, {})
+        atomic_json(learned_snapshot, learned)
+        env = {**os.environ, "LEAGUE": str(cp), "GAMEMASTER": gm, "CROP": "auto", "LEARNED_PATH": learned_snapshot}
         ok = os.path.exists(res)
         if not ok:
             timeout = max(900, (r["duration"] or 900) * 2 + 600)
@@ -681,14 +737,24 @@ class Harvester:
             with open(os.path.join(self.a.work_dir, "extract.log"), "a") as lf:
                 lf.write(f"--- {vid} ({(r['duration'] or 0) / 60:.0f} min)\n")
                 lf.flush()
-                p = subprocess.Popen(["node", RUN_NODE, path, res + ".tmp"], stdout=lf, stderr=subprocess.STDOUT, env=env)
+                p = subprocess.Popen(["node", RUN_NODE, path, res + ".tmp"], stdout=lf, stderr=subprocess.STDOUT,
+                                     env=env, start_new_session=True)
                 while p.poll() is None:
-                    if not self.alive() or time.time() - t > timeout:
-                        p.terminate()
+                    # STOP/deadline finish this extraction; only its own safety timeout terminates it.
+                    if time.time() - t > timeout:
+                        # Reap the decoder/OCR children too; they share this extraction's process group.
+                        try:
+                            os.killpg(p.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
                         try:
                             p.wait(30)
                         except subprocess.TimeoutExpired:
-                            p.kill()
+                            try:
+                                os.killpg(p.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            p.wait()
                         break
                     time.sleep(2)
             if p.returncode is None or (p.returncode != 0 and not self.alive()):
@@ -699,18 +765,29 @@ class Harvester:
                 os.replace(res + ".tmp", res)
                 log.info("extract %s: %.0f min of video in %.0f s", vid, (r["duration"] or 0) / 60, time.time() - t)
         if ok:
+            result = read_json(res, {})
+            result["learningContext"] = {"gamemaster": gm, "league": cp, "uploadDate": r["upload_date"]}
+            atomic_json(res, result)
             try:
                 refined = write_league_refinement(res, lg, self.schedule, r["upload_date"])
             except Exception as ex:  # refinement is best-effort
                 log.info("league refinement %s: %s", vid, ex)
                 refined = None
             try:
-                n = self.export_validation(vid, res, path, gm, json.loads(r["meta"] or "{}"), lg, refined)
+                with self.validation_lock:
+                    n = self.export_validation(vid, res, path, gm, json.loads(r["meta"] or "{}"), lg, refined,
+                                               learned_snapshot=learned_snapshot)
                 log.info("validate %s: %d questions", vid, n)
             except Exception as ex:
                 log.warning("validation export %s failed: %s", vid, str(ex)[:300])
+        try:
+            os.remove(learned_snapshot)
+        except FileNotFoundError:
+            pass
         self.state.x("UPDATE videos SET x_status=?, x_date=? WHERE id=?",
                      ("done" if ok else "failed", dt.date.today().isoformat(), vid))
+        if ok:
+            self.state.x("DELETE FROM reprocess WHERE id=?", (vid,))
         self.inc("extracted" if ok else "extractFailed")
         if not self.a.keep:
             try:
@@ -721,14 +798,16 @@ class Harvester:
             self.inc("deleted")
 
     # ---- validation questions (site: Meta Extractor > Validate)
-    def export_validation(self, vid, res, path, gm, meta, video_league, refined):
+    def export_validation(self, vid, res, path, gm, meta, video_league, refined, learned_snapshot=None):
         """Writes this video's open questions to work/validation/<id>/ and rebuilds the inbox the Validate
         tab loads. Extractor questions come from export-questions.cjs (no frames: the reviewer watches the
         moment on YouTube or in a local copy); harvester questions cover league/cup and missed footage."""
         qdir = os.path.join(self.a.work_dir, "validation", vid)
         os.makedirs(qdir, exist_ok=True)
-        env = {**os.environ, "NO_FRAMES": "1", "GAMEMASTER": gm}
-        subprocess.run(["node", EXPORT_Q, res, path, qdir] + ([LEARNED] if os.path.exists(LEARNED) else []),
+        # Confident spot checks provide independent labels for calibration and detect silent errors.
+        env = {**os.environ, "NO_FRAMES": "1", "GAMEMASTER": gm, "AUDIT": os.environ.get("AUDIT", "2")}
+        model = learned_snapshot or LEARNED
+        subprocess.run(["node", EXPORT_Q, res, path, qdir] + ([model] if os.path.exists(model) else []),
                        env=env, check=True, capture_output=True, timeout=600)
         with open(res, encoding="utf-8") as f:
             result = json.load(f)
@@ -750,7 +829,7 @@ class Harvester:
             with open(os.path.join(qdir, doc["qid"] + ".json"), "w", encoding="utf-8") as f:
                 json.dump(doc, f, ensure_ascii=False)
             n += 1
-        V.write_inbox(os.path.join(self.a.work_dir, "validation"), self.a.inbox)
+        self.validation_count = V.write_inbox(os.path.join(self.a.work_dir, "validation"), self.a.inbox)
         return n
 
     # ---- reporting
@@ -769,6 +848,7 @@ class Harvester:
             c = dict(self.c)
         return {
             "updated": dt.datetime.now().isoformat(timespec="seconds"),
+            "phase": "stopping" if self.draining else "running",
             "elapsedMin": round(el / 60, 1),
             "thisRun": c,
             "ratesPerMin": {"flatSeen": round(c["flat"] / el * 60, 1), "newVideos": round(c["flatNew"] / el * 60, 1),
@@ -782,6 +862,7 @@ class Harvester:
                       "allowed": tot("SELECT COUNT(*) FROM videos WHERE allowed=1"),
                       "downloaded": tot("SELECT COUNT(*) FROM videos WHERE dl_status='done'"),
                       "processed": tot("SELECT COUNT(*) FROM videos WHERE x_status='done'"),
+                      "questions": self.validation_count,
                       "onDiskGB": round(self.used_bytes() / 1e9, 2),
                       "channels": tot("SELECT COUNT(*) FROM channels"),
                       "channelsCrawled": tot("SELECT COUNT(*) FROM channels WHERE crawled IS NOT NULL"),
@@ -794,7 +875,49 @@ class Harvester:
             "rateLimitPauses": self.backoff.events,
         }
 
+    def consume_requeues(self):
+        """Immutable request files avoid racing live feedback writes or losing pending re-downloads."""
+        directory = os.path.join(self.a.work_dir, "requeue")
+        if not os.path.isdir(directory):
+            return
+        for name in sorted(os.listdir(directory))[:100]:
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(directory, name)
+            request = read_json(path, {})
+            vid = request.get("videoId", "")
+            if not re.fullmatch(r"[A-Za-z0-9_-]{11}", vid):
+                log.warning("invalid requeue request %s", name)
+                os.replace(path, path + ".invalid")
+                continue
+            with self.state.lock:
+                # Do not reset state underneath an active worker; try again at the next tick.
+                if vid in self.inflight:
+                    continue
+                rows = self.state.q("SELECT dl_path FROM videos WHERE id=?", (vid,))
+                if not rows:
+                    log.warning("requeue %s: not in harvest database", vid)
+                    os.replace(path, path + ".unknown")
+                    continue
+                local = rows[0]["dl_path"]
+                existing = bool(local and os.path.isfile(local))
+                self.state.x("UPDATE videos SET dl_status=?,x_status=NULL,deleted_date=NULL,attempts=0,"
+                             "err=NULL,rel_label='relevant',allowed=1,updated=? WHERE id=?",
+                             ("done" if existing else None, time.time(), vid))
+                self.state.x("INSERT OR REPLACE INTO reprocess(id,requested) VALUES(?,?)", (vid, time.time()))
+                # A prior result must not short-circuit a requested screen/model reanalysis.
+                result = os.path.join(self.a.work_dir, "results", vid + ".json")
+                if os.path.exists(result):
+                    os.replace(result, result + ".previous")
+                self.registry.pop(vid, None)
+                os.remove(path)
+                log.info("requeued %s (%s)", vid, "local video" if existing else "redownload required")
+
     def write_summary(self):
+        with self.summary_lock:
+            return self._write_summary()
+
+    def _write_summary(self):
         sm = self.summary()
         tmp = os.path.join(self.a.work_dir, "summary.json.tmp")
         with open(tmp, "w") as f:
@@ -809,16 +932,19 @@ class Harvester:
     def export_registry(self):
         if not self.a.registry:
             return 0
-        rows = self.state.q("SELECT * FROM videos WHERE meta_status='done' AND rel_label='relevant'")
-        reg = merge_registry(self.registry, [dict(r) for r in rows])
-        write_registry(self.a.registry, reg)
-        self.registry = reg
+        with file_lock(os.path.join(self.a.work_dir, "registry.lock")):
+            rows = self.state.q("SELECT * FROM videos WHERE meta_status='done' AND rel_label='relevant'")
+            # Human labels can arrive during harvesting; always merge the latest persisted registry.
+            self.registry.update(self._load_registry())
+            reg = merge_registry(self.registry, [dict(r) for r in rows])
+            write_registry(self.a.registry, reg)
+            self.registry = reg
         return len(reg)
 
     def reporter(self):
         last_reg = time.time()
         while not self.stop.is_set():
-            self.stop.wait(300)
+            self.stop.wait(10)
             try:
                 self.write_summary()
                 if time.time() - last_reg > self.a.registry_every_min * 60:
@@ -845,17 +971,29 @@ class Harvester:
             ts += [threading.Thread(target=self.extract_worker, name=f"x{i}", daemon=True) for i in range(jobs)]
         for t in ts:
             t.start()
+        self.write_summary()
         try:
             while self.alive():
                 time.sleep(2)
+                self.consume_requeues()
                 if self.a.max_downloads and self.c["downloaded"] >= self.a.max_downloads and self.a.stop_after_downloads:
                     self.wait_extract_then_stop()
                     break
         except KeyboardInterrupt:
             log.info("interrupted: finishing current requests and saving state")
+        self.draining = True
         self.stop.set()
+        self.write_summary()
         for t in ts:
-            t.join(timeout=60)
+            # No daemon worker may outlive the process lock or final checkpoint.
+            while t.is_alive():
+                t.join(timeout=10)
+                if t.is_alive():
+                    self.write_summary()
+        # Recover a worker's unfinished claim after an unexpected exception; next start can retry it.
+        self.state.x("UPDATE videos SET meta_status='todo' WHERE meta_status='working'")
+        self.state.x("UPDATE videos SET dl_status=NULL WHERE dl_status='working'")
+        self.state.x("UPDATE videos SET x_status=NULL WHERE x_status='working'")
         sm = self.write_summary()
         n = self.export_registry()
         log.info("done: registry %d entries; summary %s", n, os.path.join(self.a.work_dir, "summary.json"))
@@ -956,13 +1094,19 @@ def registry_entry(row, prior=None):
         if k not in e or e[k] in (None, "") or k in ("views", "license", "creativeCommons"):
             e[k] = v
     keep_manual = prior and (prior.get("shortlist") or prior.get("pilot"))
-    if not keep_manual:
+    if not keep_manual and not (prior and prior.get("reviewerLeague")):
         e["leagueGuess"] = lg.get("leagueGuess", "Unknown")
         e["kindGuess"] = lg.get("kindGuess", "set/gameplay")
-    e["leagueId"] = lg.get("leagueId")
-    e["leagueConfidence"] = lg.get("leagueConfidence", 0)
-    e["leagueEvidence"] = lg.get("leagueEvidence", [])
-    e["cupCandidates"] = lg.get("cupCandidates", [])
+    if not (prior and prior.get("reviewerLeague")):
+        e["leagueId"] = lg.get("leagueId")
+    if prior and prior.get("reviewerLeague"):
+        e["leagueConfidence"] = 1
+        e["leagueEvidence"] = prior.get("leagueEvidence") or [{"source": "human-validation", "leagueId": prior.get("leagueId")}]
+        e["cupCandidates"] = []
+    else:
+        e["leagueConfidence"] = lg.get("leagueConfidence", 0)
+        e["leagueEvidence"] = lg.get("leagueEvidence", [])
+        e["cupCandidates"] = lg.get("cupCandidates", [])
     e.setdefault("permission", "CC license (reuse allowed with attribution)" if e["creativeCommons"] else "not requested")
     e["status"] = status
     e.setdefault("shortlist", False)
@@ -1093,6 +1237,7 @@ def parse(argv=None):
     ap.add_argument("--cc-only", action="store_true", help="download only Creative Commons / written-permission videos")
     ap.add_argument("--pace", type=float, default=2.0, help="seconds between discovery page requests")
     ap.add_argument("--registry-every-min", type=float, default=30)
+    ap.add_argument("--respect-stop", action="store_true", help=argparse.SUPPRESS)
     return ap.parse_args(argv)
 
 
@@ -1120,13 +1265,22 @@ def main(argv=None):
         p = os.path.join(a.work_dir, "summary.json")
         print(open(p).read() if os.path.exists(p) else "no summary yet: " + p)
         return 0
-    setup_logging(a.work_dir)
-    h = Harvester(a)
     if a.command == "export-registry":
+        setup_logging(a.work_dir)
+        h = Harvester(a)
         print(h.export_registry(), "entries")
         return 0
-    signal.signal(signal.SIGTERM, lambda *_: h.stop.set())
-    sm = h.run()
+    with Lifecycle(a.work_dir):
+        # Once exclusive ownership is confirmed, a CLI restart resumes previous STOP work.
+        if not a.respect_stop:
+            try:
+                os.remove(os.path.join(a.work_dir, "STOP"))
+            except FileNotFoundError:
+                pass
+        setup_logging(a.work_dir)
+        h = Harvester(a)
+        signal.signal(signal.SIGTERM, lambda *_: h.stop.set())
+        sm = h.run()
     print(json.dumps({k: sm[k] for k in ("elapsedMin", "ratesPerMin", "downloadMBps", "total", "relevantLicense")}))
     return 0
 

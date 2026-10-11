@@ -35,6 +35,10 @@ When a run finishes, open the **Full Team Neural Network** tab and import `train
 
 The trainer was developed separately as PvPokeTeamTrainer and merged here on 2026-10-10.
 
+## YouTube harvest and live validation
+
+Run `python3 web/run_app.py`, then open **Meta Extractor → Analyze & review**. The harvester panel starts/resumes and safely stops local runs, displays live progress, and adds questions as videos finish. Human feedback automatically refits the extractor’s learned priors after eight useful answers, with a separate 24-answer review goal. Priority, Type and Video modes organize review; model-resolved questions remain auditable and reversible. See [the harvester guide](web/scripts/yt-harvest/HANDOFF.md) for confidence gates, persistence and checks.
+
 ## Benchmarks
 
 Benchmark runs need ffmpeg: `node web/tests/meta-benchmark/run-batch.cjs JOBS.txt OUTDIR` (see the header of that file).
@@ -48,3 +52,9 @@ Recordings (`*.mp4`, `recorder/src/`) are git-ignored and stay local. Only deriv
 ## History
 
 `web/` keeps the full history of [friesevan/PvP_IVs](https://github.com/friesevan/PvP_IVs) (branch `not-minified`) and `recorder/` the history of PoGoAnalyzer; both were moved into subfolders with `git mv`, so `git log --follow` works on any file.
+
+## Live observed meta
+
+**Meta Extractor → Observed meta** automatically reads local harvest results and reviewed browser/shared observations. Filter by league, named cup, cup period, team side and review status. Click a complete team to inspect its battle occurrences, outcomes from that team’s perspective, source video at battle start and saved HP/event graph. Partial lineups remain separate. Upload dates and estimated schedule periods are labeled; they are not verified recording dates. The local harvester does not require publishing recordings or validation labels to GitHub.
+
+Implementation, checks and publication details: [UI and Observed meta handoff](HANDOFF-2026-10-11-OBSERVED-META.md).

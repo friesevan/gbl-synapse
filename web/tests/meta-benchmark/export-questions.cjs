@@ -12,14 +12,13 @@ const K=require('../../includes/meta/combat.js'),Q=require('../../includes/meta/
 // GAMEMASTER=path selects PvPoke game data from the recording's date (older files lack `turns`).
 const gm=(()=>{const g=process.env.GAMEMASTER?JSON.parse(require('node:fs').readFileSync(process.env.GAMEMASTER,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;})();
 const [runPath,video,outDir,learnedPath]=process.argv.slice(2);
-const run=JSON.parse(fs.readFileSync(runPath,'utf8')),recording=path.basename(video),learned=learnedPath?JSON.parse(fs.readFileSync(learnedPath,'utf8')):null;
+const raw=JSON.parse(fs.readFileSync(runPath,'utf8')),recording=path.basename(video),learned=learnedPath?JSON.parse(fs.readFileSync(learnedPath,'utf8')):null;
+const run=require('./refit.cjs').refitRun(raw,{learned,league:Number(process.env.LEAGUE||raw.learningContext?.league||1500),gm});
 const FOCUS={icons:[0,40,886,230],opponent:[386,560,886,1080],my:[0,760,520,1380],center:[0,600,886,1300]};
 const safeId=s=>String(s).replace(/[^A-Za-z0-9_\-.~:@+]/g,'-').slice(0,200);
 const battles=run.full,reg=JSON.parse(fs.readFileSync(path.join(__dirname,'sources/registry.json'),'utf8')),source=(Array.isArray(reg)?reg:reg.videos).find(v=>recording.startsWith(v.id+'.'));
 const noFrames=!!source||!!process.env.NO_FRAMES;
-// Re-apply learned priors (fast-move counts) to stored fits, then pool and attach as the browser does.
-for(const b of battles){for(const g of b.matchups||[])if(g.fit)g.result={all:g.fit.map(h=>{const h2={...h};if(learned){const lp=(id,move)=>{const c=learned.moves?.[id.replace(/_shadow$/,'')];return c?Math.log(((c[move]||0)+.5)/(Object.values(c).reduce((a,x)=>a+x,0)+1)):0;};h2.oppPrior+=lp(h.opp,h.oppMove);h2.myPrior+=lp(h.my,h.myMove);}return h2;})};}
-const Aura=require('../../includes/meta/aura.js');const pooled=K.poolMine(battles);for(const b of battles){K.attachInference(b,pooled);Aura.applyToBattle(b);}
+// Refitted once from physical evidence; no compounded move/Shadow/form priors.
 const qs=Q.questions(battles,{pokemon:gm.pokemon,moves:gm.moves});
 // AUDIT=n adds n spot checks of confident calls (picked reproducibly per recording), so reviewers also
 // measure how often the model is wrong when it is sure. They are marked audit:true.
@@ -30,7 +29,7 @@ const [W,H]=execFileSync('ffprobe',['-v','error','-select_streams','v','-show_en
 fs.mkdirSync(outDir,{recursive:true});const tmp=path.join(outDir,'frame.jpg'),docs=[];
 for(const q of qs){const [t0,t1]=q.clip,times=Array.from({length:8},(_,i)=>+(t0+(t1-t0)*i/7).toFixed(2)),s=W/886,[x0,y0,x1,y1]=FOCUS[q.focus]||FOCUS.center,frames=[];
 if(!noFrames)for(const t of times){execFileSync('ffmpeg',['-v','error','-ss',String(Math.max(0,t)),'-i',video,'-frames:v','1','-vf',`crop=${Math.round((x1-x0)*s)}:${Math.round(Math.min(H/s,y1)-y0)*s|0}:${Math.round(x0*s)}:${Math.round(y0*s)},scale=220:-2`,'-q:v','6',tmp,'-y']);frames.push('data:image/jpeg;base64,'+fs.readFileSync(tmp).toString('base64'));}
- const doc={qid:safeId(`claude-test:${recording}:${q.id}`),source:'claude-test',recording,createdAt:new Date().toISOString(),kind:q.kind,...(q.audit?{audit:true}:{}),side:q.side||'',key:q.key||'',battle:q.battle,species:q.species||'',title:q.title,detail:q.detail,options:q.options,modelTop:q.modelTop??null,modelP:q.modelP??null,frames,frameTimes:noFrames?[]:times,focus:q.focus,clip:q.clip,...(source?{attribution:{channel:source.channel,url:source.url,license:source.license,uploadDate:source.uploadDate}}:{})};
+ const doc={qid:safeId(`claude-test:${recording}:${q.id}`),source:'claude-test',recording,createdAt:new Date().toISOString(),kind:q.kind,...(q.audit?{audit:true}:{}),allBattles:!!q.allBattles,purple:q.purple??null,side:q.side||'',key:q.key||'',battle:q.battle,species:q.species||'',title:q.title,detail:q.detail,options:q.options,modelTop:q.modelTop??null,modelP:q.modelP??null,frames,frameTimes:noFrames?[]:times,focus:q.focus,clip:q.clip,...(source?{attribution:{channel:source.channel,url:source.url,license:source.license,uploadDate:source.uploadDate}}:{})};
  fs.writeFileSync(path.join(outDir,doc.qid+'.json'),JSON.stringify(doc));docs.push({qid:doc.qid,bytes:JSON.stringify(doc).length,kind:q.kind});}
 fs.rmSync(tmp,{force:true});
 fs.writeFileSync(path.join(outDir,'manifest.json'),JSON.stringify(docs,null,1));

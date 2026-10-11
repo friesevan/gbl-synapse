@@ -51,7 +51,7 @@ Every decision the pipeline couldn't settle becomes a question in Meta Extractor
 - **League/cup** (`validate.py`): asked once per video when the per-battle CP and eligibility check leaves close candidates and the title/schedule guess is below 90%; asked per battle for compilations or when battles disagree.
 - **No battles found**: the screen wasn't located or the video has no battle footage.
 
-Questions go to `PoGo Recorder/src/yt-harvest/validation/<id>/` and are collected into `web/tests/meta-benchmark/results/validation-inbox.json` (git-ignored). When the site runs locally (`python3 web/run_app.py`), the Validate tab loads that file automatically and re-checks it every 5 minutes; nothing is copied into browser storage. On claude.ai, use **Import questions…** with the same file to add them to the shared store.
+Questions go to `PoGo Recorder/src/yt-harvest/validation/<id>/` and are collected into `web/tests/meta-benchmark/results/validation-inbox.json` (git-ignored). When the site runs locally (`python3 web/run_app.py`), the Validate tab uses the live local API, checking every four seconds while harvesting/refitting and every 15 seconds when idle. Human answers persist in the work directory, with a browser retry journal. On claude.ai, use **Import questions…** with the same file to add them to the shared store.
 
 The videos are deleted after analysis, so each question carries its YouTube id: with no local copy, the tab plays the question's moment in an embedded YouTube player (**Restart** returns to it), with a link to open YouTube at that time. If an artifact host blocks the embed, the link still works. **Download answers** saves all answers (with the question, video and clip) as JSON.
 
@@ -74,3 +74,7 @@ The script is a polite client: on a 429 or a "confirm you're not a bot" response
   - `--download-dir`
   - `--work-dir`
 - **Per-battle league after analysis**: `python3 -I web/scripts/yt-harvest/league.py refine '{"cps":[1500,1498],"species":["medicham","azumarill"]}' 2025-01-10` returns the formats that survive the CP-cap and cup-eligibility checks, ranked.
+
+### Live controls, queue order and refitting
+
+The local Validate panel supports start/resume, graceful stop, live jobs/errors, Priority/Type/Video question modes, and durable feedback. Eight new useful answers trigger a prior refit; 24 diverse confirmations is the initial review goal. Corrections and league changes trigger earlier updates. Saved uncertain detections are re-scored without decoding footage. Conservative evidence and held-out calibration gates may move them into a reversible model-resolution audit; model outputs never become training labels. See [`scripts/yt-harvest/HANDOFF.md`](../../../scripts/yt-harvest/HANDOFF.md) for the exact gates and local/hosted differences.

@@ -1,81 +1,71 @@
-# YouTube harvester: progress and to-dos (handoff)
+# YouTube harvester handoff — 2026-10-11
 
-Last updated: 2026-10-11, ~01:30. Pass this file to the next agent.
+The local UI now controls the resumable harvester and the review/learning loop.
 
-## Goal
-Overnight, unattended: find as many Pokémon GO battle videos on YouTube as possible (newest first),
-download them, run the Meta Extractor on them, and put every decision that needs a person into the
-site's **Validate** tab. Videos stay local and are deleted after processing; only derived data is committed.
-The owner lifted the Creative Commons-only download rule on 2026-10-11 (private analysis only).
+## Start and review
 
-## Run it
+From the GBL Synapse project root, run `python3 web/run_app.py`. Open **Meta Extractor → Analyze & review** for harvesting and **Validate** for review.
+The **YouTube harvester** panel starts/resumes a run, sets hours and extraction workers, stops safely,
+and shows current jobs, counts, recent activity and errors. The UI uses the existing yt-dlp environment;
+it does not install packages. If setup is missing, use `bash web/scripts/yt-harvest/overnight.sh` in a terminal.
+
+Stopping prevents new work, finishes active video extraction/requests, saves results, then releases the
+work-directory lock. A long video can take time to finish. The detached harvester survives closing the
+web server; use **Stop safely** before closing it if you want harvesting to stop. Restarting resumes SQLite
+state. Existing CLI runs are recognized. Videos remain local outside Git and are deleted after processing.
+The prior owner authorization permits non-CC footage for private analysis; permission metadata stays recorded.
+
+## Live queue and learning
+
+- Polling updates every four seconds while harvesting/refitting and every 15 seconds when idle. New questions
+  appear without refreshing the page or interrupting the current video.
+- **Priority** uses an impact heuristic based on uncertainty, affected species, repeat coverage and audit need.
+  **Type** groups Shadow, Form, Fast move, Battle outcome, League/cup and Battle footage questions.
+  **Video** groups questions by video priority, then timestamp; playback seeks within the same player.
+- Answers persist atomically in the work directory, with a browser retry journal. Human corrections and
+  original predictions are retained. “Not sure” remains unresolved and never trains the model.
+- The current extractor learns **Bayesian species/move priors**, not a new neural network. A starting default
+  refits after **eight new useful answers**; the separate initial review goal is **24 diverse confirmations**.
+  Corrections and league changes refit sooner. These are practical defaults, not a measured optimum.
+- Refit uses saved HP/cadence/aura/charged-move evidence and historical game data, without video decoding.
+  Only runs with queued or answered questions need reassessment. Legacy human aggregate priors are frozen
+  once in `baseline-learned.json`, then combined idempotently with new human labels.
+- Model-resolved questions leave the open queue but remain in a reversible **Model resolved** audit.
+  Human answers always win. Automatic resolution requires at least 98% posterior confidence, a 0.90
+  winner margin, four measured hits, eight same-species/type human labels from at least three other videos,
+  and 50 high-confidence held-out video checks for that question type with a Wilson lower bound of 90%.
+  All labels from the held-out video and untraceable legacy aggregates are excluded from calibration.
+  The new-label-only model must agree with the live model. Audit questions stay open until a person answers.
+  These gates express conservative confidence, not certainty.
+- Two deterministic confident-call spot checks per video feed calibration; `AUDIT=0` explicitly disables them.
+- League/cup and outcome feedback creates per-battle labels. Video-wide league labels update the registry
+  and extraction CP cap. “No footage” informs relevance; “battles are shown” requests reprocessing with a
+  local file or a fresh download. Identical feedback retries do not create duplicate requeue requests.
+
+## Files and checks
+
+`web/run_app.py`: local-only, same-origin API/server. `service.py`: lifecycle/progress/process locks.
+`feedback.py`: durable labels, background refits and audit state. `learning-loop.cjs` / `refit.cjs`:
+offline fitting/calibration. `validation.js` / `validation-policy.js`: UI and queue order.
+
 ```bash
-cd ~/Desktop/Projects/GBL\ Synapse && git pull && bash web/scripts/yt-harvest/overnight.sh --hours 9
+python3 -I -m unittest discover -s web/scripts/yt-harvest -p 'test_*.py'
+node --test web/tests/meta-*.test.cjs
+node artifact/build.cjs /private/tmp/gbl-artifact-preview
 ```
-- Progress: `tail -f ~/Desktop/Projects/PoGo\ Recorder/src/yt-harvest/harvest.log`
-- Stop: Ctrl-C or `touch ~/Desktop/Projects/PoGo\ Recorder/src/yt-harvest/STOP`. Re-run to resume.
-- Review: `python3 web/run_app.py`, then Meta Extractor › Validate. Harvested questions load automatically.
-- Afterwards: commit `web/tests/meta-benchmark/sources/registry.json` (metadata only).
-- Don't run a neural-network training run at the same time: it slows extraction about tenfold.
 
-## Done this session
-- **One YouTube request per downloaded video.** Videos with battle-like titles go straight to the
-  download queue; the download's extraction supplies the metadata, applies the policy, then downloads
-  (`download_one`, `DL_CLAIM`, `SKIPPED`). Queue is newest first, by upload date or the approximate date
-  from channel listings. Tested live: metadata and download in one 8 s request.
-- **Continuous extractor pool** (`extract_worker` / `extract_one`): one `run-node.cjs` per video, default
-  cores/2 workers, so a long video no longer holds up a whole batch. Measured alone: 5.7–7.7× real time
-  per worker. The 0.7× seen in the first smoke run was CPU contention with the 10-hour trainer run.
-- **Optional YouTube Data API** (`ytapi.py`): with `YOUTUBE_API_KEY` in `~/.config/gbl-synapse/env`,
-  metadata comes 50 videos per request (≈500k/day free) and doesn't touch the web player that triggers
-  bot checks. No key is configured yet; the owner must create one (Google Cloud › YouTube Data API v3).
-- **Validate questions for every processed video** (`validate.py`, `export_validation`):
-  - extractor questions (fast move, Shadow, form, result) via `export-questions.cjs` with `NO_FRAMES=1`;
-  - league/cup questions (once per video if ambiguous; per battle for compilations or disagreeing battles);
-  - "No battles found" questions when the extractor finds nothing.
-  Written to `PoGo Recorder/src/yt-harvest/validation/<id>/` and collected into
-  `web/tests/meta-benchmark/results/validation-inbox.json` (git-ignored).
-- **Validate tab** (`web/includes/meta/validation.js`, `meta.css`): auto-loads the inbox when served
-  locally (re-checks every 5 min; not copied into localStorage), **Import questions…** (for claude.ai's
-  shared store), an embedded **YouTube player** at the question's moment when there's no local file
-  (Restart, plus an "Open on YouTube at m:ss" link), **Download answers** (JSON), a "From the overnight
-  harvester" source filter, and "Creator won/lost" wording for creator videos. Checked in the browser.
-- Tests: `python3 -I web/scripts/yt-harvest/test_yt_harvest.py` (28 pass), `node --test
-  web/tests/meta-extractor.test.cjs` (37 pass). Docs: `web/tests/meta-benchmark/sources/README.md`.
+The overlay screen fix now locates `oqxO3iZePPU` at source crop `[710,0,1210,1080]` (seven of eight
+sampled frames read a HUD). A 60-second excerpt recovered one battle in 15.7 seconds on this machine;
+this is a layout smoke check, not a sustained throughput benchmark.
 
-## In progress (separate agent)
-- **Screen locator misses overlay layouts.** `oqxO3iZePPU` (Reis2TheOccasion: centre phone column
-  inside a branded frame with a team card) gives `box:null` and 0 battles. An agent was fixing
-  `web/tests/meta-benchmark/locate-screen.cjs` / `web/includes/meta/screen.js`. Check `git log` for
-  its commit. If it isn't there, redo it: this layout is common, so it costs a lot of footage.
-  The video is kept locally in `PoGo Recorder/src/youtube/` for testing.
+## Remaining independent improvements
 
-## To-dos
-1. **Fold answers back.** Use the Download answers JSON to:
-   - write league/cup answers into `registry.json` (`leagueGuess`) and per-battle labels;
-   - feed `footage: none` answers back into `policy.relevance()` as negative examples;
-   - make extractor answers work with `fold-answers.cjs` (it expects a folder of answer docs).
-   None of this is written yet.
-2. **Re-queue missed videos.** After the screen-locator fix, re-process videos answered "Yes, battles
-   are shown". They were deleted, so this needs a re-download; add a `requeue` command.
-3. **Shared-store limits on claude.ai.** The Validate tab subscribes with `limit(1000)` questions. A
-   full night can produce more. Paginate, or import only the newest N videos.
-4. **Data API key.** Once the owner adds it, confirm the log says "YouTube Data API (key found)".
-   Consider raising `--meta-per-min` defaults, since only downloads then use the web player.
-5. **Speed ideas, not measured yet:**
-   - decode 720p for portrait uploads;
-   - skip analysis outside battle chapters for long streams;
-   - run `run-node` HUD OCR less often on 60 fps sources.
-6. **Use the team card in overlay layouts.** Overlay frames often show the creator's team and
-   movesets. That could settle "my side" fast-move questions without asking anyone.
-7. **League labels.** "Mega Master League" titles map to Master League. Schedule gaps: 2026-08-25 is
-   missing, and Season 2's dates differ between sources (see `data/gbl-schedule.json`).
-8. **Wire league data into extraction.** `export_validation` runs after `write_league_refinement`, but
-   the per-battle league isn't yet passed into the Meta Extractor's species-candidate priors.
+No YouTube Data API key is configured; adding one remains the owner's Google Cloud setup task.
+Hosted artifact/shared-store review has no access to local start/stop APIs. Its store still has a 1,000
+question subscription cap, now clearly indicated; import files to review the remainder.
+Team-card OCR, battle-chapter skipping, lower-resolution decode trials, and uncertain schedule gaps
+remain separate experiments. Do not run neural team training concurrently when measuring extraction speed.
 
-## Files
-- `harvest.py`: pipeline (discover, metadata, download, extract, validate, registry).
-- `validate.py`: harvester questions and the inbox.
-- `ytapi.py`: Data API.
-- `league.py` / `data/gbl-schedule.json`: schedule and cup rules.
-- `policy.py`: relevance and download policy.
+## Observed meta browser
+
+The new **Observed meta** dashboard reads `/api/observed-meta` automatically, alongside reviewed browser/shared observations. League/cup/time-range grouping, selected team occurrences, team-perspective outcomes, source timestamps and saved battle graphs are documented in the root `HANDOFF-2026-10-11-OBSERVED-META.md`. Detected lineups are provisional; incomplete teams stay separate.

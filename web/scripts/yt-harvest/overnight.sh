@@ -20,7 +20,7 @@ fi
 "$VENV/bin/python" -I -c "import yt_dlp" || { echo "yt-dlp install failed"; exit 1; }
 
 WORK="${YT_HARVEST_WORK:-$HOME/Desktop/Projects/PoGo Recorder/src/yt-harvest}"
-rm -f "$WORK/STOP"
+# harvest.py clears STOP only after acquiring its exclusive lifecycle lock.
 if command -v caffeinate >/dev/null 2>&1; then
   exec caffeinate -i "$VENV/bin/python" -I "$HERE/harvest.py" overnight "$@"
 fi

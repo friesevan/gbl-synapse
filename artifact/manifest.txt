@@ -14,11 +14,14 @@ includes/meta/core.js
 includes/meta/hp.js
 includes/meta/meta.css
 includes/meta/mp4index.js
+includes/meta/observed-core.js
+includes/meta/observed.js
 includes/meta/questions.js
 includes/meta/screen.js
 includes/meta/timeline.js
 includes/meta/ui.js
 includes/meta/validation.js
+includes/meta/validation-policy.js
 includes/meta/vendor/CORE-LICENSE
 includes/meta/vendor/LANGUAGE-LICENSE
 includes/meta/vendor/TESSERACT-LICENSE.md

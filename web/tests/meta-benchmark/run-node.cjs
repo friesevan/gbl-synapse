@@ -13,10 +13,12 @@
 //   CROP=auto | x0,y0,x1,y1   phone screen inside a wide video (YouTube etc.), scaled to 886 wide
 //   START=s END=s     analyse part of the file (run-batch.cjs splits long files this way)
 //   FPS=10 HUD_EVERY=5
+//   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
 const Aura=require('../../includes/meta/aura.js'),C=require('../../includes/meta/core.js'),K=require('../../includes/meta/combat.js'),Hp=require('../../includes/meta/hp.js');
 const gm=(()=>{const g=process.env.GAMEMASTER?JSON.parse(fs.readFileSync(process.env.GAMEMASTER,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;})();
 const byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),movesById=new Map(gm.moves.map(m=>[m.moveId,m]));
+const learned=process.env.LEARNED_PATH?JSON.parse(fs.readFileSync(process.env.LEARNED_PATH,'utf8')):undefined;
 const [video,outPath]=process.argv.slice(2);
 const FPS=Number(process.env.FPS||10),HUD_EVERY=Number(process.env.HUD_EVERY||5),START=Number(process.env.START||0),END=process.env.END?Number(process.env.END):null;
 const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'meta-bench-'));
@@ -103,14 +105,14 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
    // Effectiveness texts during this matchup's fast-move window, away from charged attacks (±4 s).
    const fw=[g.start+.3,g.start+.3+FAST_WINDOW],nearCharged=t=>ev.some(e=>e.kind==='move'&&Math.abs(e.t-t)<=4),eff={};
    for(const [side,key] of [['my','onMy'],['opponent','onOpp']]){const list=effects.filter(x=>x.side===side&&x.t>=fw[0]&&x.t<=fw[1]&&!nearCharged(x.t));eff[key]={super:list.filter(x=>x.kind==='super').length,notVery:list.filter(x=>x.kind==='notVery').length,hits:d[side].hits.length};}
-   const r=K.inferMatchup({opp:{candidates:entries(o),cp:o.cp},my:{candidates:entries(m),cp:m.cp},hitsOnMy:d.my.summary,hitsOnOpp:d.opponent.summary,charged,effects:eff,moves:gm.moves,rankings,league});
+   const r=K.inferMatchup({opp:{candidates:entries(o),cp:o.cp},my:{candidates:entries(m),cp:m.cp},hitsOnMy:d.my.summary,hitsOnOpp:d.opponent.summary,charged,effects:eff,moves:gm.moves,rankings,league,learned});
    const fit=r&&r.all.map(h=>({opp:h.opp,oppMove:h.oppMove,my:h.my,myMove:h.myMove,evidence:+h.evidence.toFixed(4),oppPrior:+h.oppPrior.toFixed(4),myPrior:+h.myPrior.toFixed(4)}));
    b.matchups.push({...g,hitsOnMy:d.my.hits.map(h=>+h.size.toFixed(3)),hitsOnOpp:d.opponent.hits.map(h=>+h.size.toFixed(3)),hitTimesOnMy:d.my.hits.map(h=>+h.t.toFixed(1)),hitTimesOnOpp:d.opponent.hits.map(h=>+h.t.toFixed(1)),cadenceOnMy:d.my.summary?.turns,cadenceOnOpp:d.opponent.summary?.turns,auraOpponent:d.aura.opponent,auraMy:d.aura.my,chargedOnMy:charged.onMy,chargedOnOpp:charged.onOpp,effects:eff,
     // Compact HP series (10/s, fill fraction or null) so fits can be re-run without decoding video.
     series:{t0:d.t0!=null?+d.t0.toFixed(2):null,fps:FPS,my:d.series.my.map(p=>p?+p.fill.toFixed(3):null),opponent:d.series.opponent.map(p=>p?+p.fill.toFixed(3):null)},fit,result:r});}
   b.evidence=battleEvidence(b);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))K.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById);}
  for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);}
- const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled);Aura.applyToBattle(b);}
+ const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled);Aura.applyToBattle(b,undefined,learned);}
  metrics.ms.fit=now()-t0;
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
  const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
