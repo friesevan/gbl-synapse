@@ -47,3 +47,26 @@ test('re-rendering keeps opened disclosures open',()=>{const host=new Node('sect
 test('without a history the view explains where refit charts come from and still shows live counts',()=>{const host=new Node('section');M.render(host,{history:null,live:{answers:12,open:30,questions:42,resolved:0,resolvedModel:0,resolvedFree:0,agreement:{shadow:{right:3,total:4}}},mode:'shared',width:360});
  assert.equal(walk(host).filter(n=>n.tagName==='SVG').length,0);assert.match(host.textContent,/recorded by the local app/);assert.match(host.textContent,/Answers given12/);assert.match(host.textContent,/model’s pick matched you for shadow 75% \(4\)/);});
 test('narrow widths drop end labels and stack small multiples in one column',()=>{const host=new Node('section');M.render(host,{history,live:{},width:320});const multi=walk(host).filter(n=>n.className==='meta-perf-multi');assert.ok(multi.length>=2);assert.ok(multi.every(m=>m.style.gridTemplateColumns==='repeat(1,minmax(0,1fr))'));assert.equal(walk(host).filter(n=>n.attributes.class==='meta-perf-end').length,0);});
+test('a single refit still reads: larger markers, value labels spread with leader lines, labelled column segments',()=>{
+ // One backfilled refit, three kinds within a few points of each other (the owner's first recorded refit).
+ const h={records:[rec(51,{backfilled:true,heldOut:{fastMove:{right:165,total:197},shadow:{right:325,total:410,auc:.871,logLoss:.458,baseline:{right:300,total:410,auc:.73,logLoss:.646}},form:{right:27,total:31}},...status(3881,488),questions:4910})]};
+ for(const width of [900,340]){const host=new Node('section');M.render(host,{history:h,live:{},width});
+  const figs=walk(host).filter(n=>n.tagName==='FIGURE'),acc=figs.find(f=>f.children[0].textContent.startsWith('Held-out accuracy'));
+  const dots=walk(acc).filter(n=>n.tagName==='CIRCLE');assert.equal(dots.length,3);
+  assert.ok(dots.every(d=>d.attributes.r==='7'&&d.attributes.class==='meta-perf-dot hollow solo'&&d.attributes.fill==='var(--pf-panel)'),'single backfilled points: large hollow markers');
+  const labels=walk(acc).filter(n=>n.tagName==='TEXT'&&/meta-perf-(end|value)/.test(n.attributes.class)).map(n=>[n.textContent,+n.attributes.y]);
+  assert.equal(labels.length,3,'no label is dropped when values sit close together');
+  const ys=labels.map(l=>l[1]).sort((a,b)=>a-b);assert.ok(ys[1]-ys[0]>=15&&ys[2]-ys[1]>=15,'labels are spread apart');
+  assert.ok(walk(acc).some(n=>n.attributes.class==='meta-perf-leader'),'moved labels keep a leader line to their point');
+  assert.ok(labels.some(l=>l[0].endsWith('83.8%'))&&labels.some(l=>l[0].endsWith('87.1%')));
+  if(width===900)assert.ok(labels.some(l=>l[0]==='Fast move 83.8%'),'wide charts name the series in the label');
+  const auc=figs.find(f=>f.children[0].textContent.startsWith('Shadow classifier · AUC'));assert.deepEqual(walk(auc).filter(n=>n.attributes.class==='meta-perf-value').map(n=>n.textContent).sort(),['0.730','0.871']);
+  const stack=figs.find(f=>f.children[0].textContent.startsWith('Questions after each refit'));
+  assert.deepEqual(walk(stack).filter(n=>n.attributes.class==='meta-perf-value').map(n=>n.textContent).sort(),['3,881 open','488 model resolved','541 human answered']);}
+});
+test('chart colours are theme variables, never fixed hex, so a theme switch recolours without re-rendering',()=>{
+ const host=new Node('section');M.render(host,{history,live:{},width:900});
+ const painted=walk(host).flatMap(n=>['fill','stroke'].map(k=>n.attributes[k]).concat(n.style?.['--key']??[])).filter(Boolean);
+ assert.ok(painted.length>20);assert.deepEqual(painted.filter(v=>!/^var\(--[\w-]+\)$/.test(v)),[]);
+ const src=fs.readFileSync(path.join(__dirname,'../includes/meta/validation-metrics.js'),'utf8');assert.doesNotMatch(src,/#[0-9a-f]{6}\b/i);
+});

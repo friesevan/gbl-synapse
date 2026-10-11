@@ -76,39 +76,53 @@ function interact(plot,canvas,{W,xs,top,bottom,tip,label}){const tipEl=el('div',
  canvas.onpointermove=e=>{const r=canvas.getBoundingClientRect?.();if(!r||!r.width)return;show(nearest((e.clientX-r.left)*W/r.width));};canvas.onpointerleave=hide;canvas.onfocus=()=>show(idx);canvas.onblur=hide;
  canvas.onkeydown=e=>{const step={ArrowLeft:-1,ArrowRight:1}[e.key];if(step){e.preventDefault?.();show(idx+step);}else if(e.key==='Home')show(0);else if(e.key==='End')show(xs.length-1);else if(e.key==='Escape')hide();};
  return {show,hide};}
-// Lines over a numeric x (refit number, or predicted probability for calibration). Gaps stay gaps.
+// Direct labels beside marks. Labels that would overlap are spread at least 15px apart inside the plot and
+// tied back to their mark with a short leader line, instead of being dropped.
+function placeLabels(c,items,lo,hi,gap=15){const sorted=[...items].sort((a,b)=>a.cy-b.cy);let prev=-Infinity;
+ for(const it of sorted){it.y=Math.max(it.cy+4,prev+gap,lo);prev=it.y;}let next=Infinity;for(let i=sorted.length-1;i>=0;i--){const it=sorted[i];it.y=Math.min(it.y,next-gap,hi);next=it.y;}
+ for(const it of sorted){const moved=Math.abs(it.y-4-it.cy)>2,x=it.px+it.r+(moved?18:8);if(moved)c.append(svg('line',{x1:r1(it.px+it.r+2),y1:r1(it.cy),x2:r1(x-3),y2:r1(it.y-4),class:'meta-perf-leader'}));
+  c.append(svg('text',{x:r1(x),y:r1(it.y),class:it.cls},it.text));}}
+// Lines over a numeric x (refit number, or predicted probability for calibration). Gaps stay gaps. Markers are
+// filled (r 5, surface ring); backfilled points are hollow with a thick stroke; a series with a single point gets
+// a larger marker and a value label so it never reads as an empty chart.
 function lineChart(o){const W=Math.max(240,Math.round(o.width||640)),H=o.height||220,narrow=W<520,endLabels=!narrow&&o.endLabels!==false&&o.series.length<=4;
- const m={l:44,r:endLabels?96:14,t:12,b:o.xTitle?42:28},pw=W-m.l-m.r,ph=H-m.t-m.b,[x0,x1]=o.xDomain,[y0,y1]=o.yDomain;
+ const m={l:48,r:endLabels?124:16,t:14,b:o.xTitle?44:30},pw=W-m.l-m.r,ph=H-m.t-m.b,[x0,x1]=o.xDomain,[y0,y1]=o.yDomain;
  const X=v=>m.l+(x1===x0?pw/2:(v-x0)/(x1-x0)*pw),Y=v=>m.t+ph-(v-y0)/(y1-y0)*ph;
  const f=figure(o.title,o.subtitle);if(o.series.length>1||o.legendExtra)f.append(legend([...(o.series.length>1?o.series.map(s=>({label:s.label,color:s.color})):[]),...(o.legendExtra||[])]));
  const plot=el('div',undefined,'meta-perf-plot'),c=svg('svg',{viewBox:`0 0 ${W} ${H}`,width:W,height:H,class:'meta-perf-svg'});
- for(const t of o.yTicks||niceTicks(y0,y1)){c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:r1(Y(t)),y2:r1(Y(t)),class:'meta-perf-gridline'}),svg('text',{x:m.l-6,y:r1(Y(t))+4,'text-anchor':'end',class:'meta-perf-tick'},o.yFormat(t)));}
+ for(const t of o.yTicks||niceTicks(y0,y1)){c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:r1(Y(t)),y2:r1(Y(t)),class:'meta-perf-gridline'}),svg('text',{x:m.l-8,y:r1(Y(t))+4,'text-anchor':'end',class:'meta-perf-tick'},o.yFormat(t)));}
  c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:m.t+ph,y2:m.t+ph,class:'meta-perf-axis'}));
- for(const t of o.xTicks)c.append(svg('text',{x:r1(X(t)),y:m.t+ph+18,'text-anchor':'middle',class:'meta-perf-tick'},o.xFormat?o.xFormat(t):String(t)));
+ for(const t of o.xTicks)c.append(svg('text',{x:r1(X(t)),y:m.t+ph+19,'text-anchor':'middle',class:'meta-perf-tick'},o.xFormat?o.xFormat(t):String(t)));
  if(o.xTitle)c.append(svg('text',{x:m.l+pw/2,y:H-6,'text-anchor':'middle',class:'meta-perf-tick'},o.xTitle));
  if(o.diagonal)c.append(svg('line',{x1:X(x0),y1:Y(y0),x2:X(x1),y2:Y(y1),class:'meta-perf-ref'}));
- for(const ref of o.refs||[]){c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:r1(Y(ref.y)),y2:r1(Y(ref.y)),class:'meta-perf-ref'}),svg('text',{x:m.l+pw-2,y:r1(Y(ref.y))-4,'text-anchor':'end',class:'meta-perf-tick'},ref.label));}
- const xs=o.points.map(p=>X(p.x)),marks=[];
- for(const s of o.series){let d='',pen=false,segs=0;s.values.forEach((v,i)=>{if(!num(v)){pen=false;return;}d+=`${pen?'L':'M'}${r1(xs[i])},${r1(Y(v))}`;if(pen)segs++;pen=true;});if(segs)c.append(svg('path',{d,class:'meta-perf-line',stroke:s.color}));
-  const dots=s.values.map((v,i)=>{if(!num(v))return null;const hollow=s.hollow?.[i];const dot=svg('circle',{cx:r1(xs[i]),cy:r1(Y(v)),r:4,class:hollow?'meta-perf-dot hollow':'meta-perf-dot',fill:hollow?'var(--pf-panel)':s.color,stroke:hollow?s.color:'var(--pf-panel)'});c.append(dot);return dot;});marks.push(dots);}
- if(endLabels){const placed=[];o.series.forEach((s,si)=>{const i=s.values.map(num).lastIndexOf(true);if(i<0)return;const y=Y(s.values[i]);if(placed.some(p=>Math.abs(p-y)<13))return;placed.push(y);
-  c.append(svg('text',{x:r1(xs[i])+10,y:r1(y)+4,class:'meta-perf-end'},`${s.label} ${o.yFormat(s.values[i],true)}`));});}
+ for(const ref of o.refs||[]){c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:r1(Y(ref.y)),y2:r1(Y(ref.y)),class:'meta-perf-ref'}),svg('text',{x:m.l+pw-2,y:r1(Y(ref.y))-5,'text-anchor':'end',class:'meta-perf-tick'},ref.label));}
+ const xs=o.points.map(p=>X(p.x)),labels=[],dense=xs.length>40;
+ for(const s of o.series){let d='',pen=false,segs=0;s.values.forEach((v,i)=>{if(!num(v)){pen=false;return;}d+=`${pen?'L':'M'}${r1(xs[i])},${r1(Y(v))}`;if(pen)segs++;pen=true;});if(segs)c.append(svg('path',{d,class:'meta-perf-line',stroke:s.color}));}
+ // Markers after every line, so no line crosses a marker.
+ for(const s of o.series){const solo=s.values.filter(num).length===1,r=solo?7:dense?3.5:5;
+  s.values.forEach((v,i)=>{if(!num(v))return;const hollow=s.hollow?.[i];c.append(svg('circle',{cx:r1(xs[i]),cy:r1(Y(v)),r,class:`meta-perf-dot${hollow?' hollow':''}${solo?' solo':''}`,fill:hollow?'var(--pf-panel)':s.color,stroke:hollow?s.color:'var(--pf-panel)'}));});
+  const i=s.values.map(num).lastIndexOf(true);if(i<0)continue;const value=o.yFormat(s.values[i],true);
+  if(endLabels)labels.push({px:xs[i],cy:Y(s.values[i]),r,text:`${s.label} ${value}`,cls:'meta-perf-end'});else if(solo)labels.push({px:xs[i],cy:Y(s.values[i]),r,text:value,cls:'meta-perf-value'});}
+ placeLabels(c,labels,m.t+8,m.t+ph);
  plot.append(c);f.append(plot);
  interact(plot,c,{W,xs,top:m.t,bottom:m.t+ph,label:o.title,tip:i=>{const head=el('div',o.points[i].title,'meta-perf-tip-head');if(o.points[i].backfilled)head.append(el('span','Backfilled','meta-pill'));
   return [head,...o.series.filter(s=>num(s.values[i])).map(s=>tipRow(s.color,o.yFormat(s.values[i],true),s.tipLabel?s.tipLabel(i):s.label)),...(o.points[i].extra||[]).map(t=>el('div',t,'meta-perf-tip-extra'))];}});
  if(o.note)f.append(el('p',o.note,'meta-perf-note'));if(o.table)f.append(table(...o.table));return f;}
 // Stacked columns: human answered (bottom), model resolved, open; 2px surface gaps, rounded top.
-function stackedChart(o){const W=Math.max(240,Math.round(o.width||640)),H=o.height||220,m={l:52,r:14,t:12,b:28},pw=W-m.l-m.r,ph=H-m.t-m.b,rows=o.rows;
+function stackedChart(o){const W=Math.max(240,Math.round(o.width||640)),H=o.height||220,m={l:56,r:16,t:14,b:30},pw=W-m.l-m.r,ph=H-m.t-m.b,rows=o.rows;
  const max=Math.max(1,...rows.map(r=>r.questions)),ticks=niceTicks(0,max,4),top=ticks.at(-1)>=max?ticks.at(-1):max,Y=v=>m.t+ph-v/top*ph,band=pw/Math.max(1,rows.length),bw=Math.max(3,Math.min(24,band*.7));
  const f=figure(o.title,o.subtitle);f.append(legend(STATUS.map(s=>({label:s.label,color:s.color,kind:'bar'}))));
  const plot=el('div',undefined,'meta-perf-plot'),c=svg('svg',{viewBox:`0 0 ${W} ${H}`,width:W,height:H,class:'meta-perf-svg'});
- for(const t of ticks){c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:r1(Y(t)),y2:r1(Y(t)),class:'meta-perf-gridline'}),svg('text',{x:m.l-6,y:r1(Y(t))+4,'text-anchor':'end',class:'meta-perf-tick'},fmtInt(t)));}
- const xs=rows.map((_,i)=>m.l+band*(i+.5));
+ for(const t of ticks){c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:r1(Y(t)),y2:r1(Y(t)),class:'meta-perf-gridline'}),svg('text',{x:m.l-8,y:r1(Y(t))+4,'text-anchor':'end',class:'meta-perf-tick'},fmtInt(t)));}
+ // One refit so far: centre the column and name each segment beside it.
+ const solo=rows.length===1,xs=rows.map((_,i)=>solo?m.l+Math.min(pw/2,90):m.l+band*(i+.5)),labels=[];
  rows.forEach((r,i)=>{let base=0;const segs=STATUS.map(s=>({s,v:r[s.key]})).filter(x=>x.v>0);segs.forEach((g,j)=>{const y0=Y(base),y1=Y(base+g.v),last=j===segs.length-1,h=Math.max(0,y0-y1-(j?2:0)),x=xs[i]-bw/2,yTop=y1;
    if(last&&h>4){const rr=Math.min(4,bw/2);c.append(svg('path',{d:`M${r1(x)},${r1(yTop+h)}V${r1(yTop+rr)}Q${r1(x)},${r1(yTop)} ${r1(x+rr)},${r1(yTop)}H${r1(x+bw-rr)}Q${r1(x+bw)},${r1(yTop)} ${r1(x+bw)},${r1(yTop+rr)}V${r1(yTop+h)}Z`,fill:g.s.color,class:'meta-perf-bar'}));}
-   else c.append(svg('rect',{x:r1(x),y:r1(yTop),width:r1(bw),height:r1(h),fill:g.s.color,class:'meta-perf-bar'}));base+=g.v;});});
+   else c.append(svg('rect',{x:r1(x),y:r1(yTop),width:r1(bw),height:r1(h),fill:g.s.color,class:'meta-perf-bar'}));
+   if(solo)labels.push({px:xs[i]+bw/2-4,cy:yTop+h/2,r:4,text:`${fmtInt(g.v)} ${g.s.label.toLowerCase()}`,cls:'meta-perf-value'});base+=g.v;});});
+ placeLabels(c,labels,m.t+8,m.t+ph);
  c.append(svg('line',{x1:m.l,x2:m.l+pw,y1:m.t+ph,y2:m.t+ph,class:'meta-perf-axis'}));
- const tickIdx=new Set(intTicks(rows.map((_,i)=>i),Math.max(2,Math.floor(pw/48))));rows.forEach((r,i)=>{if(tickIdx.has(i))c.append(svg('text',{x:r1(xs[i]),y:m.t+ph+18,'text-anchor':'middle',class:'meta-perf-tick'},String(r.refit)));});
+ const tickIdx=new Set(intTicks(rows.map((_,i)=>i),Math.max(2,Math.floor(pw/48))));rows.forEach((r,i)=>{if(tickIdx.has(i))c.append(svg('text',{x:r1(xs[i]),y:m.t+ph+19,'text-anchor':'middle',class:'meta-perf-tick'},String(r.refit)));});
  plot.append(c);f.append(plot);
  interact(plot,c,{W,xs,top:m.t,bottom:m.t+ph,label:o.title,tip:i=>{const r=rows[i],head=el('div',`Refit ${r.refit} · ${fmtTime(r.at)}`,'meta-perf-tip-head');if(r.backfilled)head.append(el('span','Backfilled','meta-pill'));
   return [head,...[...STATUS].reverse().map(s=>tipRow(s.color,fmtInt(r[s.key]),s.label,'bar')),el('div',`${fmtInt(r.questions)} questions`,'meta-perf-tip-extra')];}});

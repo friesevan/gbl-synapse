@@ -6,6 +6,8 @@
   .data-source[data-state="live"] .data-source-dot { background: var(--accent); }
   .data-source button { font-size: .8125rem; padding: .25rem .6rem; }
 </style>
+  <meta name="color-scheme" content="light dark">
+  <script src="includes/theme.js"></script>
   <link rel="stylesheet" href="includes/familyRanks.css">
 <script src="includes/artifact-shim.js"></script>
   <script defer src="includes/pokeListObj.js"></script>
@@ -44,6 +46,7 @@
   <script defer src="includes/meta/ui.js"></script>
 <main>
   <header class="site-header">
+    <div class="theme-toggle" data-theme-toggle role="group" aria-label="Colour theme"><button type="button" data-theme-choice="system" aria-pressed="true">System</button><button type="button" data-theme-choice="light" aria-pressed="false">Light</button><button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button></div>
     <h1 id="appTitle">PvP IV Pro</h1>
     <p class="subtitle"><a id="appSubtitle" href="https://pvpivs.com/" target="_blank" rel="noopener">Modification of PvP IVs</a></p>
     <p class="intro" id="appIntro">Compare your Pokémon. Plan your best evolutions.</p>

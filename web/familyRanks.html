@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PvP IV Pro</title>
-  <link rel="stylesheet" href="includes/familyRanks.css?v=pro-tabs-1">
+  <meta name="color-scheme" content="light dark">
+  <script src="includes/theme.js"></script>
+  <link rel="stylesheet" href="includes/familyRanks.css?v=theme-1">
   <script defer src="includes/pokeListObj.js"></script>
   <script defer src="includes/calculate.js"></script>
   <script defer src="includes/familyRanksCore.js"></script>
@@ -15,15 +17,15 @@
   <script defer src="includes/pro/core.js?v=pro-tabs-1"></script>
   <script defer src="includes/pro/saved.js"></script>
   <script defer src="includes/pro/search.js?v=team-comparison-1"></script>
-  <script defer src="includes/pro/detail.js"></script>
+  <script defer src="includes/pro/detail.js?v=theme-1"></script>
   <script defer src="includes/pro/ui.js?v=pro-tabs-1"></script>
   <script defer src="includes/pro/team-comparison-core.js"></script>
-  <script defer src="includes/pro/team-comparison.js"></script>
-  <script defer src="includes/pro/team-browser.js?v=team-comparison-1"></script>
-  <script defer src="includes/pro/neural.js?v=pro-tabs-1"></script>
+  <script defer src="includes/pro/team-comparison.js?v=theme-1"></script>
+  <script defer src="includes/pro/team-browser.js?v=theme-1"></script>
+  <script defer src="includes/pro/neural.js?v=theme-1"></script>
   <script defer src="includes/app-tabs.js?v=pro-tabs-1"></script>
-  <link rel="stylesheet" href="includes/pro/neural.css?v=pro-tabs-1">
-  <link rel="stylesheet" href="includes/meta/meta.css">
+  <link rel="stylesheet" href="includes/pro/neural.css?v=theme-1">
+  <link rel="stylesheet" href="includes/meta/meta.css?v=theme-1">
   <script defer src="includes/meta/core.js"></script>
   <script defer src="includes/meta/screen.js"></script>
   <script defer src="includes/meta/mp4index.js"></script>
@@ -32,9 +34,9 @@
   <script defer src="includes/meta/aura.js"></script>
   <script defer src="includes/meta/shadow-model.js"></script>
   <script defer src="includes/meta/questions.js"></script>
-  <script defer src="includes/meta/timeline.js"></script>
+  <script defer src="includes/meta/timeline.js?v=theme-1"></script>
   <script defer src="includes/meta/validation-policy.js"></script>
-  <script defer src="includes/meta/validation-metrics.js"></script>
+  <script defer src="includes/meta/validation-metrics.js?v=theme-1"></script>
   <script defer src="includes/meta/validation.js"></script>
   <script defer src="includes/meta/observed-core.js"></script>
   <script defer src="includes/meta/observed.js"></script>
@@ -43,6 +45,7 @@
 <body>
 <main>
   <header class="site-header">
+    <div class="theme-toggle" data-theme-toggle role="group" aria-label="Colour theme"><button type="button" data-theme-choice="system" aria-pressed="true">System</button><button type="button" data-theme-choice="light" aria-pressed="false">Light</button><button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button></div>
     <h1 id="appTitle">PvP IV Pro</h1>
     <p class="subtitle"><a id="appSubtitle" href="https://pvpivs.com/" target="_blank" rel="noopener">Modification of PvP IVs</a></p>
     <p class="intro" id="appIntro">Compare your Pokémon. Plan your best evolutions.</p>

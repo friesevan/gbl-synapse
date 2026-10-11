@@ -51,7 +51,7 @@
     }
     function drawBattle(result,item){
       battleHost.replaceChildren();const top=el('div',null,'pro-battle-heading'),close=el('button','Close','secondary');close.type='button';close.addEventListener('click',()=>{resetBattle();});top.append(el('h3','Simulated battle'),close);battleHost.append(top);
-      result.fighters.forEach((fighter,i)=>{const block=el('section',null,'pro-fighter');block.style.setProperty('--fighter-color',i?'#c5573f':'#2467be');block.append(el('h4',name(fighter.speciesId)),pokemonTypes(lookup(fighter.speciesId)),moves(fighter.moveset,data),el('p','L'+fighter.level+' · IVs '+Object.values(fighter.ivs).join('/')+' · HP '+fighter.remaining+'/'+fighter.hp+' · shields '+fighter.remainingShields+'/'+fighter.shields,'hint'));battleHost.append(block);});
+      result.fighters.forEach((fighter,i)=>{const block=el('section',null,'pro-fighter');block.style.setProperty('--fighter-color',i?'var(--viz-2)':'var(--viz-1)');block.append(el('h4',name(fighter.speciesId)),pokemonTypes(lookup(fighter.speciesId)),moves(fighter.moveset,data),el('p','L'+fighter.level+' · IVs '+Object.values(fighter.ivs).join('/')+' · HP '+fighter.remaining+'/'+fighter.hp+' · shields '+fighter.remainingShields+'/'+fighter.shields,'hint'));battleHost.append(block);});
       battleHost.append(el('p',(result.rating>500?'Win':result.rating<500?'Loss':'Tie')+' · Battle Rating '+result.rating+(result.rating!==item.rating?' (stored '+item.rating+')':''),'pro-battle-result'));
       battleHost.append(el('p',select.selectedOptions[0].textContent+' · Starting energy '+result.startEnergy+'–0 · full starting HP · default IVs.','hint'));
       battleHost.append(graph(result,name));
@@ -79,14 +79,16 @@
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 460 275');svg.setAttribute('role','img');svg.setAttribute('aria-label','Remaining HP percentage by battle turn for '+result.fighters.map(f=>name(f.speciesId)).join(' versus '));svg.classList.add('pro-battle-graph');
     const add=(tag,attrs,text)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;svg.append(n);return n;};
     const hp=result.fighters.map(f=>f.hp),maxTurn=Math.max(1,...result.events.map(e=>e.turn)),x=t=>45+t/maxTurn*390,y=(v,i)=>220-Math.max(0,v)/result.fighters[i].hp*180;
-    for(const percent of [0,25,50,75,100]){const yy=220-percent*1.8;add('line',{x1:45,x2:435,y1:yy,y2:yy,stroke:'currentColor',opacity:.15});add('text',{x:38,y:yy+4,'text-anchor':'end','font-size':11,fill:'currentColor'},percent+'%');}
-    for(const turn of [0,Math.round(maxTurn/2),maxTurn])add('text',{x:x(turn),y:240,'text-anchor':'middle','font-size':11,fill:'currentColor'},String(turn));
-    add('text',{x:240,y:264,'text-anchor':'middle','font-size':12,fill:'currentColor'},'Battle turn (0.5 seconds; charged animations omitted)');
-    const paths=hp.map((v,i)=>'M '+x(0)+' '+y(v,i));
+    for(const percent of [0,25,50,75,100]){const yy=220-percent*1.8;add('line',{x1:45,x2:435,y1:yy,y2:yy,class:percent?'pro-graph-grid':'pro-graph-axis'});add('text',{x:38,y:yy+4,'text-anchor':'end',class:'pro-graph-tick'},percent+'%');}
+    for(const turn of [0,Math.round(maxTurn/2),maxTurn])add('text',{x:x(turn),y:240,'text-anchor':'middle',class:'pro-graph-tick'},String(turn));
+    add('text',{x:240,y:264,'text-anchor':'middle',class:'pro-graph-tick'},'Battle turn (0.5 seconds; charged animations omitted)');
+    // Theme tokens (dataviz palette slots 1 and 2); markers are drawn after the lines so they stay on top.
+    const color=i=>i?'var(--viz-2)':'var(--viz-1)',paths=hp.map((v,i)=>'M '+x(0)+' '+y(v,i)),dots=[];
     for(const event of result.events){if(!/^(fast |charged )/.test(event.type))continue;const i=1-event.actor;paths[i]+=' H '+x(event.turn);hp[i]=Math.max(0,hp[i]-event.damage);paths[i]+=' V '+y(hp[i],i);
-      if(event.type.startsWith('charged ')){const mark=add('circle',{cx:x(event.turn),cy:y(hp[i],i),r:3.5,fill:event.actor?'#c5573f':'#2467be'});const title=document.createElementNS(ns,'title');title.textContent='Turn '+event.turn+' · '+name(result.fighters[event.actor].speciesId)+' · '+event.name+' · '+event.damage+' damage';mark.append(title);}}
-    paths.forEach((d,i)=>add('path',{d:d+' H '+x(maxTurn),fill:'none',stroke:i?'#c5573f':'#2467be','stroke-width':2.5}));
-    const wrap=el('figure',null,'pro-battle-figure');wrap.append(svg);const caption=el('figcaption',null,'hint');result.fighters.forEach((f,i)=>{const span=el('span',name(f.speciesId));span.style.color=i?'#c5573f':'#2467be';caption.append(span,document.createTextNode(i?'':' · '));});wrap.append(caption,el('p','Lines = remaining HP · dots = charged attacks. Hover a dot for attack details.','hint'));return wrap;
+      if(event.type.startsWith('charged '))dots.push({cx:x(event.turn),cy:y(hp[i],i),fill:color(event.actor),title:'Turn '+event.turn+' · '+name(result.fighters[event.actor].speciesId)+' · '+event.name+' · '+event.damage+' damage'});}
+    paths.forEach((d,i)=>add('path',{d:d+' H '+x(maxTurn),class:'pro-graph-line',stroke:color(i)}));
+    for(const dot of dots){const mark=add('circle',{cx:dot.cx,cy:dot.cy,r:5,class:'pro-graph-dot',fill:dot.fill});const title=document.createElementNS(ns,'title');title.textContent=dot.title;mark.append(title);}
+    const wrap=el('figure',null,'pro-battle-figure');wrap.append(svg);const caption=el('figcaption',null,'pro-graph-legend');result.fighters.forEach((f,i)=>{const item=el('span'),key=el('i',null,'pro-graph-key');key.style.setProperty('--key',color(i));key.setAttribute('aria-hidden','true');item.append(key,name(f.speciesId));caption.append(item);});wrap.append(caption,el('p','Lines = remaining HP · dots = charged attacks. Hover a dot for attack details.','hint'));return wrap;
   }
   root.PvPProDetail={mount,cancel,pokemonTypes,moves};
 })(globalThis);
