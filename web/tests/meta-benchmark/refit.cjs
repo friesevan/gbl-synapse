@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Re-score saved physical HP/cadence evidence, without decoding footage or conditioning on answers.
-const fs=require('node:fs'),K=require('../../includes/meta/combat.js'),Aura=require('../../includes/meta/aura.js');
+const fs=require('node:fs'),K=require('../../includes/meta/combat.js'),Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js');
 function loadGameMaster(file){const g=file?JSON.parse(fs.readFileSync(file,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;}
-function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings}={}){
+function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings,shadowModel,speciesPurple}={}){
  const run=structuredClone(input),byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),cache=new Map();
  const ranks=cp=>{if(rankings)return rankings;if(!cache.has(cp)){const f=require(`../../includes/pro/data/league-${cp}.json`);cache.set(cp,new Map(f.overall.map(r=>[r.speciesId,r])));}return cache.get(cp);};
  const entries=p=>(p.candidates||[]).filter(c=>/mega|primal/i.test(p.label||'')||!/_(mega|primal)/.test(c.id)).map(c=>byId.get(c.id)).filter(Boolean);
@@ -16,7 +16,8 @@ function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings}={}){
   }
   for(const side of ['my','opponent'])for(const [key,info]of Object.entries(b.evidence?.[side]||{}))K.applyBattleEvidence((b.matchups||[]).filter(g=>g[side]===key).map(g=>g.result),side,info,byId,r,new Map(gm.moves.map(m=>[m.moveId,m])));
  }
- const pooled=K.poolMine(run.full||[]);for(const b of run.full||[]){K.attachInference(b,pooled);Aura.applyToBattle(b,undefined,learned);for(const g of b.matchups||[])delete g.result;}return run;
+ const pooled=K.poolMine(run.full||[]);for(const b of run.full||[]){K.attachInference(b,pooled);Aura.applyToBattle(b,undefined,learned);}
+ Shadow.applyToBattles(run.full||[],shadowModel,{learned,speciesPurple,rankings:ranks(league)});for(const b of run.full||[])for(const g of b.matchups||[])delete g.result;return run;
 }
 module.exports={refitRun,loadGameMaster};
 if(require.main===module){const [inPath,outPath,learnedPath]=process.argv.slice(2),t=Date.now();const out=refitRun(JSON.parse(fs.readFileSync(inPath,'utf8')),{learned:learnedPath?JSON.parse(fs.readFileSync(learnedPath,'utf8')):undefined,league:Number(process.env.LEAGUE||1500),gm:loadGameMaster(process.env.GAMEMASTER)});fs.writeFileSync(outPath,JSON.stringify(out));console.log(`refit in ${((Date.now()-t)/1000).toFixed(1)} s`);}

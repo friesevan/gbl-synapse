@@ -286,6 +286,7 @@ Fast moves are rebalanced over time (28 fast moves changed between March 2025 an
 
 ### Shadow status
 Damage carries the Shadow multipliers, but within one CP the attack stat can vary by about ±8%, which blurs the 20% Shadow effect. Per battle, the estimate for a known Shadow (Electivire) ranged from 4% to 100%. The visual cue is also unreliable for automation: every Pokémon casts a purplish ground shadow on the night arena, and Dark/Ghost moves add purple effects. Shadow is therefore asked as a review question unless the evidence is decisive.
+Since 2026-10-11 the final Shadow probability comes from the learned classifier below (**Shadow classifier**); damage and aura feed it.
 
 ### What the first 76 reviewer answers taught the model
 All 75 questions from the three benchmark recordings were answered (Shadow 41, fast move 33, plus a form and a result). On these deliberately uncertain cases the model had picked the right Shadow status 20 of 33 times and the right fast move 20 of 32 times. Findings, from `tests/meta-benchmark/calibrate.cjs` and `tune.cjs`:
@@ -338,6 +339,68 @@ Shadow Pokémon carry dark violet flames. During the HP-bar pass, each side’s 
 On the benchmark (opponent truth from the 41 answers; your team’s truth from its pooled estimate): your side separates almost perfectly (Shadow median 4.6% vs 0%, AUC 0.98); the opponent separates well when your Pokémon is regular (0.6% vs 0%, AUC 0.90; 0.94 per Pokémon). When your Pokémon is a Shadow, its flames reach the opponent’s area (regular opponents then read 4.2%, AUC 0.68), so those matchups are left out. A red-eye cue (bright red pixels) was tried and dropped: AUC ≈ 0.5, the eyes are a few pixels and red attack effects swamp them.
 
 The cue enters as a likelihood ratio from two bands fitted on the answers (purple < 0.1%: 3 Shadow vs 26 regular; ≥ 0.1%: 10 vs 2), combined across matchups like the damage evidence and applied to the Shadow forms. Leave-one-out on the answers, Shadow calls went from 27 to 30 of 33 right (mean log-probability −0.59 → −0.35) on top of damage and learned priors. Species whose own body reads as purple (Drapion, confirmed regular while purple was seen) are excluded; a “not Shadow” answer given while purple was seen adds that species automatically. Known misses: large or small models whose aura falls outside the box (two Shadow Steelix, a Shadow Skorupi).
+
+### Shadow classifier (`shadow-model.js`, 2026-10-11)
+On the questions people had answered, the model's Shadow pick was right only about half the time. Data: 210 human Shadow
+labels (136 in `feedback.json`, 74 archived in `labels/*.json`); 208 could be joined to saved evidence (35 videos).
+`shadow-dataset.cjs` rebuilds the table (each video refitted with priors from the other videos only);
+`shadow-cv.cjs` cross-validates it by video.
+
+**Why the old estimate failed** (numbers on the 208 labels):
+- **Your own Pokémon never used the aura.** `aura.js` only scores opponents, yet your side separates best
+  (YouTube: AUC 0.91, Shadow median 10% purple vs 0%). The old model got 23 of 43 of your Pokémon right.
+- **The aura was two bands.** Any purple ≥ 0.1% counted the same, so 10–18% purple (an unmistakable flame)
+  was outvoted by noisy damage. Clear Shadows such as Pidgeot, Quagsire, Marowak and Skuntank were left at 0.06–0.41.
+- **Purple-bodied learning bug.** One "not Shadow" answer with purple ≥ 0.1% switches the aura off for that
+  species for good. On live data 19 species are flagged, including Mewtwo, Tyranitar, Metagross, Venusaur and
+  Annihilape. Usually the purple came from flames spilling over from your Shadow. The classifier uses a per-species
+  purple baseline taken from all footage instead (Sableye and Drapion read purple; Mewtwo doesn't).
+- **Damage can't tell which side is the Shadow.** Within a matchup, a Shadow on either side scales both damage
+  directions by 1.2. Opponents were marginalised over your Pokémon's prior rather than its pooled estimate.
+  Damage evidence alone: AUC 0.62. Species priors: AUC 0.53.
+- **Missing measurements.** 64 of the 208 labelled Pokémon have no measured hits; 377 of the 1,371 matchups in
+  these videos have none. The 360×640 upload `tPEBKgLqMuA` lost all its matchups (23 labels with no evidence at
+  all) and `z24QfdmszfI` lost 53 of 53. CP misreads (14, 149) leave no stat combinations, so no fit. This needs
+  re-extraction (HP-bar reader), not modelling.
+
+**Model.** L2-regularised logistic regression (plain JS Newton steps, L2 = 8). Missing values are imputed at the
+training mean, so they move nothing. Features:
+- old posterior;
+- target and other-side aura (log purple), your side and its interactions;
+- the share of matchups with ≥ 0.5% purple;
+- damage evidence conditioned on the other side's estimate;
+- the species' high-purple rate in unlabelled footage;
+- PvPoke's Shadow-minus-regular ranking score.
+
+It runs after `MetaAura.applyToBattle` in `run-node.cjs`, the browser (`ui.js`) and `refit.cjs`. It rescales each
+Pokémon's Shadow rows to the new probability, so forms and moves stay consistent; the old value is kept as
+`inference.shadowPOld` and the features as `member.shadowModel`. `DEFAULT_MODEL` is committed
+(`node shadow-cv.cjs --write-default`); the learning loop refits it from held-out refits on every pass
+(`learned.shadowModel`).
+
+| Leave-one-video-out, 208 labels | Old posterior | Classifier |
+| --- | --- | --- |
+| Right | 130 (62.5%) | **155 (74.5%)** |
+| Log-loss / Brier | 0.653 / 0.230 | **0.513 / 0.169** |
+| AUC | 0.685 | **0.814** |
+| Your Pokémon / opponents | 23/43, 107/165 | 36/43, 119/165 |
+
+Calibration (out of fold): predicted 0.07 / 0.20 / 0.40 / 0.60 / 0.80 / 0.94 → observed 0 / 0.20 / 0.43 / 0.55 /
+0.86 / 0.82. With aura and hits both measured it is 115/144 (old 92); with neither it is 19/32 (old 18), barely above the prior.
+
+**Model resolution.** Thresholds are chosen per direction on out-of-fold predictions. "Not Shadow" at p ≤ 0.12 was
+right 27 of 28 times (96%, Wilson lower bound 0.82, 14 videos). Choosing that threshold without the test video
+(nested) gave 19 of 19. "Shadow" calls never reach 95% (the top 10 were 8 right), because purple-bodied species and
+flames spilling over from the other side make false Shadows, so Shadow is never auto-resolved. The old gate
+(posterior ≥ 0.98, ≥ 4 hits, 8 same-species labels, 50 held-out checks, lower bound ≥ 0.90) had collected one qualifying
+Shadow check after 40 refits. For Shadow it is replaced by the classifier gate: ≥ 95% out-of-fold, ≥ 25 calls, ≥ 5 videos, lower bound
+≥ 0.80, same call under priors learned only from traceable labels. Human answers still win, audit questions stay
+open, and resolutions are recomputed (reversible) on every refit. On the live queue this resolves 15 of 135 open
+Shadow questions as "not Shadow".
+
+**Still wrong.** Shadows with no purple measured (aura box missed, e.g. Reuniclus, Cradily, your Sableye over
+9 matchups); regular purple-bodied or low-resolution reads (Gyarados at 288×640, Sableye, Giratina); videos
+without HP or aura evidence.
 
 ### Review questions (`questions.js`)
 After analysis the review pane shows a short queue of questions that need a person: a regional form the icons couldn’t settle, a Shadow estimate between 15% and 85% (or with no measurable fast moves), a fast move below 85% confidence, and a battle result nobody could read. Each question shows three frames cropped to what matters (the type icons, the opponent, your Pokémon or the middle of the screen), a button that plays the relevant moment, the evidence in plain words, and answer buttons with the model’s confidence. “Not sure” records the question without changing anything; “Ask later” moves on. Questions about your own Pokémon are asked once and applied to every battle. Answers restrict the joint posterior (confirming Shadow can settle the fast move), set the species id once form and Shadow status are known, and are kept in each battle’s `reviewLog` so they can become benchmark labels.

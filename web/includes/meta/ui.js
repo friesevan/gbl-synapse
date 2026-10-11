@@ -125,7 +125,7 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
  const movesById=new Map(game.moves.map(m=>[m.moveId,m]));
  for(const b of battles){const fight=(side,key,t)=>b.matchups.filter(g=>g[side]===key).reduce((n,g)=>n+(g.visible?.[side]||[]).filter(x=>x<t).length*.1,0);
   b.evidence=MetaCombat.battleEvidence(b,movesById,fight);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))MetaCombat.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById);}
- const pooled=MetaCombat.poolMine(battles),learned=window.MetaValidation?.learned();for(const b of battles){MetaCombat.attachInference(b,pooled);MetaAura.applyToBattle(b,undefined,learned);}for(const b of battles){b.effects=effectsIn('my',b.start,b.end+1).concat(effectsIn('opponent',b.start,b.end+1)).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=MetaHp.hpTimeline(b);}
+ const pooled=MetaCombat.poolMine(battles),learned=window.MetaValidation?.learned();for(const b of battles){MetaCombat.attachInference(b,pooled);MetaAura.applyToBattle(b,undefined,learned);}window.MetaShadow?.applyToBattles(battles,undefined,{learned,rankings});for(const b of battles){b.effects=effectsIn('my',b.start,b.end+1).concat(effectsIn('opponent',b.start,b.end+1)).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=MetaHp.hpTimeline(b);}
  for(const b of battles)for(const g of b.matchups){delete g.result;delete g.visible;delete g.series;}}
 // Everything the analysis isn't sure of (below the question thresholds in questions.js) goes to the
 // Validate tab, with the battle's summary and HP timeline; once those questions are answered, Validate

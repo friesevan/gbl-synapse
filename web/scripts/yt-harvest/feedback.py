@@ -287,8 +287,9 @@ class FeedbackService:
                     self.data["resolutions"] = next_resolutions
                     self.data["predictions"] = result["predictions"]
                     self.data["learning"].update(status="idle", version=version, lastFit=now(), progress="Saved prior model; uncertain questions remain open",
-                        calibration=result["calibration"], runsRefit=result["runsRefit"], resolved=len(next_resolutions), errors=result["errors"], error=None)
-                    result["learned"].update(modelVersion=version, updatedAt=now(), modelType="Bayesian species / move priors")
+                        calibration=result["calibration"], runsRefit=result["runsRefit"], resolved=len(next_resolutions), errors=result["errors"], error=None,
+                        shadowModel=result.get("shadowModel"))
+                    result["learned"].update(modelVersion=version, updatedAt=now(), modelType="Bayesian species / move priors + Shadow classifier")
                     atomic_json(self.web / "tests/meta-benchmark/learned.json", result["learned"])
                     atomic_json(self.work / "learned.json", result["learned"])
                     self._save()
@@ -333,7 +334,9 @@ class FeedbackService:
         with self.lock:
             manual_review = dict(self.data["manualReview"])
         atomic_json(src, {"questions": questions, "answers": answers, "manualReview": manual_review, "version": version,
-                          "cupCP": cup_cp, "baseline": read_json(self.work / "baseline-learned.json", {}), "runs": runs, "outputDir": str(context / ("refit-" + str(version)))})
+                          "cupCP": cup_cp, "baseline": read_json(self.work / "baseline-learned.json", {}), "runs": runs, "outputDir": str(context / ("refit-" + str(version))),
+                          # Archived human labels train the Shadow classifier only (their priors are in the baseline).
+                          "labelsDir": str(self.work / "labels")})
         proc = subprocess.run(["node", str(self.web / "tests/meta-benchmark/learning-loop.cjs"), str(src), str(dst)],
                               capture_output=True, text=True, timeout=1800, cwd=self.web)
         if proc.returncode:

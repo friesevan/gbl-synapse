@@ -18,6 +18,7 @@ includes/meta/observed-core.js
 includes/meta/observed.js
 includes/meta/questions.js
 includes/meta/screen.js
+includes/meta/shadow-model.js
 includes/meta/timeline.js
 includes/meta/ui.js
 includes/meta/validation.js
