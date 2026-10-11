@@ -10,7 +10,7 @@ Pipeline (all stages run concurrently until the deadline):
   download  videos allowed by policy.download_allowed() (newest first, <=1080p H.264 video only),
             SHA-256 fingerprint, duplicates dropped, disk budget respected.
   extract   Meta Extractor batch runner (tests/meta-benchmark/run-batch.cjs) on downloaded videos,
-            GAMEMASTER chosen by upload date; the video is deleted afterwards unless --keep.
+            GAMEMASTER chosen by upload date; complete source videos are retained for classifier retests.
 State lives in SQLite in the work dir (outside git), so re-running resumes. registry.json (metadata
 only) is rewritten periodically, sorted by id.
 
@@ -40,6 +40,8 @@ import league as L  # noqa: E402
 import policy as P  # noqa: E402
 import validate as V  # noqa: E402
 import ytapi  # noqa: E402
+import probe_cache as PC  # noqa: E402
+from media_cache import retained_file  # noqa: E402
 from service import Lifecycle, atomic_json, read_json, file_lock  # noqa: E402
 
 WEB = os.path.normpath(os.path.join(HERE, "..", ".."))
@@ -649,8 +651,8 @@ class Harvester:
         return n
 
     def cleanup_download_dir(self):
-        """Startup: removes files the state DB marks processed/deleted/duplicate/skipped, partial downloads,
-        and harvest-named files (<11-char id>.<ext>) it doesn't know. Never touches other names,
+        """Startup: retains complete source media by default; cleans partial/stale download fragments.
+        With --discard-videos, also removes processed/unknown harvest-named sources. Never touches other names,
         subdirectories, symlinks or anything outside the download dir. Pending downloads stay."""
         removed = 0
         try:
@@ -670,7 +672,7 @@ class Harvester:
             r = rows[0] if rows else None
             main_file = bool(r) and os.path.basename(r["dl_path"] or "") == name
             pending = main_file and r["dl_status"] == "done" and not r["deleted_date"] and r["x_status"] != "done"
-            if pending or (main_file and self.a.keep and r["x_status"] == "done"):
+            if pending or retained_file(name, self.a.keep):
                 continue
             if not r:
                 why = "unknown to the state DB"
@@ -739,7 +741,7 @@ class Harvester:
             if not self.alive():
                 self.state.x("UPDATE videos SET dl_status=NULL WHERE id=?", (vid,))
                 return
-            log.info("download paused: %.1f GB on disk, %.1f h of extraction queued (cap %.1f h); waiting for processing",
+            log.info("download paused: %.1f GB on disk, %.1f h of extraction queued (cap %.1f h); waiting for processing or storage space",
                      self.used_bytes() / 1e9, self.backlog_hours(), getattr(self.a, "max_backlog_hours", 0))
             self.stop.wait(60)
         t = time.time()
@@ -748,7 +750,7 @@ class Harvester:
         def run():
             # One player request per video: when metadata is still missing, the same extraction
             # supplies it, the download decision is made, and the resolved formats are downloaded.
-            with self.ydl({"skip_download": False, "format": FORMAT,
+            with self.ydl({"skip_download": False, "format": download_format(getattr(self.a, "max_video_height", 1080)),
                            "outtmpl": os.path.join(self.a.download_dir, "%(id)s.%(ext)s"),
                            "continuedl": True, "fragment_retries": 10, "concurrent_fragment_downloads": 4}) as y:
                 info = y.extract_info(f"https://www.youtube.com/watch?v={vid}", download=not need_meta)
@@ -796,7 +798,7 @@ class Harvester:
     # batch). Measured alone, one worker analyses 5-8x real time using about two cores.
     def extract_worker(self):
         while self.alive():
-            row = self._claim("SELECT id, dl_path, upload_date, league, duration, meta FROM videos WHERE dl_status='done' "
+            row = self._claim("SELECT id, dl_path, sha256, upload_date, league, duration, meta FROM videos WHERE dl_status='done' "
                               "AND x_status IS NULL AND deleted_date IS NULL ORDER BY upload_date DESC LIMIT 16",
                               (), "x_status", "working")
             if not row:
@@ -807,15 +809,30 @@ class Harvester:
             finally:
                 self._release(row["id"])
 
-    def run_probe(self, vid, path, duration):
-        """Keyframe pre-screen (probe.cjs). Returns the probe dict, or None when it failed (full analysis)."""
+    def run_probe(self, vid, path, duration, source_sha=None):
+        """Reuse raw screen/range evidence only when source, code and probe settings match."""
         out = os.path.join(self.a.work_dir, "probe", vid + ".json")
         os.makedirs(os.path.dirname(out), exist_ok=True)
+        cached = out + ".cache.json"
+        try:
+            key = PC.identity(path, WEB, source_sha=source_sha)
+            hit = PC.load(cached, key)
+            if hit is not None:
+                log.info("probe %s: reused screen/range cache", vid)
+                self.inc("probed")
+                return hit
+        except OSError:
+            key = None
         try:
             subprocess.run(["node", PROBE, path, out], check=True, capture_output=True,
                            timeout=max(300, (duration or 900) * 0.25), env={**os.environ, "FFMPEG_THREADS": "1"})
             probe = read_json(out, None)
-        except Exception as ex:  # any probe problem falls back to the full analysis
+            if probe and key is not None:
+                try:
+                    atomic_json(cached, PC.document(key, probe))
+                except OSError as ex:
+                    log.info("probe cache %s unavailable: %s", vid, ex)
+        except Exception as ex:
             log.warning("probe %s failed (%s); analysing the whole video", vid, str(ex)[:200])
             return None
         finally:
@@ -854,10 +871,10 @@ class Harvester:
             reprocess = bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,)))
             labels = read_json(os.path.join(self.a.work_dir, "labels", vid + ".json"), {})
             if not getattr(self.a, "no_probe", False) and not reprocess:
-                probe = self.run_probe(vid, path, r["duration"])
+                probe = self.run_probe(vid, path, r["duration"], source_sha=r["sha256"])
                 plan = probe_plan(probe)
             elif reprocess and not getattr(self.a, "no_probe", False) and labels.get("perspective") in ("left", "right"):
-                probe = self.run_probe(vid, path, r["duration"])   # screens only; whole video is analysed
+                probe = self.run_probe(vid, path, r["duration"], source_sha=r["sha256"])   # screens only; whole video is analysed
                 plan = {"CROP": probe["box"] and ",".join(map(str, probe["box"]))} if probe and probe.get("box") else {}
             crop = perspective_crop(probe, labels.get("perspective"))
             if crop and plan is not None:
@@ -919,6 +936,10 @@ class Harvester:
         if ok:
             result = read_json(res, {})
             result["learningContext"] = {"gamemaster": gm, "league": cp, "uploadDate": r["upload_date"]}
+            result["media"] = {"path": path, "sha256": r["sha256"], "sha256Scope": "sha256-prefix-16",
+                               "sizeBytes": os.path.getsize(path), "retained": self.a.keep,
+                               "crop": env.get("CROP", "auto"), "ranges": env.get("RANGES", ""),
+                               "timestampBasis": "original-source-seconds"}
             atomic_json(res, result)
             try:
                 refined = write_league_refinement(res, lg, self.schedule, r["upload_date"])
@@ -942,7 +963,7 @@ class Harvester:
             self.state.x("DELETE FROM reprocess WHERE id=?", (vid,))
         self.inc("extracted" if ok else "extractFailed")
         if not self.a.keep:
-            # Done or failed: the video is no longer needed (a requeue downloads it again on demand).
+            # Explicit storage opt-out; the default keeps source media even after extraction failures.
             self.remove_video_files(vid, "processed" if ok else "analysis failed")
             self.state.x("UPDATE videos SET deleted_date=? WHERE id=?", (dt.date.today().isoformat(), vid))
             self.inc("deleted")
@@ -1213,6 +1234,12 @@ def extract_meta(info):
 
 
 # Without measurements, one extraction worker analyses about 2.5x real time while the machine is busy.
+def download_format(height=1080):
+    if height not in (720, 1080):
+        raise ValueError("Supported download heights: 720, 1080")
+    return FORMAT.replace("height<=1080", "height<=%d" % height)
+
+
 DEFAULT_WORKER_REALTIME = 2.5
 HARVEST_FILE = re.compile(r"^([A-Za-z0-9_-]{11})\.(?:mp4|webm|mkv|m4a|mp4\.part|webm\.part|part|ytdl|temp|f\d+\.\w+(?:\.part)?)$")
 
@@ -1461,7 +1488,12 @@ def parse(argv=None):
     ap.add_argument("--no-api", action="store_true", help="ignore a YouTube Data API key even if one is configured")
     ap.add_argument("--web-meta-when-quota-out", action="store_true",
                     help="after the Data API quota runs out, fetch metadata through the web player again")
-    ap.add_argument("--keep", action="store_true", help="keep videos after processing (default: delete)")
+    retention = ap.add_mutually_exclusive_group()
+    retention.add_argument("--keep", dest="keep", action="store_true", help="retain complete source videos (default)")
+    retention.add_argument("--discard-videos", dest="keep", action="store_false", help="explicitly delete sources after processing; later extraction tests may need downloads")
+    ap.set_defaults(keep=True)
+    ap.add_argument("--max-video-height", type=int, choices=(720, 1080), default=1080,
+                    help="download height cap (default 1080; 720 is an accuracy-sensitive experiment)")
     ap.add_argument("--cc-only", action="store_true", help="download only Creative Commons / written-permission videos")
     ap.add_argument("--pace", type=float, default=2.0, help="seconds between discovery page requests")
     ap.add_argument("--registry-every-min", type=float, default=30)

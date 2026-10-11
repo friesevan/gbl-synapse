@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "date": "2026-10-11",
+  "fixture": {
+    "videoId": "1p_u7XyvWwU",
+    "source": "existing Creative Commons 1080p60 video",
+    "start": 20,
+    "end": 80,
+    "crop": [
+      0,
+      0,
+      560,
+      1080
+    ]
+  },
+  "method": "Three sequential nice-19 single-worker trials; one 60-second excerpt; frozen learned snapshot; not a sustained multicore benchmark. Comparison excludes randomly generated battle IDs.",
+  "trials": [
+    {
+      "mode": "off",
+      "seconds": 8.262,
+      "ocrMs": 2549.6570440530777,
+      "ocrCache": {
+        "hits": 0,
+        "misses": 0,
+        "writes": 0,
+        "writeFailures": 0,
+        "readFailures": 0,
+        "disabled": 37,
+        "bypassed": 0
+      },
+      "sameEvidenceAndBattleOutput": true
+    },
+    {
+      "mode": "cold",
+      "seconds": 8.628,
+      "ocrMs": 2956.4222897291183,
+      "ocrCache": {
+        "hits": 1,
+        "misses": 36,
+        "writes": 36,
+        "writeFailures": 0,
+        "readFailures": 0,
+        "disabled": 0,
+        "bypassed": 0
+      },
+      "sameEvidenceAndBattleOutput": true
+    },
+    {
+      "mode": "warm",
+      "seconds": 7.936,
+      "ocrMs": 62.68316864967346,
+      "ocrCache": {
+        "hits": 37,
+        "misses": 0,
+        "writes": 0,
+        "writeFailures": 0,
+        "readFailures": 0,
+        "disabled": 0,
+        "bypassed": 0
+      },
+      "sameEvidenceAndBattleOutput": true
+    }
+  ],
+  "historical": {
+    "results": 462,
+    "fullPasses": 396,
+    "battles": 1585,
+    "sampledRealtime": 2.6,
+    "recordedSeconds": 236587,
+    "decodeWaitShare": 0.644,
+    "ocrShare": 0.246,
+    "hudShare": 0.207,
+    "barsShare": 0.084,
+    "fitShare": 0.001,
+    "zeroBattleFullPasses": 213,
+    "zeroBattleTimeShare": 0.532,
+    "probeOnlyResults": 65,
+    "probeOnlyVideoSeconds": 91695,
+    "probeOnlyWallSeconds": 995,
+    "caveat": "Timings span versions/machine loads. Counters overlap: OCR is partly nested inside HUD/bars; decodeWait includes frame assembly and pipe wait, not pure CPU."
+  },
+  "experiments": {
+    "nativeWidth": {
+      "reference": 886,
+      "native": 560,
+      "observed": "Lost Feraligatr and misread Cramorant move-banner actor in the excerpt; not adopted as default."
+    },
+    "hardware": {
+      "observed": "Sandbox trial fell back after VideoToolbox initialization failure; no measured hardware acceleration claim."
+    }
+  }
+}

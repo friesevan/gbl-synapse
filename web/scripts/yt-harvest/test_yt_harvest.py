@@ -556,5 +556,71 @@ class TestNewQuestions(unittest.TestCase):
         self.assertIn("rocket", [o["value"] for o in V._league_options(opts)])
 
 
+
+class RetentionAndProbeCache(unittest.TestCase):
+    def test_retention_defaults_and_explicit_discard(self):
+        self.assertTrue(H.parse([]).keep)
+        self.assertTrue(H.parse(['--keep']).keep)
+        self.assertFalse(H.parse(['--discard-videos']).keep)
+        self.assertEqual(H.download_format(1080), H.FORMAT)
+        self.assertIn('height<=720', H.download_format(720))
+        with self.assertRaises(ValueError):
+            H.download_format(480)
+
+    def test_keep_retains_completed_sources_even_after_legacy_deleted_marker(self):
+        # Construct only the fields startup cleanup needs; this does not start workers.
+        from types import SimpleNamespace
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            h = H.Harvester.__new__(H.Harvester)
+            h.a = SimpleNamespace(download_dir=d, keep=True)
+            h.state = H.State(os.path.join(d, 'state.sqlite'))
+            h.clock = threading.Lock(); h.c = {'cleaned': 0}
+            for name in ('abcdefghijk.mp4', 'lmnopqrstuv.mp4', 'abcdefghijk.mp4.part'):
+                with open(os.path.join(d, name), 'w') as stream: stream.write('source')
+            h.state.x("INSERT INTO videos(id,dl_status,dl_path,x_status,deleted_date) VALUES('abcdefghijk','done',?,'done','2026-10-10')", (os.path.join(d,'abcdefghijk.mp4'),))
+            self.assertEqual(h.cleanup_download_dir(), 1)
+            self.assertTrue(os.path.exists(os.path.join(d,'abcdefghijk.mp4')))
+            self.assertTrue(os.path.exists(os.path.join(d,'lmnopqrstuv.mp4')))
+            h.state.db.close()
+
+    def test_completed_extraction_retains_media_and_exports_validation(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch, Mock
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            h = H.Harvester.__new__(H.Harvester)
+            h.a = SimpleNamespace(work_dir=d, download_dir=d, keep=True, ffmpeg_threads=1)
+            h.state = H.State(os.path.join(d,'state.sqlite'));h.schedule = SCHED
+            h.clock = threading.Lock();h.validation_lock=threading.Lock();h.c={'extracted':0,'extractFailed':0,'xVideoS':0,'xBusyS':0}
+            h._reviewed_league=lambda vid,lg:lg;h.export_validation=Mock(return_value=2)
+            source=os.path.join(d,'abcdefghijk.mp4')
+            with open(source,'w') as stream:stream.write('source')
+            h.state.x("INSERT INTO videos(id,dl_status,dl_path,sha256,league,meta) VALUES('abcdefghijk','done',?,'abc123',?,?)",(source,json.dumps({'leagueId':'great'}),'{}'))
+            # Match the fields claimed by the actual worker, including its source fingerprint.
+            row=h.state.q("SELECT id,dl_path,sha256,upload_date,league,duration,meta FROM videos WHERE id='abcdefghijk'")[0]
+            H.atomic_json(os.path.join(d,'results','abcdefghijk.json'),{'battles':[],'full':[]})
+            with patch.object(H,'gamemaster_for',return_value=''),patch.object(H,'write_league_refinement',return_value=None):
+                h.extract_one(row)
+            h.export_validation.assert_called_once();self.assertTrue(os.path.isfile(source))
+            doc=H.read_json(os.path.join(d,'results','abcdefghijk.json'));self.assertEqual(doc['media']['sha256'],'abc123');self.assertTrue(doc['media']['retained'])
+            self.assertEqual(h.state.q("SELECT x_status FROM videos WHERE id='abcdefghijk'")[0][0],'done');h.state.db.close()
+
+    def test_matching_probe_cache_avoids_subprocess(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            h = H.Harvester.__new__(H.Harvester);h.a = SimpleNamespace(work_dir=d)
+            h.clock = threading.Lock();h.c = {'probed': 0}
+            source = os.path.join(d,'abcdefghijk.mp4')
+            with open(source,'w') as stream: stream.write('source')
+            probe = {'box':[0,0,560,1080], 'ranges':[], 'duration':30}
+            key = H.PC.identity(source,H.WEB)
+            H.atomic_json(os.path.join(d,'probe','abcdefghijk.json.cache.json'), H.PC.document(key,probe))
+            with patch.object(H.subprocess,'run') as run:
+                self.assertEqual(h.run_probe('abcdefghijk',source,30),probe)
+                run.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

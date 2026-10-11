@@ -1,3 +1,5 @@
+**2026-10-11 retention update:** New harvester runs retain complete source videos by default. `--discard-videos` explicitly restores the former deletion behavior. Existing processes keep their loaded settings. Persistent exact OCR and versioned screen/range caches now support repeated extraction tests; see `VIDEO-ANALYSIS-PERFORMANCE.md` at the repository root for measurements, inventory commands and experimental quality controls. Earlier deletion descriptions below describe the prior behavior.
+
 # YouTube harvester handoff — 2026-10-11
 
 The local UI now controls the resumable harvester and the review/learning loop.
