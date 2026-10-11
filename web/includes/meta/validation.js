@@ -12,12 +12,25 @@ const state={files:new Map(),player:null,db:null,userId:null,questions:new Map()
 const safeId=s=>String(s).replace(/[^A-Za-z0-9_\-.~:@+]/g,'-').slice(0,200);
 // ---- storage ----
 function loadLocal(){try{const d=JSON.parse(localStorage.getItem(LOCAL)||'{}');for(const q of d.questions||[])state.questions.set(q.qid,q);for(const a of d.answers||[])state.answers.set(a.qid,a);for(const x of d.analyses||[])state.analyses.set(x.aid,x);}catch(e){}}
-function saveLocal(){try{localStorage.setItem(LOCAL,JSON.stringify({questions:[...state.questions.values()],answers:[...state.answers.values()],analyses:[...state.analyses.values()]}));}catch(e){state.writeError='This browser could not save answers (storage full or blocked).';}}
+function saveLocal(){try{localStorage.setItem(LOCAL,JSON.stringify({questions:[...state.questions.values()].filter(q=>!q._inbox),answers:[...state.answers.values()],analyses:[...state.analyses.values()]}));}catch(e){state.writeError='This browser could not save answers (storage full or blocked).';}}
 async function putQuestion(doc){state.questions.set(doc.qid,doc);if(state.db){try{await state.db.doc('validation/'+safeId(doc.qid)).set(doc);}catch(e){state.writeError=writeMessage(e);}}else saveLocal();}
 async function putAnswer(doc){state.answers.set(doc.qid,doc);if(state.db){try{await state.db.doc('answers/'+safeId(doc.qid)).set(doc);}catch(e){state.writeError=writeMessage(e);}}else saveLocal();render();}
 const writeMessage=e=>e?.code==='invalid_argument'?'Your access to this page is view-only, so answers can’t be saved here.':e?.code==='quota_exceeded'?'The validation store is full. Ask the owner to clear answered questions.':'The answer could not be saved right now. Try again in a moment.';
+// ---- harvested questions (scripts/yt-harvest) ----
+// When the site runs locally (run_app.py), the overnight harvester's open questions are read from this
+// file (git-ignored) and shown without being copied into storage. Elsewhere, Import adds them.
+const INBOX='tests/meta-benchmark/results/validation-inbox.json';
+async function loadInbox(){if(location.protocol==='file:')return;try{const r=await fetch(INBOX,{cache:'no-store'});if(!r.ok)return;const d=await r.json();let added=0;
+ for(const q of d.questions||[])if(q&&q.qid&&!state.questions.has(q.qid)){state.questions.set(q.qid,{...q,_inbox:true});added++;}if(added)render();}catch(e){}}
+function importButton(){const lab=el('label',undefined,'meta-v-open secondary'),inp=el('input');inp.type='file';inp.accept='.json,application/json';inp.className='meta-hidden';
+ inp.onchange=async()=>{const f=inp.files[0];if(!f)return;try{const d=JSON.parse(await f.text()),list=Array.isArray(d)?d:(d.questions||[]);let n=0;
+  for(const q of list)if(q&&q.qid&&(!state.questions.has(q.qid)||state.questions.get(q.qid)._inbox)){const {_inbox,...doc}=q;await putQuestion(doc);n++;}
+  state.writeError=state.writeError||(n?'':'No new questions in that file.');}catch(e){state.writeError='That file isn’t a question list (validation-inbox.json).';}inp.value='';render();};
+ lab.append(el('span','Import questions…'),inp);return lab;}
+function downloadAnswers(){const answers=[...state.answers.values()].map(a=>{const q=state.questions.get(a.qid);return {...a,question:q?{kind:q.kind,title:q.title,battle:q.battle,recording:q.recording,video:q.video||null,clip:q.clip,modelTop:q.modelTop??null}:null};});
+ const blob=new Blob([JSON.stringify({format:'meta-validation-answers',version:1,exported:new Date().toISOString(),answers},null,1)],{type:'application/json'}),a=el('a');a.href=URL.createObjectURL(blob);a.download='validation-answers.json';document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},0);}
 async function connect(){const use=window.claude?.use;state.db=use?await use('db').catch(()=>null):null;if(use){const u=await use('user').catch(()=>null);state.userId=u?await u.id().catch(()=>null):null;}
- if(!state.db){loadLocal();state.ready=true;render();return;}
+ if(!state.db){loadLocal();state.ready=true;render();await loadInbox();setInterval(loadInbox,300000);return;}
  state.db.collection('validation').limit(1000).onSnapshot(s=>{state.questions=new Map(s.docs.map(d=>[d.data().qid,d.data()]));state.ready=true;render();},()=>{state.ready=true;render();});
  state.db.collection('answers').limit(1000).onSnapshot(s=>{state.answers=new Map(s.docs.map(d=>[d.data().qid,d.data()]));render();},()=>{});
  state.db.collection('analyses').limit(500).onSnapshot(s=>{state.analyses=new Map(s.docs.map(d=>[d.data().aid,d.data()]));render();},()=>{});}
@@ -80,6 +93,15 @@ function scrubber(q,rec){const box=el('div',undefined,'meta-v-player');if(!state
  const play=el('button',v.paused?'Play':'Pause');play.type='button';play.onclick=()=>{if(v.paused)v.play().catch(()=>{});else v.pause();};v.onplay=()=>{play.textContent='Pause';};v.onpause=()=>{play.textContent='Play';};
  const again=el('button','Restart','secondary');again.type='button';again.onclick=()=>restart(true);
  const bar=el('div',undefined,'meta-actions');bar.append(play,again,now);box.append(v,bar);sync();return box;}
+// No local copy: play the question's moment on YouTube (video times match the harvested file).
+const ytTime=t=>Math.max(0,Math.floor(t||0));
+function youtubePlayer(q){const v=q.video,[c0,c1]=q.clip||[0,0],box=el('div',undefined,'meta-v-player meta-v-yt');
+ let frame=state.yt&&state.yt.qid===q.qid?state.yt.frame:null;
+ const src=n=>`https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.id)}?start=${ytTime(c0)}&autoplay=1&mute=1&rel=0&playsinline=1&n=${n}`;
+ if(!frame){frame=el('iframe');frame.src=src(0);frame.title=`YouTube: ${v.title||v.id}`;frame.allow='autoplay; encrypted-media; picture-in-picture';frame.allowFullscreen=true;frame.referrerPolicy='strict-origin-when-cross-origin';state.yt={qid:q.qid,frame,n:0};}
+ const again=el('button','Restart','secondary');again.type='button';again.onclick=()=>{state.yt.n++;frame.src=src(state.yt.n);};
+ const link=el('a',`Open on YouTube at ${clock(c0).replace(/\.\d$/,'')}`);link.href=`https://www.youtube.com/watch?v=${encodeURIComponent(v.id)}&t=${ytTime(c0)}s`;link.target='_blank';link.rel='noopener';
+ const bar=el('div',undefined,'meta-actions');bar.append(again,link,el('span',`question moment ${clock(c0)}–${clock(c1)}`,'meta-v-time'));box.append(frame,bar);return box;}
 function render(){const host=$('metaValidatePane');const all=[...state.questions.values()],answered=all.filter(q=>state.answers.has(q.qid)),open=all.filter(q=>!state.answers.has(q.qid));
  const count=$('metaValidateCount');if(count)count.textContent=open.length;if(!host||host.hidden)return;host.replaceChildren();
  const head=el('div',undefined,'meta-heading'),title=el('div');title.append(el('p','REVIEW → LEARN','meta-eyebrow'),el('h2','Validate detections'));head.append(title);host.append(head);
@@ -92,7 +114,7 @@ function render(){const host=$('metaValidatePane');const all=[...state.questions
  analysesView(host);
  // filters
  const bar=el('div',undefined,'meta-tabs');for(const [v,l] of [['open',`Open (${open.length})`],['answered',`Answered (${answered.length})`]]){const b=el('button',l,v===state.filter?'':'secondary');b.setAttribute('aria-pressed',v===state.filter);b.onclick=()=>{state.filter=v;state.current=null;render();};bar.append(b);}
- const src=el('select');src.id='metaValidateSource';src.setAttribute('aria-label','Question source');for(const [v,l] of [['all','All sources'],['claude-test','From Claude’s test runs'],['youtube','From YouTube videos'],['audit','Spot checks'],['browser','From your analyses']]){const o=el('option',l);o.value=v;src.append(o);}src.value=state.source;src.onchange=()=>{state.source=src.value;state.current=null;render();};bar.append(src,openButton(state.files.size?`Recordings open: ${state.files.size}`:'Open recording…'));host.append(bar);
+ const src=el('select');src.id='metaValidateSource';src.setAttribute('aria-label','Question source');for(const [v,l] of [['all','All sources'],['claude-test','From Claude’s test runs'],['youtube','From YouTube videos'],['youtube-harvest','From the overnight harvester'],['audit','Spot checks'],['browser','From your analyses']]){const o=el('option',l);o.value=v;src.append(o);}src.value=state.source;src.onchange=()=>{state.source=src.value;state.current=null;render();};const dl=el('button','Download answers','secondary');dl.type='button';dl.disabled=!state.answers.size;dl.onclick=downloadAnswers;bar.append(src,openButton(state.files.size?`Recordings open: ${state.files.size}`:'Open recording…'),importButton(),dl);host.append(bar);
  if(!state.ready){host.append(el('p','Loading questions…','hint'));return;}
  const pool=(state.filter==='open'?open:answered).filter(q=>state.source==='all'||(state.source==='youtube'?!!q.attribution:state.source==='audit'?!!q.audit:q.source===state.source)).sort((a,b)=>(a.recording||'').localeCompare(b.recording||'')||(a.battle??0)-(b.battle??0)||String(a.kind).localeCompare(String(b.kind)));
  if(!pool.length){host.append(el('p',state.filter==='open'?'Nothing to validate right now. New questions appear here after each test run or analysis.':'No answers yet.','meta-empty'));return;}
@@ -106,9 +128,10 @@ function render(){const host=$('metaValidatePane');const all=[...state.questions
  // Third-party videos (Creative Commons uploads) are credited; the file itself stays on the reviewer's device.
  if(q.attribution){const p=el('p',undefined,'hint'),link=el('a',`${q.attribution.channel} on YouTube`);link.href=q.attribution.url;link.target='_blank';link.rel='noopener';p.append('Video: ',link,` · ${String(q.attribution.license||'').replace(/ \(reuse allowed\)/,'')}`);ask.push(p);}
  // Answers need the recording: the saved crops are too small to judge from.
- if(!rec){card.append(...ask);const need=el('div',undefined,'meta-q-need');need.append(el('p',`Open ${q.recording||'the recording'} to watch this moment and answer. The video stays on your device.`),openButton(`Open ${q.recording||'recording'}`));card.append(need);host.append(card);return;}
- card.append(scrubber(q,rec),...ask);if(!state.files.has(q.recording))card.append(el('p',`Using ${rec.file.name} for ${q.recording}. Open the matching file if that’s not the same recording.`,'hint'));
- const choices=el('div',undefined,'meta-q-options'),opts=q.kind==='result'?Q.RESULT_OPTIONS:(q.options||[]);for(const o of opts){const b=el('button');b.type='button';b.append(el('span',o.label));const top=q.modelTop!==null&&q.modelTop!==undefined&&String(q.modelTop)===String(o.value),hint=top?`Model’s pick${q.modelP?` · ${pct(q.modelP)}`:''}`:(o.hint||'').replace(/^model /,'Model ');if(hint)b.append(el('small',hint));
+ if(!rec&&q.video?.provider==='youtube'){card.append(youtubePlayer(q),...ask,el('p',`Or open your local copy (${q.recording}) for frame-accurate scrubbing.`,'hint'));}
+ else if(!rec){card.append(...ask);const need=el('div',undefined,'meta-q-need');need.append(el('p',`Open ${q.recording||'the recording'} to watch this moment and answer. The video stays on your device.`),openButton(`Open ${q.recording||'recording'}`));card.append(need);host.append(card);return;}
+ else{card.append(scrubber(q,rec),...ask);if(!state.files.has(q.recording))card.append(el('p',`Using ${rec.file.name} for ${q.recording}. Open the matching file if that’s not the same recording.`,'hint'));}
+ const choices=el('div',undefined,'meta-q-options'),opts=q.kind==='result'?Q.RESULT_OPTIONS:(q.options||[]);for(const o0 of opts){const o=q.attribution?{...o0,label:o0.label.replace(/^You (won|lost|forfeited)/,'Creator $1'),hint:o0.hint&&o0.hint.replace(/\byou\b/gi,'the creator')}:o0;const b=el('button');b.type='button';b.append(el('span',o.label));const top=q.modelTop!==null&&q.modelTop!==undefined&&String(q.modelTop)===String(o.value),hint=top?`Model’s pick${q.modelP?` · ${pct(q.modelP)}`:''}`:(o.hint||'').replace(/^model /,'Model ');if(hint)b.append(el('small',hint));
   b.onclick=()=>{state.current=null;state.autoplay=true;putAnswer({qid:q.qid,purple:q.purple??null,value:o.value,label:o.label,kind:q.kind,species:q.species||'',side:q.side||'',modelTop:q.modelTop??null,answeredAt:new Date().toISOString(),by:state.userId||'',source:q.source});};if(o.parent){b.classList.add('meta-q-sub');const host=[...choices.children].find(g=>g.dataset.value===o.parent);if(host){host.append(b);continue;}}const group=el('div',undefined,'meta-q-group');group.dataset.value=o.value;group.append(b);choices.append(group);}
  const actions=el('div',undefined,'meta-actions'),unsure=el('button','Not sure','secondary'),skip=el('button','Skip for now','secondary');
  unsure.onclick=()=>{state.current=null;state.autoplay=true;putAnswer({qid:q.qid,purple:q.purple??null,value:null,label:'Not sure',kind:q.kind,species:q.species||'',side:q.side||'',modelTop:q.modelTop??null,answeredAt:new Date().toISOString(),by:state.userId||'',source:q.source});};

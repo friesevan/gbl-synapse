@@ -38,16 +38,29 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import league as L  # noqa: E402
 import policy as P  # noqa: E402
+import validate as V  # noqa: E402
+import ytapi  # noqa: E402
 
 WEB = os.path.normpath(os.path.join(HERE, "..", ".."))
 REGISTRY = os.path.join(WEB, "tests", "meta-benchmark", "sources", "registry.json")
-RUN_BATCH = os.path.join(WEB, "tests", "meta-benchmark", "run-batch.cjs")
+RUN_NODE = os.path.join(WEB, "tests", "meta-benchmark", "run-node.cjs")
+EXPORT_Q = os.path.join(WEB, "tests", "meta-benchmark", "export-questions.cjs")
+LEARNED = os.path.join(WEB, "tests", "meta-benchmark", "learned.json")
+# The Validate tab (familyRanks.html, served by run_app.py) loads this file when it exists. Git ignores
+# **/results/, so harvested questions never reach the repo.
+INBOX = os.path.join(WEB, "tests", "meta-benchmark", "results", "validation-inbox.json")
 HOME = os.path.expanduser("~")
 DEFAULT_DL = os.path.join(HOME, "Desktop", "Projects", "PoGo Recorder", "src", "youtube")
 DEFAULT_WORK = os.path.join(HOME, "Desktop", "Projects", "PoGo Recorder", "src", "yt-harvest")
 GM_CACHE = os.path.join(HOME, ".cache", "gbl-synapse", "gamemaster")
 FORMAT = "bv*[vcodec^=avc1][height<=1080][ext=mp4]/bv*[vcodec^=avc1][height<=1080]/bv*[height<=1080][ext=mp4]"
 log = logging.getLogger("harvest")
+SKIPPED = object()   # download_one: full metadata said "don't download"
+# Download queue: approved videos, plus videos whose title already looks like a battle video (their
+# metadata arrives with the download request). Newest first, by upload date or approximate date.
+DL_CLAIM = ("SELECT id, meta, meta_status, title, channel_id, duration FROM videos WHERE dl_status IS NULL AND attempts<3 "
+            "AND (allowed=1 OR (meta_status='todo' AND rel_label='relevant')) "
+            "ORDER BY COALESCE(upload_date, strftime('%Y%m%d', approx_ts, 'unixepoch'), '0') DESC, rel_score DESC LIMIT 32")
 
 # ------------------------------------------------------------------------------------- queries
 
@@ -134,6 +147,7 @@ class State:
         # Interrupted work goes back to the queue.
         self.x("UPDATE videos SET meta_status='todo' WHERE meta_status='working'")
         self.x("UPDATE videos SET dl_status=NULL WHERE dl_status='working'")
+        self.x("UPDATE videos SET x_status=NULL WHERE x_status='working'")
 
     def q(self, sql, args=()):
         with self.lock:
@@ -269,7 +283,7 @@ class Harvester:
         self.t0 = time.time()
         self.c = {"flat": 0, "flatNew": 0, "enriched": 0, "enrichErr": 0, "downloaded": 0, "dlBytes": 0,
                   "dlSeconds": 0.0, "dups": 0, "extracted": 0, "extractFailed": 0, "deleted": 0, "queries": 0,
-                  "channels": 0, "rateLimits": 0}
+                  "channels": 0, "rateLimits": 0, "apiMeta": 0}
         self.clock = threading.Lock()
         self.inflight = set()
         self.dl_active = 0
@@ -280,6 +294,8 @@ class Harvester:
         self.species_re = re.compile(r"(?<!\w)(" + "|".join(re.escape(n) for n in names) + r")(?!\w)", re.I)
         self.queries = build_queries(self.schedule)[: a.max_queries or None]
         self.ytdlp = None
+        self.api_key = None if a.no_api else ytapi.api_key()
+        self.api_off_until = 0.0
 
     # ---- helpers
     def inc(self, k, n=1):
@@ -435,6 +451,14 @@ class Harvester:
 
     def enrich_worker(self):
         while self.alive():
+            if self.api_key and time.time() >= self.api_off_until:
+                if self.enrich_api_batch():
+                    continue
+                self.stop.wait(5)
+                continue
+            if self.api_key and not self.a.web_meta_when_quota_out:
+                self.stop.wait(60)   # API quota used up: keep web requests for downloads
+                continue
             row = self._claim("SELECT id FROM videos WHERE meta_status='todo' AND attempts<3 "
                               "ORDER BY COALESCE(approx_ts,0) DESC, rel_score DESC LIMIT 32", (), "meta_status", "working")
             if not row:
@@ -445,21 +469,64 @@ class Harvester:
             finally:
                 self._release(row["id"])
 
+    def enrich_api_batch(self):
+        """Data API: metadata for up to 50 videos in one request. Returns True if work was done."""
+        with self.state.lock:
+            rows = self.state.q("SELECT id FROM videos WHERE meta_status='todo' AND attempts<3 "
+                                "ORDER BY COALESCE(approx_ts,0) DESC, rel_score DESC LIMIT 200")
+            ids = [r["id"] for r in rows if r["id"] not in self.inflight][:50]
+            for vid in ids:
+                self.inflight.add(vid)
+                self.state.x("UPDATE videos SET meta_status='working' WHERE id=?", (vid,))
+        if not ids:
+            return False
+        try:
+            items = ytapi.fetch(ids, self.api_key)
+        except ytapi.QuotaExceeded:
+            # Quota resets at midnight Pacific; check again in an hour.
+            self.api_off_until = time.time() + 3600
+            log.warning("YouTube Data API quota used up; metadata pauses for an hour (downloads continue)")
+            items = None
+        except Exception as ex:
+            log.warning("YouTube Data API: %s", str(ex)[:200])
+            self.api_off_until = time.time() + 300
+            items = None
+        try:
+            for vid in ids:
+                if items is None:
+                    self.state.x("UPDATE videos SET meta_status='todo' WHERE id=?", (vid,))
+                elif vid in items:
+                    self.apply_meta(vid, ytapi.to_meta(items[vid], P.is_cc))
+                    self.inc("apiMeta")
+                else:
+                    self.state.x("UPDATE videos SET meta_status='unavailable', err='not returned by Data API', "
+                                 "updated=? WHERE id=?", (time.time(), vid))
+        finally:
+            for vid in ids:
+                self._release(vid)
+        return items is not None
+
     def enrich_one(self, vid):
         def run():
             with self.ydl() as y:
                 return y.extract_info(f"https://www.youtube.com/watch?v={vid}", download=False)
         info, err = self._yt_call(run, vid, self.meta_rate)
         if err:
-            if err == "stopped" or err.startswith("ratelimit"):
-                self.state.x("UPDATE videos SET meta_status='todo' WHERE id=?", (vid,))
-                return
-            gone = err.startswith("unavailable")
-            self.state.x("UPDATE videos SET meta_status=?, attempts=attempts+1, err=?, updated=? WHERE id=?",
-                         ("unavailable" if gone else "todo", err, time.time(), vid))
-            self.inc("enrichErr")
+            self._meta_error(vid, err)
             return
-        meta = extract_meta(info)
+        self.apply_meta(vid, extract_meta(info))
+
+    def _meta_error(self, vid, err):
+        if err == "stopped" or err.startswith("ratelimit"):
+            self.state.x("UPDATE videos SET meta_status='todo' WHERE id=?", (vid,))
+            return
+        gone = err.startswith("unavailable")
+        self.state.x("UPDATE videos SET meta_status=?, attempts=attempts+1, err=?, updated=? WHERE id=?",
+                     ("unavailable" if gone else "todo", err, time.time(), vid))
+        self.inc("enrichErr")
+
+    def apply_meta(self, vid, meta):
+        """Store full metadata, relevance, league guess and the download decision. Returns allowed."""
         rel_score, rel_label = self.relevance_of(meta["title"], meta["durationS"], meta["tags"], meta["description"],
                                                  meta["categories"], meta["channelId"])
         meta["relevanceLabel"], meta["relevance"] = rel_label, rel_score
@@ -476,6 +543,7 @@ class Harvester:
                       json.dumps(lg, ensure_ascii=False), int(ok), why, rel_score, rel_label, meta["title"], meta["channelId"],
                       meta["channel"], meta["channelUrl"], meta["durationS"], meta["views"], time.time(), vid))
         self.inc("enriched")
+        return ok
 
     # ---- download
     def used_bytes(self):
@@ -500,8 +568,7 @@ class Harvester:
                 self.stop.wait(5)
                 continue
             try:
-                row = self._claim("SELECT id, meta, title, channel_id, duration FROM videos WHERE allowed=1 AND dl_status IS NULL "
-                                  "ORDER BY upload_date DESC LIMIT 32", (), "dl_status", "working")
+                row = self._claim(DL_CLAIM, (), "dl_status", "working")
                 if not row:
                     self.stop.wait(10)
                     continue
@@ -514,7 +581,7 @@ class Harvester:
                     self.dl_active -= 1
 
     def download_one(self, row):
-        vid, meta = row["id"], json.loads(row["meta"] or "{}")
+        vid, meta = row["id"], json.loads(row.get("meta") or "{}")
         prior = self.registry.get(vid, {})
         if prior.get("status") in ("downloaded", "processed", "deleted") or prior.get("sha256"):
             self.state.x("UPDATE videos SET dl_status='prior', sha256=? WHERE id=?", (prior.get("sha256"), vid))
@@ -535,14 +602,26 @@ class Harvester:
             log.info("disk budget reached (%.1f GB in use); waiting for processing to free space", self.used_bytes() / 1e9)
             self.stop.wait(60)
         t = time.time()
+        need_meta = row.get("meta_status") != "done"
 
         def run():
+            # One player request per video: when metadata is still missing, the same extraction
+            # supplies it, the download decision is made, and the resolved formats are downloaded.
             with self.ydl({"skip_download": False, "format": FORMAT,
                            "outtmpl": os.path.join(self.a.download_dir, "%(id)s.%(ext)s"),
                            "continuedl": True, "fragment_retries": 10, "concurrent_fragment_downloads": 4}) as y:
-                info = y.extract_info(f"https://www.youtube.com/watch?v={vid}", download=True)
+                info = y.extract_info(f"https://www.youtube.com/watch?v={vid}", download=not need_meta)
+                if need_meta:
+                    if not self.apply_meta(vid, extract_meta(info)):
+                        return SKIPPED
+                    info = y.process_ie_result(info, download=True)
                 return info.get("requested_downloads", [{}])[0].get("filepath") or y.prepare_filename(info)
         path, err = self._yt_call(run, f"download {vid}", self.dl_rate)
+        if path is SKIPPED:
+            self.state.x("UPDATE videos SET dl_status='skip' WHERE id=?", (vid,))
+            return
+        if err and need_meta and not (err == "stopped" or err.startswith("ratelimit")):
+            self._meta_error(vid, err)
         if err or not path or not os.path.exists(path):
             if err == "stopped" or (err or "").startswith("ratelimit"):
                 self.state.x("UPDATE videos SET dl_status=NULL WHERE id=?", (vid,))
@@ -567,32 +646,42 @@ class Harvester:
         self.inc("dlSeconds", secs)
         log.info("downloaded %s (%.0f MB in %.0f s, %.1f MB/s)", vid, size / 1e6, secs, size / 1e6 / max(secs, 0.1))
 
-    # ---- extraction (Meta Extractor batch runner)
-    def extract_loop(self):
-        jobs = self.a.extract_jobs or max(1, (os.cpu_count() or 4) // 3)
+    # ---- extraction (Meta Extractor, one process per video)
+    # A pool of workers, each running run-node.cjs on one video at a time: a finished worker takes the
+    # next video at once, so a long video never holds up the others (run-batch.cjs waits for a whole
+    # batch). Measured alone, one worker analyses 5-8x real time using about two cores.
+    def extract_worker(self):
         while self.alive():
-            rows = [dict(r) for r in self.state.q(
-                "SELECT id, dl_path, upload_date, league, duration FROM videos WHERE dl_status='done' AND x_status IS NULL "
-                "AND deleted_date IS NULL ORDER BY upload_date DESC LIMIT ?", (jobs,))]
-            rows = [r for r in rows if r["dl_path"] and os.path.exists(r["dl_path"])]
-            if not rows:
-                self.stop.wait(15)
+            row = self._claim("SELECT id, dl_path, upload_date, league, duration, meta FROM videos WHERE dl_status='done' "
+                              "AND x_status IS NULL AND deleted_date IS NULL ORDER BY upload_date DESC LIMIT 16",
+                              (), "x_status", "working")
+            if not row:
+                self.stop.wait(10)
                 continue
-            out = os.path.join(self.a.work_dir, "results")
-            jf = os.path.join(self.a.work_dir, "jobs-current.txt")
-            with open(jf, "w") as f:
-                for r in rows:
-                    lg = json.loads(r["league"] or "{}")
-                    cp = (L.get_format(lg.get("leagueId") or "", self.schedule["cups"])[1] or {}).get("cp", 1500)
-                    gm = gamemaster_for(r["upload_date"]) or ""
-                    f.write(f"{r['dl_path']}|{cp if cp in (500, 1500, 2500, 10000) else 1500}|{gm}|auto\n")
-            total = sum(r["duration"] or 900 for r in rows)
-            timeout = max(1800, total * 2.5)
-            log.info("extract: %d videos (%.0f min of video)", len(rows), total / 60)
-            env = {**os.environ, "JOBS": str(jobs)}
+            try:
+                self.extract_one(row)
+            finally:
+                self._release(row["id"])
+
+    def extract_one(self, r):
+        vid, path = r["id"], r["dl_path"]
+        if not path or not os.path.exists(path):
+            self.state.x("UPDATE videos SET x_status='failed', err='file missing' WHERE id=?", (vid,))
+            return
+        out_dir = os.path.join(self.a.work_dir, "results")
+        res = os.path.join(out_dir, f"{vid}.json")
+        lg = json.loads(r["league"] or "{}")
+        cp = (L.get_format(lg.get("leagueId") or "", self.schedule["cups"])[1] or {}).get("cp", 1500)
+        gm = gamemaster_for(r["upload_date"]) or ""
+        env = {**os.environ, "LEAGUE": str(cp if cp in (500, 1500, 2500, 10000) else 1500), "GAMEMASTER": gm, "CROP": "auto"}
+        ok = os.path.exists(res)
+        if not ok:
+            timeout = max(900, (r["duration"] or 900) * 2 + 600)
+            t = time.time()
             with open(os.path.join(self.a.work_dir, "extract.log"), "a") as lf:
-                p = subprocess.Popen(["node", RUN_BATCH, jf, out], stdout=lf, stderr=subprocess.STDOUT, env=env)
-                t = time.time()
+                lf.write(f"--- {vid} ({(r['duration'] or 0) / 60:.0f} min)\n")
+                lf.flush()
+                p = subprocess.Popen(["node", RUN_NODE, path, res + ".tmp"], stdout=lf, stderr=subprocess.STDOUT, env=env)
                 while p.poll() is None:
                     if not self.alive() or time.time() - t > timeout:
                         p.terminate()
@@ -601,27 +690,68 @@ class Harvester:
                         except subprocess.TimeoutExpired:
                             p.kill()
                         break
-                    time.sleep(5)
-            if p.returncode is None or (not self.alive() and p.returncode != 0):
-                return     # interrupted: videos stay for the next run
-            for r in rows:
-                res = os.path.join(out, f"{r['id']}.json")
-                ok = os.path.exists(res)
-                if ok:
-                    try:
-                        write_league_refinement(res, json.loads(r["league"] or "{}"), self.schedule, r["upload_date"])
-                    except Exception as ex:  # refinement is best-effort
-                        log.info("league refinement %s: %s", r["id"], ex)
-                self.state.x("UPDATE videos SET x_status=?, x_date=? WHERE id=?",
-                             ("done" if ok else "failed", dt.date.today().isoformat(), r["id"]))
-                self.inc("extracted" if ok else "extractFailed")
-                if not self.a.keep:
-                    try:
-                        os.remove(r["dl_path"])
-                    except FileNotFoundError:
-                        pass
-                    self.state.x("UPDATE videos SET deleted_date=? WHERE id=?", (dt.date.today().isoformat(), r["id"]))
-                    self.inc("deleted")
+                    time.sleep(2)
+            if p.returncode is None or (p.returncode != 0 and not self.alive()):
+                self.state.x("UPDATE videos SET x_status=NULL WHERE id=?", (vid,))   # interrupted: retry next run
+                return
+            ok = p.returncode == 0 and os.path.exists(res + ".tmp")
+            if ok:
+                os.replace(res + ".tmp", res)
+                log.info("extract %s: %.0f min of video in %.0f s", vid, (r["duration"] or 0) / 60, time.time() - t)
+        if ok:
+            try:
+                refined = write_league_refinement(res, lg, self.schedule, r["upload_date"])
+            except Exception as ex:  # refinement is best-effort
+                log.info("league refinement %s: %s", vid, ex)
+                refined = None
+            try:
+                n = self.export_validation(vid, res, path, gm, json.loads(r["meta"] or "{}"), lg, refined)
+                log.info("validate %s: %d questions", vid, n)
+            except Exception as ex:
+                log.warning("validation export %s failed: %s", vid, str(ex)[:300])
+        self.state.x("UPDATE videos SET x_status=?, x_date=? WHERE id=?",
+                     ("done" if ok else "failed", dt.date.today().isoformat(), vid))
+        self.inc("extracted" if ok else "extractFailed")
+        if not self.a.keep:
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            self.state.x("UPDATE videos SET deleted_date=? WHERE id=?", (dt.date.today().isoformat(), vid))
+            self.inc("deleted")
+
+    # ---- validation questions (site: Meta Extractor > Validate)
+    def export_validation(self, vid, res, path, gm, meta, video_league, refined):
+        """Writes this video's open questions to work/validation/<id>/ and rebuilds the inbox the Validate
+        tab loads. Extractor questions come from export-questions.cjs (no frames: the reviewer watches the
+        moment on YouTube or in a local copy); harvester questions cover league/cup and missed footage."""
+        qdir = os.path.join(self.a.work_dir, "validation", vid)
+        os.makedirs(qdir, exist_ok=True)
+        env = {**os.environ, "NO_FRAMES": "1", "GAMEMASTER": gm}
+        subprocess.run(["node", EXPORT_Q, res, path, qdir] + ([LEARNED] if os.path.exists(LEARNED) else []),
+                       env=env, check=True, capture_output=True, timeout=600)
+        with open(res, encoding="utf-8") as f:
+            result = json.load(f)
+        extra = V.harvest_questions(vid, result, meta, video_league, refined, self.schedule)
+        video = V.video_ref(vid, meta)
+        n = 0
+        for name in os.listdir(qdir):
+            if not name.endswith(".json") or name == "manifest.json":
+                continue
+            fp = os.path.join(qdir, name)
+            with open(fp, encoding="utf-8") as f:
+                doc = json.load(f)
+            V.decorate(doc, video)
+            with open(fp, "w", encoding="utf-8") as f:
+                json.dump(doc, f, ensure_ascii=False)
+            n += 1
+        for doc in extra:
+            V.decorate(doc, video)
+            with open(os.path.join(qdir, doc["qid"] + ".json"), "w", encoding="utf-8") as f:
+                json.dump(doc, f, ensure_ascii=False)
+            n += 1
+        V.write_inbox(os.path.join(self.a.work_dir, "validation"), self.a.inbox)
+        return n
 
     # ---- reporting
     def summary(self):
@@ -700,6 +830,7 @@ class Harvester:
 
     # ---- main
     def run(self):
+        log.info("metadata: %s", "YouTube Data API (key found)" if self.api_key else "web player (no YOUTUBE_API_KEY; see HANDOFF.md)")
         log.info("start: deadline %s, %d queries, download dir %s, work dir %s, policy=%s, keep=%s",
                  dt.datetime.fromtimestamp(self.deadline).strftime("%H:%M"), len(self.queries), self.a.download_dir,
                  self.a.work_dir, "cc-only" if self.a.cc_only else "all plausible battle videos", self.a.keep)
@@ -710,7 +841,8 @@ class Harvester:
         if self.a.max_downloads != 0:
             ts += [threading.Thread(target=self.download_worker, name=f"dl{i}", daemon=True) for i in range(self.a.download_workers)]
         if not self.a.no_extract:
-            ts.append(threading.Thread(target=self.extract_loop, name="extract", daemon=True))
+            jobs = self.a.extract_jobs or max(1, (os.cpu_count() or 4) // 2)
+            ts += [threading.Thread(target=self.extract_worker, name=f"x{i}", daemon=True) for i in range(jobs)]
         for t in ts:
             t.start()
         try:
@@ -921,9 +1053,13 @@ def write_league_refinement(result_path, video_league, schedule, upload_date):
                "species": [s for s in species if isinstance(s, str)]}
         r = L.refine_battle_league(obs, cands, schedule, gm)
         out.append({"start": b.get("start"), "best": r["ranked"][0]["id"] if r["ranked"] else None,
-                    "ranked": [x["id"] for x in r["ranked"][:4]], "cpCap": r["cpCap"], "eliminated": len(r["eliminated"])})
+                    "ranked": [x["id"] for x in r["ranked"][:4]], "cpCap": r["cpCap"], "eliminated": len(r["eliminated"]),
+                    "options": [{"id": x["id"], "name": x["name"], "cp": x["cp"], "score": x["score"]} for x in r["ranked"][:4]],
+                    "cps": obs["cps"]})
+    doc = {"video": video_league, "battles": out}
     with open(result_path.replace(".json", ".leagues.json"), "w") as f:
-        json.dump({"video": video_league, "battles": out}, f, indent=1)
+        json.dump(doc, f, indent=1)
+    return doc
 
 # ------------------------------------------------------------------------------------- CLI
 
@@ -947,8 +1083,12 @@ def parse(argv=None):
     ap.add_argument("--meta-per-min", type=float, default=20, help="metadata requests/min cap (halves on 429)")
     ap.add_argument("--downloads-per-min", type=float, default=3, help="download starts/min cap (halves on 429)")
     ap.add_argument("--download-workers", type=int, default=2)
-    ap.add_argument("--extract-jobs", type=int, default=0, help="run-batch.cjs JOBS (default cores/3)")
+    ap.add_argument("--extract-jobs", type=int, default=0, help="parallel Meta Extractor processes (default cores/2)")
+    ap.add_argument("--inbox", default=INBOX, help="validation inbox the site's Validate tab loads ('' = don't write)")
     ap.add_argument("--no-extract", action="store_true", help="don't run the Meta Extractor")
+    ap.add_argument("--no-api", action="store_true", help="ignore a YouTube Data API key even if one is configured")
+    ap.add_argument("--web-meta-when-quota-out", action="store_true",
+                    help="after the Data API quota runs out, fetch metadata through the web player again")
     ap.add_argument("--keep", action="store_true", help="keep videos after processing (default: delete)")
     ap.add_argument("--cc-only", action="store_true", help="download only Creative Commons / written-permission videos")
     ap.add_argument("--pace", type=float, default=2.0, help="seconds between discovery page requests")

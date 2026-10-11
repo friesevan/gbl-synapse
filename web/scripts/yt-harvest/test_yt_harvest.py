@@ -10,6 +10,8 @@ sys.path.insert(0, HERE)
 import harvest as H  # noqa: E402
 import league as L  # noqa: E402
 import policy as P  # noqa: E402
+import validate as V  # noqa: E402
+import ytapi  # noqa: E402
 
 GM = {
     "medicham": {"speciesId": "medicham", "dex": 308, "types": ["fighting", "psychic"], "tags": [], "family": {"parent": "meditite"}},
@@ -226,6 +228,83 @@ class Harvest(unittest.TestCase):
             self.assertEqual(H.sha256_prefix(f.name), "2cf24dba5fb0a30e")
         finally:
             os.remove(f.name)
+
+
+class TestDataApi(unittest.TestCase):
+    def test_duration_and_chapters(self):
+        self.assertEqual(ytapi.iso_duration("PT1H2M3S"), 3723)
+        self.assertEqual(ytapi.iso_duration("PT45S"), 45)
+        self.assertIsNone(ytapi.iso_duration("bogus"))
+        ch = ytapi.chapters_from_description("Intro\n0:00 Great League\n12:30 Ultra League\n1:02:00 Master")
+        self.assertEqual([c["start"] for c in ch], [0, 750, 3720])
+        self.assertEqual(ytapi.chapters_from_description("check 5:00 for the sweep"), [])
+
+    def test_to_meta(self):
+        item = {"id": "abc", "snippet": {"title": "GBL", "channelId": "UC1", "channelTitle": "Ch", "publishedAt": "2026-10-01T12:00:00Z",
+                                         "description": "", "tags": ["gbl"]},
+                "contentDetails": {"duration": "PT20M", "definition": "hd"}, "status": {"license": "creativeCommon"},
+                "statistics": {"viewCount": "12"}}
+        m = ytapi.to_meta(item, P.is_cc)
+        self.assertEqual((m["uploadDate"], m["durationS"], m["creativeCommons"], m["views"]), ("20261001", 1200, True, 12))
+        self.assertTrue(set(H.extract_meta({"id": "x"})) <= set(m))   # same fields as the web path
+
+    def test_key_never_from_repo(self):
+        old = os.environ.pop("YOUTUBE_API_KEY", None)
+        try:
+            os.environ["YOUTUBE_API_KEY"] = "k123"
+            self.assertEqual(ytapi.api_key(), "k123")
+        finally:
+            os.environ.pop("YOUTUBE_API_KEY", None)
+            if old:
+                os.environ["YOUTUBE_API_KEY"] = old
+
+
+class TestDownloadQueue(unittest.TestCase):
+    def test_relevant_titles_queue_newest_first(self):
+        with tempfile.TemporaryDirectory() as d:
+            st = H.State(os.path.join(d, "s.sqlite"))
+            for vid, label, ts in [("old", "relevant", 1600000000), ("new", "relevant", 1790000000), ("maybe", "maybe", 1795000000)]:
+                st.add_flat({"id": vid, "title": vid, "timestamp": ts}, "search", 1, label)
+            st.x("UPDATE videos SET meta_status='done', allowed=1, upload_date='20260101' WHERE id='old'")
+            ids = [r["id"] for r in st.q(H.DL_CLAIM)]
+            self.assertEqual(ids, ["new", "old"])   # 'maybe' waits for full metadata
+
+
+class TestValidation(unittest.TestCase):
+    META = {"title": "GBL set", "channel": "Ch", "license": "Standard YouTube License", "uploadDate": "20261001", "durationS": 600}
+
+    def test_no_battles_asks_about_footage(self):
+        qs = V.harvest_questions("v1", {"battles": []}, self.META, {}, None)
+        self.assertEqual([q["kind"] for q in qs], ["footage"])
+        self.assertEqual(qs[0]["clip"], [150.0, 170.0])
+
+    def test_league_question_once_per_video(self):
+        opts = [{"id": "great", "name": "Great League", "cp": 1500, "score": 3.0},
+                {"id": "spooky", "name": "Spooky Cup", "cp": 1500, "score": 2.5}]
+        refined = {"battles": [{"best": "great", "options": opts, "cps": [1498]}, {"best": "great", "options": opts, "cps": [1500]}]}
+        battles = [{"start": 10}, {"start": 200}]
+        qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.5}, refined)
+        self.assertEqual(len(qs), 1)
+        self.assertEqual(qs[0]["options"][-1]["value"], "other")
+        self.assertTrue(qs[0]["allBattles"])
+        # Confident video-level guess: nothing to ask.
+        self.assertEqual(V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.95}, refined), [])
+        # Compilation: each ambiguous battle is asked.
+        qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"kindGuess": "compilation"}, refined)
+        self.assertEqual([q["battle"] for q in qs], [0, 1])
+
+    def test_decorate_and_inbox(self):
+        with tempfile.TemporaryDirectory() as d:
+            vdir = os.path.join(d, "q", "v1")
+            os.makedirs(vdir)
+            doc = V.decorate({"qid": "a", "kind": "result", "frames": ["data:x"]}, V.video_ref("v1", self.META))
+            self.assertEqual((doc["source"], doc["frames"], doc["video"]["id"], doc["recording"]), ("youtube-harvest", [], "v1", "v1.mp4"))
+            with open(os.path.join(vdir, "a.json"), "w") as f:
+                json.dump(doc, f)
+            n = V.write_inbox(os.path.join(d, "q"), os.path.join(d, "out", "inbox.json"))
+            self.assertEqual(n, 1)
+            with open(os.path.join(d, "out", "inbox.json")) as f:
+                self.assertEqual(json.load(f)["questions"][0]["qid"], "a")
 
 
 if __name__ == "__main__":
