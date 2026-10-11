@@ -69,3 +69,20 @@ remain separate experiments. Do not run neural team training concurrently when m
 ## Observed meta browser
 
 The new **Observed meta** dashboard reads `/api/observed-meta` automatically, alongside reviewed browser/shared observations. League/cup/time-range grouping, selected team occurrences, team-perspective outcomes, source timestamps and saved battle graphs are documented in the root `HANDOFF-2026-10-11-OBSERVED-META.md`. Detected lineups are provisional; incomplete teams stay separate.
+
+## Status 2026-10-11 03:40 (model-improvement round)
+- Human answers so far (feedback.json): 136 Shadow, 95 fast move, 25 form, 52 result, 36 footage, 1 league.
+  The model's pick was right on 54/101 Shadow (coin flip), 61/89 fast move and 13/22 form. 28 of 36
+  "no battles found" videos truly had no battle footage.
+- Harvester bottleneck: extraction. 12 workers on 12 cores ran at 2.25× real time each (about 6× alone);
+  41/79 analysed videos had 0 battles and were fully decoded. Restarted at 03:34 with `--extract-jobs 6`
+  for 10 h (detached via overnight.sh; launcher.log in the work dir).
+- New footage answers: Team Rocket, Championship, Screen obscured (commit 41b11f2).
+- Three agents are working in parallel and will push to main:
+  1. Shadow model (dataset, video-grouped CV, learned classifier, model-resolved questions);
+  2. fast-move and form models (damage/energy/cadence likelihoods, type icons, model-resolved questions);
+  3. harvester speed (keyframe pre-screen plus HUD-segment extraction, worker/thread benchmark,
+     relevance from footage answers, download backlog cap, cleanup), Team Rocket auto-flag, Championship
+     format plus "perspective" question, observed-meta exclusion.
+- **When they finish:** `git pull`, run the tests in "Files and checks", then restart the harvester
+  (Stop safely in the UI, or SIGTERM the PID in run.json) so it picks up the new extractor code.
