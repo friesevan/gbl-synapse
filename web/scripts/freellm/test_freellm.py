@@ -6,6 +6,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "freellm.py"
 SEEN = []
+BODIES = []
 
 
 class Mock(BaseHTTPRequestHandler):
@@ -14,6 +15,7 @@ class Mock(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         SEEN.append((self.path, body["model"]))
+        BODIES.append(body)
         if self.path.startswith("/once") and not any(x == ("/once/chat/completions", "ok") for x in SEEN[:-1]):
             SEEN.append(("/once/chat/completions", "ok"))
             self.send_response(429); self.send_header("Retry-After", "1"); self.end_headers(); return
@@ -70,6 +72,26 @@ class FreeLLM(unittest.TestCase):
         r, _ = self.run_cli([{"name": "once", "base": "/once", "trains": False, "text": "m"}], "ask", "wait for me", "--json")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("waiting", r.stderr)
+
+    def test_provider_filter_body_extras_and_cached_provenance(self):
+        provs = [{"name": "a", "base": "/a", "trains": False, "text": "m"},
+                 {"name": "b", "base": "/b", "trains": False, "text": "m", "body": {"provider": {"data_collection": "deny"}}}]
+        r, d = self.run_cli(provs, "ask", "only b", "--json", "--provider", "b")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("answered by b", r.stderr)
+        self.assertEqual(BODIES[-1]["provider"], {"data_collection": "deny"})
+        env = {**os.environ, "FREELLM_PROVIDERS": str(d / "p.json"), "FREELLM_CACHE": str(d / "cache"), "HOME": str(d)}
+        r = subprocess.run([sys.executable, "-I", str(SCRIPT), "ask", "only b", "--json", "--provider", "b"], capture_output=True, text=True, env=env)
+        self.assertIn("answered by b (cached)", r.stderr)
+        r = subprocess.run([sys.executable, "-I", str(SCRIPT), "ask", "only b", "--json", "--provider", "zzz"], capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 2)
+
+    def test_reasoning_prefix_is_ignored(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("freellm", SCRIPT)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        self.assertEqual(m.parse_json('<think>maybe {"answer": "x"}</think>{"answer": "none"}'), {"answer": "none"})
 
     def test_cache(self):
         provs = [{"name": "a", "base": "/a", "trains": False, "text": "m"}]

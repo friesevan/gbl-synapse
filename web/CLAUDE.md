@@ -29,6 +29,13 @@ The owner is on Claude Pro and wants usage spent on work that needs Claude. In o
      strips without them. This covers 4 videos from 2 channels, mostly OVH and Gemini. Use it to
      pre-label new YouTube videos. Compare its output with the pipeline and look only where they
      disagree. Re-run `eval_hud.py` when providers or models change.
+   - `validate_footage`, 2026-10-11: closing "No battles found" Validate questions as "No battle
+     footage" (`scripts/freellm/validate_llm.py`, private route: Groq + OpenRouter-nolog). The
+     gate scored 22/22 right, covering 61% of the 36 owner answers. It needs both models to agree on
+     three YouTube auto-thumbnails, and the title policy must also say "no".
+     - Caveat: `policy.py` was tuned on these same 36 answers, so the precision is optimistic. The
+       spot checks it leaves open keep measuring it.
+     - The resolutions are reversible "Free LLM" records. They are never training labels.
 4. **Small edits stay here.** A one-line fix costs less to do than to brief, send and verify.
 
 ## Data that never goes to a free-tier API

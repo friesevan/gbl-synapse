@@ -1,5 +1,5 @@
 {
- "_about": "Free-tier chat endpoints (OpenAI-compatible), from github.com/mnfst/awesome-free-llm-apis (data.json, 2026-10-05). Order = preference. trains: whether the provider may train on / log free-tier prompts (true, false, unknown). Only providers with trains=false receive data marked private. Keys come from the named env var (or ~/.config/freellm/env); keyless providers have key_env null. Model ids drift: run `freellm.py models` after adding keys and fix them here.",
+ "_about": "Free-tier chat endpoints (OpenAI-compatible), from github.com/mnfst/awesome-free-llm-apis (data.json, 2026-10-05). Order = preference. trains: whether the provider may train on / log free-tier prompts (true, false, unknown). Only providers with trains=false receive data marked private. Keys come from the named env var (or ~/.config/freellm/env); keyless providers have key_env null. Model ids drift: run `freellm.py models` after adding keys and fix them here. Optional body / body_text / body_vision: extra request fields (e.g. OpenRouter's provider.data_collection=deny, a training-free route on the same account).",
  "providers": [
   {
    "name": "groq",
@@ -7,8 +7,12 @@
    "key_env": "GROQ_API_KEY",
    "trains": false,
    "text": "openai/gpt-oss-120b",
-   "vision": null,
-   "limits": "30 RPM, 1,000 RPD"
+   "vision": "qwen/qwen3.8-27b",
+   "limits": "30 RPM, 1,000 RPD; qwen vision: 8,000 tokens/min and 200,000 tokens/day (~125 footage strips or ~200 result strips a day)",
+   "body_vision": {
+    "reasoning_effort": "none",
+    "max_tokens": 200
+   }
   },
   {
    "name": "gemini",
@@ -27,6 +31,20 @@
    "text": "mistral-small-latest",
    "vision": "mistral-small-latest",
    "limits": "~1 RPS; trains unless you opt out in the console (then set trains=false)"
+  },
+  {
+   "name": "openrouter-nolog",
+   "base": "https://openrouter.ai/api/v1",
+   "key_env": "OPENROUTER_API_KEY",
+   "trains": false,
+   "text": null,
+   "vision": "dots-studio/dots-3-note-preview:free",
+   "body": {
+    "provider": {
+     "data_collection": "deny"
+    }
+   },
+   "limits": "20 RPM, 50 RPD on free models (1,000 with credits). body.provider.data_collection=deny routes only to endpoints that neither retain nor train on prompts (2026-10-11: Gemma :free runs only on Google AI Studio and is excluded; dots-3 runs on AtlasCloud)."
   },
   {
    "name": "openrouter",

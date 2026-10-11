@@ -102,6 +102,12 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 if not isinstance(answers, list) or len(answers) > 1000:
                     raise ValueError('answers must be a list with at most 1000 entries.')
                 result = self.service.feedback().answer_many(answers)
+            elif path == '/api/validation/resolve':
+                # Gated free-LLM answers (scripts/freellm/validate_llm.py): reversible resolutions, never labels.
+                items = body.get('resolutions')
+                if not isinstance(items, list) or len(items) > 1000:
+                    raise ValueError('resolutions must be a list with at most 1000 entries.')
+                result = self.service.feedback().resolve_external(items)
             elif path == '/api/validation/retrain':
                 result = self.service.feedback().retrain()
             elif path == '/api/validation/reopen':

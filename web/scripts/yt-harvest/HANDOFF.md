@@ -225,3 +225,22 @@ The new **Observed meta** dashboard reads `/api/observed-meta` automatically, al
 ## Offline retest speed follow-up
 
 See root `VIDEO-ANALYSIS-PERFORMANCE.md` and `HANDOFF-2026-10-11-OBSERVED-META.md` for current speed measurements. Retained-media inventory optionally emits verified, source-bound padded ranges with `--use-saved-ranges --verify-sha`. Batch jobs now accept a fifth JSON range column, clip per overlapping chunk, skip empty windows without launching a decoder and support FORCE_FULL=1. Existing saved extraction provenance is preserved on resume. Unknown legacy media identity stays full-source. Saved-feature refits avoid decoding/OCR for model-only changes; pixel detector changes still require retained originals. No existing process or live dataset was modified during this follow-up.
+
+## Free-LLM Validate answers (2026-10-11)
+
+`scripts/freellm/validate_llm.py` answers simple Validate questions with two free vision models,
+Groq qwen and OpenRouter with data_collection=deny. Both are non-training routes, and the frames are
+private. Details are in `scripts/freellm/README.md`.
+
+- **Footage "No battle footage"** passed its gate: 22/22 right, covering 61% of the 36 owner answers.
+  - Today's run on the open queue closed 6 of 244. Only 49 had a "no" title, and both models agreed on 9.
+  - About 1 in 10 agreed answers stays open as a spot check.
+- **Battle result** hasn't been measured yet. The free daily quotas ran out: Groq allows 200k tokens
+  a day and OpenRouter 50 requests.
+- Resolutions go through the new `POST /api/validation/resolve` route (`feedback.resolve_external`) as
+  source `freellm`.
+  - They are reversible, shown as "Free LLM" under Model resolved, and kept across refits.
+  - They are never labels and have no pipeline side effects.
+  - A human answer or Reopen wins.
+  - **The app must be restarted to load the route.** Then run
+    `python3 -I web/scripts/freellm/validate_llm.py run --kind footage`; it uses the cached answers.

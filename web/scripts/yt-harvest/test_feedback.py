@@ -160,6 +160,30 @@ class FeedbackTests(unittest.TestCase):
         self.assertNotIn("perspective", labels)
         self.assertNotEqual(labels.get("videoType"), "championship")
 
+    def test_free_llm_resolutions_are_gated_reversible_and_survive_refits(self):
+        r = lambda qid, value=True, **k: {"qid": qid, "value": value, "source": "freellm", "providers": ["groq", "openrouter-nolog"], "agreement": 2, "task": "t", **k}
+        with self.assertRaises(ValueError):
+            self.service.resolve_external([r("q1", providers=["groq"])])
+        with self.assertRaises(ValueError):
+            self.service.resolve_external([{**r("q1"), "source": "model"}])
+        self.questions[3]["audit"] = True
+        F.atomic_json(self.bench / "results/validation-inbox.json", {"questions": self.questions})
+        self.service.answer_many([{"qid": "q0", "value": False}])
+        out = self.service.resolve_external([r("q0"), r("q1"), r("q2", "maybe"), r("q3"), r("q4")])
+        self.assertEqual(out["saved"], 2)
+        self.assertEqual({s["qid"]: s["reason"] for s in out["skipped"]}, {"q0": "answered by a person", "q2": "not an option", "q3": "spot check"})
+        self.assertEqual(out["resolutions"]["q1"]["source"], "freellm")
+        self.assertEqual(out["answers"].keys(), {"q0"})   # never a label
+        self.assertEqual(self.service.resolve_external([r("q1")])["saved"], 0)   # idempotent
+        self.service._fit = lambda q, a, v: {"learned": {"moves": {}, "shadow": {}}, "predictions": {}, "resolutions": {}, "calibration": {}, "runsRefit": 0, "errors": []}
+        self.service.retrain()
+        self.service.thread.join(5)
+        self.assertEqual(set(self.service.state()["resolutions"]), {"q1", "q4"})
+        self.service.reopen("q4")
+        self.assertEqual(self.service.resolve_external([r("q4")])["skipped"][0]["reason"], "reopened by a person")
+        self.service.answer_many([{"qid": "q1", "value": False}])   # a human answer replaces it
+        self.assertEqual(set(self.service.state()["resolutions"]), set())
+
     def test_eight_useful_answers_refit_and_reopen_lock_preserves_human_labels(self):
         def fit(questions, answers, version):
             return {"learned": {"moves": {}, "shadow": {"claydol": {"yes": 8, "no": 0}}}, "predictions": {}, "resolutions": {"q0": {"value": False}, "new": {"value": True}}, "calibration": {}, "runsRefit": 1, "errors": []}

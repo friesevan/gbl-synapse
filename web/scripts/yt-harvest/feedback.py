@@ -20,6 +20,8 @@ REPROCESS_VALUES = ("battles", "partial", "rocket", "championship")
 
 TRAINABLE = {"shadow", "form", "fastMove"}
 MINIMUM, TARGET = 8, 24
+# External resolvers (scripts/freellm/validate_llm.py): closed like model resolutions, never labels.
+EXTERNAL_SOURCES = {"freellm"}
 # Fast-move/form evidence settings are refitted (movefit-fit.cjs) once this many new labels have arrived.
 PARAM_REFIT_EVERY = 24
 
@@ -232,6 +234,57 @@ class FeedbackService:
 
     submit_answers = answer_many
 
+    def resolve_external(self, items):
+        """Close open questions with answers from a gated external resolver (free-tier LLMs).
+
+        Stored in resolutions (reversible audit records, source "freellm"), never in answers: they
+        don't train, don't trigger pipeline side effects, and a human answer or Reopen replaces them.
+        Audit spot checks, answered and reopened questions are refused (skipped).
+        """
+        if not isinstance(items, list) or len(items) > 5000:
+            raise ValueError("resolutions must be a list of at most 5000 entries")
+        with self.lock:
+            self._ensure_open()
+            questions = self._questions()
+            saved, skipped = 0, []
+            for it in items:
+                if not isinstance(it, dict) or not isinstance(it.get("qid"), str):
+                    raise ValueError("Each resolution requires a qid")
+                qid, value = it["qid"], it.get("value")
+                if it.get("source") not in EXTERNAL_SOURCES:
+                    raise ValueError("Unknown resolution source")
+                providers = it.get("providers")
+                if (not isinstance(providers, list) or len({str(p) for p in providers}) < 2 or len(providers) > 4
+                        or int(it.get("agreement") or 0) < 2):
+                    raise ValueError("External resolutions need agreement between at least two providers")
+                q = questions.get(qid)
+                options = (q or {}).get("options") or []
+                option = next((o for o in options if type(o.get("value")) is type(value) and o.get("value") == value), None)
+                reason = ("unknown question" if not q else "spot check" if q.get("audit") else
+                          "answered by a person" if confirmed(self.data["answers"].get(qid, {})) else
+                          "reopened by a person" if self.data["manualReview"].get(qid) else
+                          "not an option" if value is None or option is None else None)
+                if reason:
+                    skipped.append({"qid": qid, "reason": reason})
+                    continue
+                rec = {"value": value, "label": option.get("label"), "source": it["source"], "modelResolved": True,
+                       "providers": [str(p)[:40] for p in providers], "agreement": int(it["agreement"]),
+                       "task": str(it.get("task") or "")[:60], "reason": str(it.get("reason") or "")[:300],
+                       "gate": it.get("gate") if isinstance(it.get("gate"), dict) and len(json.dumps(it["gate"])) < 500 else None}
+                old = self.data["resolutions"].get(qid)
+                if old and all(old.get(k) == rec[k] for k in ("value", "source", "providers", "task")):
+                    continue
+                if old:
+                    self.data["history"].append({"qid": qid, "resolution": old, "replacedAt": now()})
+                rec["resolvedAt"] = now()
+                self.data["resolutions"][qid] = rec
+                saved += 1
+            if saved:
+                self._save()
+            result = self.state()
+            result.update(saved=saved, skipped=skipped)
+            return result
+
     def reopen(self, qid):
         with self.lock:
             self._ensure_open()
@@ -283,6 +336,11 @@ class FeedbackService:
                     previous = self.data["resolutions"]
                     next_resolutions = {qid: r for qid, r in result["resolutions"].items()
                                         if not confirmed(self.data["answers"].get(qid, {})) and not self.data["manualReview"].get(qid)}
+                    # External (free-LLM) resolutions don't depend on the prior model: keep them across refits.
+                    for qid, r in previous.items():
+                        if (r.get("source") in EXTERNAL_SOURCES and qid not in next_resolutions
+                                and not confirmed(self.data["answers"].get(qid, {})) and not self.data["manualReview"].get(qid)):
+                            next_resolutions[qid] = r
                     for qid, r in previous.items():
                         if qid not in next_resolutions:
                             self.data["history"].append({"qid": qid, "resolution": r, "reopenedAt": now(), "reason": "Model no longer passes confidence gates"})

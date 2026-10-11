@@ -14,5 +14,43 @@
   "precision": 1.0,
   "coverage": 1.0,
   "passed": true
+ },
+ "validate_footage": {
+  "date": "2026-10-11",
+  "labelled": 36,
+  "noFrames": 0,
+  "evaluated": 36,
+  "videos": 36,
+  "providers": {
+   "groq": {
+    "asked": 25,
+    "answered": 25,
+    "right": 24
+   },
+   "openrouter-nolog": {
+    "asked": 24,
+    "answered": 24,
+    "right": 22
+   }
+  },
+  "resolvable": [
+   "none"
+  ],
+  "resolved": 22,
+  "right": 22,
+  "exactRight": 22,
+  "precision": 1.0,
+  "exactPrecision": 1.0,
+  "wilsonLower": 0.851,
+  "coverage": 0.611,
+  "wrong": [],
+  "passed": true,
+  "note": "Resolves only 'none', and only when policy.py's title rule also says 'no'. policy.py was tuned on these same 36 answers, so precision is optimistic; ~1 in 10 agreed answers stays open as a spot check."
+ },
+ "validate_result": {
+  "date": "2026-10-11",
+  "passed": false,
+  "status": "not measured",
+  "note": "Groq's daily vision quota (200,000 tokens) and OpenRouter's 50 free requests/day ran out during the footage gate/run. Run `validate_llm.py gate --kind result --first-only`, then without --first-only, on a fresh day. Most of these battles are cut straight into the next one (no result screen), so expect low coverage."
  }
 }

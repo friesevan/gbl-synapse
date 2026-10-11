@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Route small, checkable tasks to free-tier LLM APIs, with failover, caching and guards.
 
-  freellm.py ask "prompt" [--system S] [--image F]... [--json] [--agree 2] [--data public|private] [--task NAME]
+  freellm.py ask "prompt" [--system S] [--image F]... [--json] [--agree 2] [--data public|private] [--task NAME] [--provider P]...
   freellm.py models      list the models each configured provider serves (to fix ids in providers.json)
   freellm.py stats       calls, failures and tokens per provider from the usage log
 
@@ -76,7 +76,8 @@ def eligible(p, kind, data):
 
 
 def call(p, model, messages, want_json, timeout=90):
-    body = {"model": model, "messages": messages, "temperature": 0}
+    kind = "vision" if model == p.get("vision") else "text"
+    body = {"model": model, "messages": messages, "temperature": 0, **(p.get("body") or {}), **(p.get("body_" + kind) or {})}
     if want_json:
         body["response_format"] = {"type": "json_object"}
     req = urllib.request.Request(p["base"].rstrip("/") + "/chat/completions", data=json.dumps(body).encode(),
@@ -89,6 +90,7 @@ def call(p, model, messages, want_json, timeout=90):
 
 
 def parse_json(text):
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)  # reasoning models may prefix their thoughts
     m = re.search(r"\{.*\}|\[.*\]", text, re.S)
     return json.loads(m.group(0) if m else text)
 
@@ -143,15 +145,21 @@ def ask(a):
         content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode()}})
     messages = ([{"role": "system", "content": a.system}] if a.system else []) + [{"role": "user", "content": content if images else prompt}]
     kind = "vision" if images else "text"
-    key = hashlib.sha256(json.dumps([a.system, prompt, [hashlib.sha256(f.read_bytes()).hexdigest() for f in images],
-                                     a.json, a.agree, a.data]).encode()).hexdigest()
+    only = set(a.provider or [])
+    key_parts = [a.system, prompt, [hashlib.sha256(f.read_bytes()).hexdigest() for f in images], a.json, a.agree, a.data]
+    if only:
+        key_parts.append(sorted(only))
+    key = hashlib.sha256(json.dumps(key_parts).encode()).hexdigest()
     cached = CACHE / "answers" / (key + ".txt")
+    meta = cached.with_suffix(".meta.json")
     if cached.exists() and not a.no_cache:
         log({"task": a.task, "provider": "cache", "ok": True})
         print("[freellm] cache hit", file=sys.stderr)
+        for name in (json.loads(meta.read_text()).get("providers", []) if meta.exists() else []):
+            print(f"[freellm] answered by {name} (cached)", file=sys.stderr)
         print(cached.read_text())
         return 0
-    answers, used = [], set()
+    answers, used, names = [], {p["name"] for p in providers() if only and p["name"] not in only}, []
     deadline = time.time() + a.wait
     while len(answers) < a.agree:
         ready = [p for p in providers() if p["name"] not in used and eligible(p, kind, a.data)]
@@ -175,6 +183,7 @@ def ask(a):
         used.add(p["name"])
         print(f"[freellm] answered by {p['name']} ({p[kind]})", file=sys.stderr)
         answers.append(text)
+        names.append(p["name"])
     if len(answers) < a.agree:
         print(f"[freellm] no answer: {len(answers)} of {a.agree} providers responded "
               f"(data={a.data}; private data only goes to providers that don't train on prompts)", file=sys.stderr)
@@ -187,6 +196,7 @@ def ask(a):
     out = json.dumps(parse_json(answers[0]), indent=1) if a.json else answers[0].strip()
     cached.parent.mkdir(parents=True, exist_ok=True)
     cached.write_text(out)
+    meta.write_text(json.dumps({"providers": names}))
     print(out)
     return 0
 
@@ -236,6 +246,7 @@ def main():
     q.add_argument("--data", choices=["public", "private"], default="private",
                    help="private (default): only providers that don't train on prompts")
     q.add_argument("--task", default="adhoc", help="label for the usage log")
+    q.add_argument("--provider", action="append", help="only use these providers (repeatable; for per-provider evals)")
     q.add_argument("--no-cache", action="store_true")
     q.add_argument("--wait", type=float, default=120, help="max seconds to wait when every provider is rate-limited")
     sub.add_parser("models")
