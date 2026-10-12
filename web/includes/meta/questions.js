@@ -69,8 +69,9 @@ function questions(battles,{pokemon,moves,confident=.85,shadowBand=[.15,.85]}={}
     out.push({id:`${bi}:${side}:${m.key}:fast`,battle:bi,side,key:m.key,kind:'fastMove',title:`${label} · ${who} ${name}: which fast move?`,
      detail:`Measured ${evidence?.length?`${evidence.length} hit${evidence.length===1?'':'s'} of about ${pct(evidence.slice().sort((x,y)=>x-y)[evidence.length>>1])} HP`:'few hits'}${seg?.[side==='opponent'?'cadenceOnMy':'cadenceOnOpp']?`, every ${seg[side==='opponent'?'cadenceOnMy':'cadenceOnOpp']} turns`:''}. Watch the clip: the move’s animation and timing usually tell them apart.`,
      focus:side,frames,clip,options:inf.moves.slice(0,4).map(x=>({value:x.value,label:moveName(x.value),hint:`model ${pct(x.p)}`}))});}}
-  // Result: no result screen and no decisive Poké Ball count.
-  if(b.result==='Unknown'&&!b.answers?.result)out.push({id:`${bi}:result`,battle:bi,kind:'result',title:`${label}: who won?`,detail:'No result screen was read and neither side lost all three Pokémon on screen. Check the frames after the battle.',focus:'center',frames:[b.end+4,b.end+8,b.end+12],clip:[b.end-2,b.end+14],
+  // Result: no result screen read and the timeline doesn't decide (core.js inferResult). Not asked when the footage
+  // can't show a result screen (resultSource 'unresolvable': the video cuts to the next battle or ends).
+  if(b.result==='Unknown'&&b.resultSource!=='unresolvable'&&!b.answers?.result)out.push({id:`${bi}:result`,battle:bi,kind:'result',title:`${label}: who won?`,detail:'No result screen was read and the timeline doesn’t decide: neither side lost all three Pokémon on the Poké Ball counter or HP bars. Check the frames after the battle.',focus:'center',frames:[b.end+4,b.end+8,b.end+12],clip:[b.end-2,b.end+14],
    options:RESULT_OPTIONS});});
  // Species and the model's leading answer travel with each question, so answers can train priors
  // and measure accuracy later.

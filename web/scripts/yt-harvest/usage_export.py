@@ -93,6 +93,18 @@ REASONS = {
 }
 
 
+def result_from(b):
+    """read (result screen), inferred (battle timeline: faints / surrender), human (reviewer), unresolvable or unknown."""
+    src, result = str(b.get('resultSource') or ''), b.get('result')
+    if src == 'reviewer':
+        return 'human'
+    if src in ('faints', 'surrender', 'Poké Ball count', 'surrender dialog'):
+        return 'inferred'
+    if src == 'unresolvable':
+        return 'unresolvable'
+    return 'read' if result in ('Win', 'Loss', 'Tie') else 'unknown'
+
+
 def load_pool(path):
     data = read(path, None)
     if not isinstance(data, dict) or not isinstance(data.get('species'), list):
@@ -346,7 +358,7 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
         base = {'videoId': vid, 'battle': o['battleIndex'], 'start': b.get('start') or 0, 'end': b.get('end'),
                 'collectedAt': collected, 'dateBasis': 'recording' if o.get('dateVerified') and o.get('battleDate') else 'upload',
                 'creator': creator, 'channel': channel or ('unknown channel (' + vid + ')'), 'cup': lg.get('cupId') or ('unknown' if reason == 'unknown-cup' else 'great'),
-                'result': b.get('result'), 'fainted': json.dumps(b.get('fainted'), sort_keys=True),
+                'result': b.get('result'), 'resultSource': result_from(b), 'fainted': json.dumps(b.get('fainted'), sort_keys=True),
                 'shields': json.dumps(b.get('shieldsUsed'), sort_keys=True)}
         if reason is None:
             reason, ids, info = side_team(o, 'opponent', pool, BOUNDARY_FLAG)
@@ -466,6 +478,8 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
         'memberMapping': dict(notes.most_common()), 'leads': dict(leads),
         'reviewedMembers': sum(e['reviewedMembers'] for e in kept),
         'dateBasis': dict(collections.Counter(e['dateBasis'] for e in kept)),
+        # Where the kept battles' results came from (observed.py applies timeline inferences and human answers).
+        'resultSources': dict(collections.Counter(e.get('resultSource', 'unknown') for e in kept)),
         'perCreator': [{'channel': channel_name[c], 'teams': v, 'weight': round(weights[c], 4)} for c, v in per_creator.most_common()],
         'topTeams': top_teams, 'topSpecies': top_species, 'pvpokeTopSpecies': prior_top,
         'trainer': recommend(total_weight, rows_in, weights, last),

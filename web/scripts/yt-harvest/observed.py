@@ -59,6 +59,30 @@ def model_answers(feedback):
     return out
 
 
+# Result sources (core.js inferResult). Older saved results used the long names.
+LEGACY_RESULT_SOURCES = {'Poké Ball count': 'faints', 'surrender dialog': 'surrender'}
+RESULT_RULE_SOURCES = ('timeline', 'policy')
+
+
+def result_resolutions(feedback):
+    """Result questions settled by the battle timeline (learning-loop.cjs resultResolution, re-derived on every
+    refit), by (video id, battle index): "timeline" records carry the inferred result (rule: faints / surrender),
+    "policy" records mark the result unresolvable (no result screen in the footage)."""
+    out = {}
+    for qid, r in (feedback.get('resolutions') or {}).items():
+        if not isinstance(r, dict) or r.get('source') not in RESULT_RULE_SOURCES:
+            continue
+        parts = str(qid).split(':')
+        if len(parts) < 4 or parts[-1] != 'result':
+            continue
+        try:
+            battle = int(parts[-2])
+        except ValueError:
+            continue
+        out[(parts[-3].removesuffix('.mp4'), battle)] = r
+    return out
+
+
 QUESTION_KINDS = {'shadow': 'shadow', 'form': 'form', 'fast': 'fastMove'}
 PVPOKE_CPS = (500, 1500, 2500, 10000)
 PVPOKE_SPECIES = 300
@@ -225,7 +249,17 @@ class ObservedCatalog:
                     if self._video(a) == vid and (a['allBattles'] or a['battle'] == index)]
         result = b.get('result') or source_b.get('result') or 'Unknown'
         result_source = b.get('resultSource') or source_b.get('resultSource') or 'Unresolved'
+        result_source = LEGACY_RESULT_SOURCES.get(result_source, result_source)
         ending = None
+        # Results inferred from the timeline (current rules, applied at the last refit) count like detected ones;
+        # a read result screen keeps priority, and human answers (below) win over both.
+        rule = None if result_source in ('result screen', 'reviewer') else result_resolutions(feedback).get((vid, index))
+        if rule and rule.get('source') == 'timeline' and rule.get('value'):
+            result, _, ending = str(rule['value']).partition(':')
+            ending = ending or None
+            result_source = rule.get('rule') or 'faints'
+        elif rule and rule.get('source') == 'policy':
+            result, ending, result_source = 'Unknown', None, 'unresolvable'
         league_answers = sorted((a for a in answers if a.get('kind') == 'league' and a.get('value') not in (None, 'other')),
                                 key=lambda a: str(a.get('answeredAt') or ''))
         league_labels = [a for a in league_answers if a.get('value') not in NOT_A_LEAGUE]

@@ -57,6 +57,25 @@ function canResolve(q,p,ctx){const {answers,calibration,version,shadowModel}=ctx
  if(!q.options?.some(o=>o.value===p.value))return null;
  return {value:p.value,confidence:p.p,margin:p.margin,modelVersion:version,resolvedAt:new Date().toISOString(),reason:`Re-scored saved damage/cadence evidence; ${support.length} independent species labels; held-out ${q.kind} accuracy ${c.right}/${c.total} (95% lower bound ${(c.lowerBound*100).toFixed(1)}%).`,source:'model'};
 }
+// Result questions are settled from the refitted run's timeline (core.js inferResult, re-derived on every refit):
+// - the timeline decides (resultSource faints / surrender): a "timeline" resolution with that value, reversible;
+// - the footage can't show a result screen and nothing decides ('unresolvable'): a "policy" record (value null) that
+//   closes the question without a value. Neither is a label, and policy records aren't model resolutions in metrics.
+// The question must still point at the same battle (its clip starts 2 s before the battle's end).
+const RESULT_SOURCES={faints:'faints',surrender:'surrender'};
+function resultValue(b){return b.resultSource==='surrender'&&b.result==='Loss'?'Loss:you-forfeit':b.result;}
+function sameBattle(q,b){return !!b&&(!Array.isArray(q.clip)||!Number.isFinite(q.clip[0])||Math.abs(q.clip[0]-(b.end-2))<=.6);}
+function resultResolution(q,run,version){if(q?.kind!=='result'||q.audit)return null;const b=run?.full?.[q.battle];if(!sameBattle(q,b))return null;const at=new Date().toISOString();
+ if(RESULT_SOURCES[b.resultSource]){const value=resultValue(b),option=(q.options||[]).find(o=>o.value===value);if(!option)return null;
+  return {value,label:option.label,confidence:1,margin:1,modelVersion:version,resolvedAt:at,rule:b.resultSource,reason:b.resultReason||'Battle timeline',source:'timeline'};}
+ if(b.resultSource==='unresolvable')return {value:null,label:'Unresolvable: no result screen',modelVersion:version,resolvedAt:at,policy:'no-result-screen',reason:`No result screen; timeline inconclusive. ${b.resultReason||''}`.trim(),source:'policy'};
+ return null;}
+// Inferred results against reviewer answers (result accuracy) and every battle's result source, over the refitted runs.
+function resultMetrics(answers,fitted){const human=new Map(answers.filter(a=>eligible(a)&&a.kind==='result').map(a=>[video(a)+':'+a.battle,a]));const acc={heldOut:0,heldOutRight:0,byRule:{}},sources={read:0,inferred:0,human:0,unresolvable:0,open:0};
+ for(const [vid,run] of fitted)(run.full||[]).forEach((b,i)=>{const a=human.get(vid+':'+i),src=b.resultSource||'';
+  if(a)sources.human++;else if(src==='result screen')sources.read++;else if(RESULT_SOURCES[src])sources.inferred++;else if(src==='unresolvable')sources.unresolvable++;else sources.open++;
+  if(a&&RESULT_SOURCES[src]){const r=acc.byRule[src]=acc.byRule[src]||{right:0,total:0},ok=String(a.value)===String(resultValue(b));acc.heldOut++;r.total++;if(ok){acc.heldOutRight++;r.right++;}}});
+ return {calibration:acc,sources};}
 // Archived human labels (labels/*.json `verified`) that feedback.json lacks: used only to train the
 // Shadow classifier (their aggregates are already in baseline-learned.json, so never as priors).
 function archivedLabels(input,answers){const dir=input.labelsDir||(input.runs?.[0]?.path?path.join(path.dirname(path.dirname(input.runs[0].path)),'labels'):null),seen=new Set(answers.map(a=>a.qid)),out=[];
@@ -110,13 +129,15 @@ function execute(input){
  Object.assign(calibration,moveCalibration(input,answers,runs,gmFor,errors));
  const st=shadowModel?.thresholds?.regular;calibration.shadow=st?{right:st.right,total:st.n,lowerBound:st.lowerBound,videoCount:st.videos,confidence:st.confidence,direction:'not Shadow',model:'classifier'}:{right:0,total:0,lowerBound:0,videoCount:0,model:shadowModel?'classifier':'default'};
  const answered=new Set(answers.map(a=>a.qid));for(const q of input.questions||[]){const run=fitted.get(video(q));if(!run)continue;
+ if(q.kind==='result'){if(!answered.has(q.qid)&&!input.manualReview?.[q.qid]){const r=resultResolution(q,run,input.version);if(r){resolutions[q.qid]=r;if(r.value!==null)predictions[q.qid]={modelTop:r.value,modelP:1};}}continue;}
  if(q.kind==='shadow'&&!answered.has(q.qid)&&!input.manualReview?.[q.qid]){const g=noShadowForm(q,run,{gm:gmFor(runs.get(video(q)).r),answers,version:input.version});if(g){predictions[q.qid]={modelTop:false,modelP:1};resolutions[q.qid]=g;continue;}}
  const p=prediction(run,q);if(!p)continue;predictions[q.qid]={modelTop:p.value,modelP:p.p};if(answered.has(q.qid)||input.manualReview?.[q.qid])continue;if(!canResolve(q,p,{answers,calibration,version:input.version,shadowModel:learned.shadowModel}))continue;
  const entry=runs.get(video(q));if(!independentFits.has(video(q)))independentFits.set(video(q),refitRun(applyLeagueLabels(entry.raw,answers,video(q),input.cupCP),{learned:{...newOnly,shadowModel:learned.shadowModel,fit:input.fit},league:entry.r.league||1500,gm:gmFor(entry.r),channel:entry.r.channel}));
  const independent=prediction(independentFits.get(video(q)),q);if(!independent||independent.value!==p.value||(!['shadow','fastMove','form'].includes(q.kind)&&p.p<.98))continue;
  const resolution=canResolve(q,independent,{answers,calibration,version:input.version,shadowModel:learned.shadowModel});if(resolution){resolution.liveConfidence=p.p;resolutions[q.qid]=resolution;}}
+ const rm=resultMetrics(answers,fitted);calibration.result=rm.calibration;
  if(input.outputDir){fs.mkdirSync(input.outputDir,{recursive:true});for(const [vid,run]of fitted)fs.writeFileSync(path.join(input.outputDir,vid+'.json'),JSON.stringify(run));}
- return {learned,predictions,resolutions,calibration,errors,runsRefit:fitted.size,shadowModel:shadowModel&&{cv:shadowModel.cv,thresholds:shadowModel.thresholds,n:shadowModel.n,videos:shadowModel.videos,passes:{regular:!!shadowGate(shadowModel,false),shadow:!!shadowGate(shadowModel,true)}}};
+ return {learned,predictions,resolutions,calibration,errors,runsRefit:fitted.size,resultSources:rm.sources,shadowModel:shadowModel&&{cv:shadowModel.cv,thresholds:shadowModel.thresholds,n:shadowModel.n,videos:shadowModel.videos,passes:{regular:!!shadowGate(shadowModel,false),shadow:!!shadowGate(shadowModel,true)}}};
 }
-module.exports={execute,prediction,canResolve,noShadowForm,canResolveShadow,shadowGate,shadowRows,archivedLabels,SHADOW_GATE,learnedFor,mergeLearned,applyLeagueLabels,wilson};
+module.exports={execute,prediction,canResolve,resultResolution,resultMetrics,noShadowForm,canResolveShadow,shadowGate,shadowRows,archivedLabels,SHADOW_GATE,learnedFor,mergeLearned,applyLeagueLabels,wilson};
 if(require.main===module){const [src,dst]=process.argv.slice(2);fs.writeFileSync(dst,JSON.stringify(execute(JSON.parse(fs.readFileSync(src,'utf8')))));}

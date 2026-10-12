@@ -116,6 +116,13 @@ class UsageExportTests(unittest.TestCase):
         self.assertEqual(report['exclusions']['unknown-cup']['count'], 1)   # where the Color Cup battle was 'restricted-cup'
         self.assertNotIn('restricted-cup', report['exclusions'])
 
+    def test_report_says_where_kept_results_came_from(self):
+        _, report = self.build()
+        self.assertEqual(sum(report['resultSources'].values()), report['eligibleTeams'])
+        self.assertEqual([ue.result_from(b) for b in ({'result': 'Win', 'resultSource': 'faints'}, {'result': 'Loss', 'resultSource': 'reviewer'},
+                          {'result': 'Win', 'resultSource': 'result screen'}, {'result': 'Unknown', 'resultSource': 'unresolvable'}, {'result': 'Unknown'})],
+                         ['inferred', 'human', 'read', 'unresolvable', 'unknown'])
+
     def test_eligibility_rules_and_reasons(self):
         usage, report = self.build()
         ex = {k: v['count'] for k, v in report['exclusions'].items()}

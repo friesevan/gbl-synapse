@@ -40,3 +40,9 @@ test('pairings carry co-occurrence and lift; PvPoke expected share combines Shad
  const ua=a.usage.find(u=>u.id==='a');assert.ok(Math.abs(ua.pvpoke.expected-.25)<1e-9);assert.ok(Math.abs(ua.pvpoke.ratio-3)<1e-9);assert.equal(a.usage.find(u=>u.id==='g').winRate,0);});
 test('trend gives per-period shares only where enough settled lineups exist',()=>{const rows=[];for(let i=0;i<12;i++)rows.push(row('p'+i));for(let i=0;i<12;i++)rows.push(row('q'+i,{start:'2026-09-08',end:'2026-09-14',opp:[{id:'x',shadow:false},{id:'b',shadow:false},{id:'c',shadow:false}]}));for(let i=0;i<3;i++)rows.push(row('r'+i,{start:'2026-11-03',end:'2026-11-09'}));
  const tr=C.trend(C.dedupe(rows));assert.equal(tr.periods.length,3);assert.equal(tr.enough,2);assert.deepEqual(tr.share('a'),[0,1,null]);assert.deepEqual(tr.share('b'),[1,1,null]);});
+
+test('team win rates say where each counted result came from: read, inferred from the timeline, or human',()=>{
+ const src=(id,result,resultSource)=>{const r=row(id,{channel:id,result});r.battle.resultSource=resultSource;return r;};
+ const rows=[src('1','Win','result screen'),src('2','Loss','faints'),src('3','Win','reviewer'),src('4','Win','Poké Ball count'),src('5','Unknown','unresolvable')];
+ assert.equal(C.normalize(rows[1]).resultFrom,'inferred');assert.equal(C.normalize(rows[4]).resultFrom,'unresolvable');assert.equal(C.resultFrom('','Win'),'read');assert.equal(C.resultFrom('surrender dialog','Loss'),'inferred');
+ const t=C.analyze(C.dedupe(rows),{side:'opponent'}).teams[0];assert.deepEqual([t.wins,t.losses,t.unknown],[3,1,1]);assert.deepEqual(t.resultFrom,{read:1,inferred:2,human:1});});

@@ -122,7 +122,7 @@ async function denseSample(t0,dur){const v=$('metaVideo'),frames=[];if(!await se
    // Hidden tabs don't deliver frame callbacks; fall back to stepping.
    setTimeout(()=>{if(!frames.length)finish();},2000);});if(got.length)return got;}
  for(let t=t0;t<t0+dur&&!stop;t+=.2){if(!await seek(t).then(()=>true,()=>false))continue;frames.push(denseFrame(t));metrics.denseFrames=(metrics.denseFrames||0)+1;}return frames;}
-let rankings=null;const historical=new Map();
+let analysisEnd=null,rankings=null;const historical=new Map();
 // Moves are rebalanced over time, so the fit uses PvPoke's game data as of the battle date when it is
 // set (via the GitHub connector on claude.ai). Older files have no `turns`; it is derived from cooldown.
 async function gameDataFor(date){if(!date)return {data:gm,label:'current PvPoke data'};if(historical.has(date))return historical.get(date);
@@ -160,6 +160,8 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
  for(const b of battles){const fight=MetaCombat.clockFight(b,fitP.energy);
   b.evidence=MetaCombat.battleEvidence(b,movesById,fight);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))MetaCombat.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById,fitP);}
  const pooled=MetaCombat.poolMine(battles),learned=window.MetaValidation?.learned();for(const b of battles){MetaCombat.attachInference(b,pooled,fitP);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=MetaCombat.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit:fitP});}MetaAura.applyToBattle(b,undefined,learned);}for(const b of battles){b.focus=MetaAura.focusMoments(b,(b.focusFrames||[]).sort((x,y)=>x.t-y.t),SW());delete b.focusFrames;}window.MetaShadow?.applyToBattles(battles,undefined,{learned,rankings,moveTypes:new Map(game.moves.map(m=>[m.moveId,m.type]))});for(const b of battles){b.effects=effectsIn('my',b.start,b.end+1).concat(effectsIn('opponent',b.start,b.end+1)).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=MetaHp.hpTimeline(b);}
+ // Results from the timeline (core.js inferResult) now that the matchups' HP series exist.
+ C.applyInferredResults(battles,{videoEnd:analysisEnd});
  for(const b of battles)for(const g of b.matchups){delete g.result;delete g.visible;delete g.series;}}
 // Everything the analysis isn't sure of (below the question thresholds in questions.js) goes to the
 // Validate tab, with the battle's summary and HP timeline; once those questions are answered, Validate
@@ -174,7 +176,7 @@ async function findScreen(start,end,n=12){const v=$('metaVideo'),k=Math.min(1,96
  const r=window.MetaScreen?.locate(frames);if(!r||r.box.join()===[0,0,w,h].join())return null;return r.box.map((x,i)=>Math.round(x/k));}
 $('metaRun').onclick=async()=>{if(!file||!$('metaVideo').videoWidth||busy)return;const video=$('metaVideo'),start=Number($('metaStart').value),end=Math.min(Number($('metaEnd').value),video.duration-.05),mode=$('metaSampling').value;if(!(start>=0&&end>start)){status('Choose an end time after the start, within the video.');return;}
  configureBusy(true);stop=false;example=false;run=[];metrics={frames:0,ocr:0,cached:0,start:performance.now()};cpKnown.clear();nameLanguage=new C.NameLanguage();resetCjk();const tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),moves=$('metaCaptureMoves').checked;let previousMove=null,times=null,lastSurrender=-Infinity,seekFails=0;video.pause();
- const finish=()=>tracker.finish().map(b=>({...b,id:`${fingerprint}:${Math.round(b.start*2)}`,context:{...context(),videoFingerprint:fingerprint}}));
+ const finish=()=>{analysisEnd=end;return tracker.finish({videoEnd:end}).map(b=>({...b,id:`${fingerprint}:${Math.round(b.start*2)}`,context:{...context(),videoFingerprint:fingerprint}}));};
  try{await data();await videoFingerprint();await ocrWorker();
   if(!screen&&video.videoWidth>video.videoHeight*.8){status('Finding the phone screen in this wide video…');screen=await findScreen(start,end);hudDy=null;overlay();if(screen)metrics.screen=screen;else status('No battle screen found in this video; reading the whole frame.');}
   if(mode==='key'){try{times=(await Mp4Index.fromFile(file)).keyframes.filter(t=>t>=start&&t<=end);metrics.sampling='keyframes';
@@ -189,7 +191,7 @@ $('metaRun').onclick=async()=>{if(!file||!$('metaVideo').videoWidth||busy)return
    else{const band=resultBand();if(band.black>.9)tracker.blackout(t);if(tracker.awaitingResult(t)&&C.resultCandidate(band)){let r=await readResult();
      // The banner animates in; with sparse sampling, look again half a second later before moving on.
      if(!r.value&&!r.matchmaking&&t+.5<end&&await seek(t+.52).then(()=>true,()=>false)){const b2=resultBand();if(C.resultCandidate(b2))r=await readResult();}
-     if(r.value)tracker.result(t,r.value);else if(r.matchmaking)tracker.matchmaking();}
+     if(r.value)tracker.result(t,r.value);else if(r.matchmaking)tracker.matchmaking();else tracker.unreadResult(t);}
     // A white card over the middle of the screen may be the "Surrender and exit?" dialog (dark text).
     else if(C.surrenderCandidate(band)&&t-lastSurrender>4){metrics.surrenderReads=(metrics.surrenderReads||0)+1;const r=await ocrRegion(bandCanvas,[0,0,bandCanvas.width,bandCanvas.height],{lines:2,worker:cjkActive()});if(C.isSurrender(r.text)){lastSurrender=t;tracker.surrender(t);}}}
    // The "X used Y!" banner appears near the end of a charged attack, while the nameplates are hidden.

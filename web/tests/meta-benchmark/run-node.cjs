@@ -73,7 +73,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const hudOffset=new C.HudOffset();
  // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
  function nameOf(img,s,t){let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;const r=ocr(img,s.nameBox),box=s.nameBox,res=C.readName(r,{dict,locales,language:nameLanguage,alt:lang=>ocrLocale(img,box,lang)});hit=res.hit;names.set(s.bits,hit);if(res.switched){names.forgetUnread();metrics.nameLanguageAt=t;}}else metrics.cached++;return hit;}
- let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*rowsUsed*4,frame=Buffer.alloc(W*H*4);
+ let dy=null,k=0,filled=0,lastT=null,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*rowsUsed*4,frame=Buffer.alloc(W*H*4);
  // Banners: English text first ("Go, X!", "X used Y!"); other Latin-script UIs from the same text; a CJK UI
  // (once recognised) only with its language model (core.js localBanner). Chinese banners take two lines.
  function readBanner(t,img,box){const lang=cjkLang();let r;
@@ -98,7 +98,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const ff=spawn('ffmpeg',args,{stdio:['ignore','pipe','inherit']}),finishedDecode=new Promise(resolve=>{ff.on('error',error=>resolve({error}));ff.on('close',code=>resolve({code}));});
  for await(const chunk of ff.stdout){let off=0;
   while(off<chunk.length){const n=Math.min(chunk.length-off,frameBytes-filled);chunk.copy(frame,filled,off,off+n);filled+=n;off+=n;if(filled<frameBytes)break;filled=0;
-   metrics.ms.decodeWait+=now()-waitFrom;const t=base+(k-k0)/FPS,isHud=k%HUD_EVERY===0;k++;metrics.frames++;const img={data:frame,width:W,height:H};
+   metrics.ms.decodeWait+=now()-waitFrom;const t=base+(k-k0)/FPS,isHud=k%HUD_EVERY===0;k++;lastT=t;metrics.frames++;const img={data:frame,width:W,height:H};
    if(isHud){const t0=now();metrics.hudFrames++;
     if(dy===null){dy=calibrationCache.run(img,()=>C.calibrate(img));hudOffset.dy=dy;}
     let hud=dy===null?null:C.readHud(img,dy);
@@ -119,7 +119,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
      if(tracker.awaitingResult(t)&&C.resultCandidate(band)){metrics.resultReads++;const r=ocr(img,[0,y0,W,y1],{whiteText:true,lines:2});let value=C.outcome(r.text.replace(/\s+/g,' ')),text=r.text;
       // Chinese result screens (獲勝！/ 辛苦了！) and CJK matchmaking text need the video's language model.
       if(!value&&cjkLang()&&!C.isMatchmaking(text)){metrics.localeResultReads=(metrics.localeResultReads||0)+1;text=ocrLocale(img,[0,y0,W,y1],cjkLang(),{whiteText:true,lines:2}).text;value=C.outcome(text);}
-      if(value)tracker.result(t,value);else if(C.isMatchmaking(text))tracker.matchmaking();}
+      if(value)tracker.result(t,value);else if(C.isMatchmaking(text))tracker.matchmaking();else tracker.unreadResult(t);}
      else if(C.surrenderCandidate(band)&&t-lastSurrender>4)readSurrender(t,img,[0,y0,W,y1]);
 }
     // Banners ("X used Y!", "Go, X!"), with or without nameplates on screen; OCR only new text.
@@ -141,7 +141,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
      if(kind){const last=effects.findLast?.(x=>x.side===side)??[...effects].reverse().find(x=>x.side===side);if(!last||last.kind!==kind||t-last.t>.8)effects.push({t,side,kind});else last.t=t;}}metrics.denseFrames++;metrics.ms.bars+=now()-t0;}
    waitFrom=now();}}
  const status=await finishedDecode;if(status.error||status.code!==0||filled)throw status.error||Error(`Incomplete ffmpeg decode (exit ${status.code}, ${filled} trailing bytes)`);}
- const finished=tracker.finish(),league=Number(process.env.LEAGUE||1500),rankings=new Map(require(`../../includes/pro/data/league-${league}.json`).overall.map(r=>[r.speciesId,r]));
+ const videoEnd=lastT,finished=tracker.finish({videoEnd}),league=Number(process.env.LEAGUE||1500),rankings=new Map(require(`../../includes/pro/data/league-${league}.json`).overall.map(r=>[r.speciesId,r]));
  const t0=now();
  // Each matchup uses every dense frame between its first and last nameplate sighting (+0.5 s).
  const lower=t=>{let lo=0,hi=dense.length;while(lo<hi){const m=(lo+hi)>>1;if(dense[m].t<t)lo=m+1;else hi=m;}return lo;};
@@ -181,11 +181,13 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     series:{t0:d.t0!=null?+d.t0.toFixed(2):null,fps:FPS,my:d.series.my.map(p=>p?+p.fill.toFixed(3):null),opponent:d.series.opponent.map(p=>p?+p.fill.toFixed(3):null)},fit,result:r});}
   b.evidence=battleEvidence(b);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))K.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById,fit);}
  // Focus shots during charged attacks (camera on one Pokémon) for the Shadow classifier (aura.js focusMoments).
+ // Results from the timeline once the HP series exist (core.js inferResult).
+ C.applyInferredResults(finished,{videoEnd});
  for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);b.focus=Aura.focusMoments(b,window(b.start-2,b.end+8).map(f=>barP===Hp.BAR?f:{...f,bars:forFocus(f.bars)}),W);}
  const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled,fit);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=K.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit});}Aura.applyToBattle(b,undefined,learned);}Shadow.applyToBattles(finished,undefined,{learned,rankings,moveTypes:new Map(gm.moves.map(m=>[m.moveId,m.type]))});
  metrics.ms.fit=now()-t0;
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
- const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
+ const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,...(b.resultReason?{resultReason:b.resultReason}:{}),ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
  metrics.ocrCache={...ocrEngine.metrics};metrics.ocrCalls=metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads+(metrics.effectReads||0)+(metrics.surrenderReads||0);
  metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};metrics.nameLanguage={lang:nameLanguage.lang,votes:Object.fromEntries(Object.entries(nameLanguage.votes).map(([l,v])=>[l,v.size])),tries:nameLanguage.tries};
  const seconds=(Date.now()-started)/1000,videoSeconds=k/FPS;

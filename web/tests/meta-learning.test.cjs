@@ -37,3 +37,17 @@ test('refit applies the run\u2019s gamemaster to the Shadow answer: no Shadow en
 module.exports={fixture};
 
 test('Download answers JSON folds without model-generated labels or duplicate correction counts',()=>{const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cp=require('node:child_process'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'meta-fold-'));try{const file=path.join(dir,'answers.json'),out=path.join(dir,'learned.json');fs.writeFileSync(file,JSON.stringify({answers:[{qid:'same',kind:'fastMove',species:'claydol',value:'CONFUSION'},{qid:'same',kind:'fastMove',species:'claydol',value:'MUD_SLAP'},{qid:'model',kind:'fastMove',species:'claydol',value:'CONFUSION',source:'model'},{qid:'null',kind:'shadow',species:'claydol',value:null}]}));cp.execFileSync(process.execPath,[path.join(__dirname,'meta-benchmark/fold-answers.cjs'),file],{env:{...process.env,LEARNED_OUT:out,NO_LABELS:'1'}});assert.deepEqual(JSON.parse(fs.readFileSync(out)).moves,{claydol:{MUD_SLAP:1}});}finally{fs.rmSync(dir,{recursive:true,force:true});}});
+
+test('result questions: the timeline settles or closes them by policy, re-derived from the saved run; answers and reopened ones are left alone',()=>{
+ const opts=require('../includes/meta/questions.js').RESULT_OPTIONS,Cc=require('../includes/meta/core.js');
+ const b=(start,end,extra={})=>({start,end,result:'Unknown',resultSource:'',fainted:{my:0,opponent:0},flags:[],events:[],my:[],opponent:[],matchups:[],...extra});
+ const raw={end:500,full:[b(0,100,{fainted:{my:1,opponent:3}}),b(107,200),b(205,300,{events:[{t:299,kind:'surrender'}]}),b(360,400)]};
+ const run=refitRun(raw,{gm});assert.deepEqual(run.full.map(x=>x.resultSource),['faints','unresolvable','surrender','']);
+ const q=i=>({qid:`claude-test:v.mp4:${i}:result`,kind:'result',battle:i,recording:'v.mp4',video:{id:'v'},clip:[raw.full[i].end-2,raw.full[i].end+14],options:opts});
+ let r=L.resultResolution(q(0),run,7);assert.deepEqual([r.value,r.source,r.rule],['Win','timeline','faints']);
+ r=L.resultResolution(q(1),run,7);assert.deepEqual([r.value,r.source,r.policy],[null,'policy','no-result-screen']);assert.match(r.reason,/No result screen; timeline inconclusive/);
+ assert.equal(L.resultResolution(q(2),run,7).value,'Loss:you-forfeit');assert.equal(L.resultResolution(q(3),run,7),null);
+ assert.equal(L.resultResolution({...q(0),clip:[50,66]},run,7),null);// the battle moved since the question was exported
+ const m=L.resultMetrics([{qid:q(0).qid,kind:'result',battle:0,video:{id:'v'},value:'Win'},{qid:q(2).qid,kind:'result',battle:2,video:{id:'v'},value:'Loss'}],new Map([['v',run]]));
+ assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:1,byRule:{faints:{right:1,total:1},surrender:{right:0,total:1}}});assert.deepEqual(m.sources,{read:0,inferred:0,human:2,unresolvable:1,open:1});
+ assert.equal(Cc.inferResult(run.full[3],{next:null,videoEnd:500}),null);});

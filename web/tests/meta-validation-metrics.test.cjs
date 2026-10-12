@@ -70,3 +70,12 @@ test('chart colours are theme variables, never fixed hex, so a theme switch reco
  assert.ok(painted.length>20);assert.deepEqual(painted.filter(v=>!/^var\(--[\w-]+\)$/.test(v)),[]);
  const src=fs.readFileSync(path.join(__dirname,'../includes/meta/validation-metrics.js'),'utf8');assert.doesNotMatch(src,/#[0-9a-f]{6}\b/i);
 });
+
+test('result questions closed by policy are their own band, not model resolved; result tiles show sources and timeline accuracy',()=>{
+ const r={refit:9,at:'2026-10-12T10:00:00+00:00',labels:{result:51},open:{result:700},resolved:{model:{shadow:10},timeline:{result:60},policy:{result:780}},questions:2000,
+  heldOut:{result:{right:3,total:3}},results:{read:1400,inferred:120,human:51,unresolvable:800,open:700}};
+ const s=M.statusSeries({records:[r]})[0];assert.equal(s.resolved,70);assert.equal(s.unresolvable,780);assert.equal(s.answered,2000-700-70-780);
+ const tiles=M.tiles({records:[r]},{resolved:70,resolvedModel:10,resolvedFree:0,resolvedTimeline:60,unresolvable:780,open:700,questions:2000});
+ const res=tiles.find(t=>t.key==='result');assert.equal(res.label,'Battle outcomes · timeline vs your answers');assert.equal(res.value,'100%');
+ const by=tiles.find(t=>t.key==='results');assert.equal(by.value,'3,071');assert.match(by.detail,/1,400 read · 120 inferred · 51 human · 800 unresolvable · 700 open/);assert.match(by.delta.text,/780 questions closed as unresolvable/);
+ assert.match(tiles.find(t=>t.key==='resolved').detail,/60 results from the timeline/);});

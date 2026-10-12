@@ -40,7 +40,9 @@ function mount({host,records=()=>[],shared=()=>[],speciesName=id=>id}){if(!host|
   for(const r of sorted.slice(0,shown)){const row=el('tr');for(const c of columns){const td=el('td');if(c.numeric)td.className='num';const v=c.cell(r);if(v&&typeof v==='object')td.append(v);else td.textContent=v==null?'—':String(v);row.append(td);}body.append(row);}
   t.append(body);wrap.append(t);if(sorted.length>shown){const more=el('button',`Show all ${num(sorted.length)}`,'secondary meta-observed-more');more.type='button';more.onclick=()=>{state.limits[id]=sorted.length;render();};wrap.append(more);}return wrap;}
  const stack=(main,sub)=>{const d=el('div');d.append(typeof main==='object'?main:el('span',main));if(sub)d.append(el('small',sub));return d;};
- const record=t=>stack(t.winRate==null?'—':pct(t.winRate),`${t.wins} W · ${t.losses} L${t.ties?` · ${t.ties} T`:''}${t.unknown?` · ${t.unknown} ?`:''}`);
+ // Where the counted results came from: read from a result screen, inferred from the timeline, or a person's answer.
+ const resultFrom=t=>{const r=t.resultFrom||{},parts=[['read','read'],['inferred','inferred'],['human','human']].filter(([k])=>r[k]).map(([k,l])=>`${r[k]} ${l}`);return parts.length?parts.join(' · '):'';};
+ const record=t=>{const d=stack(t.winRate==null?'—':pct(t.winRate),`${t.wins} W · ${t.losses} L${t.ties?` · ${t.ties} T`:''}${t.unknown?` · ${t.unknown} ?`:''}`),from=resultFrom(t);if(from){d.append(el('small',from));d.title=`Results: ${from}${t.unknown?` · ${t.unknown} unknown`:''}`;}return d;};
  const dates=t=>t.first?stack(t.first,t.first===t.last?'':`to ${t.last}`):'—';
  // ---- sparkline (single series; null periods break the line) ----
  function sparkline(values,labels){const w=84,h=22,pad=3,max=Math.max(...values.filter(v=>v!=null),.01),pts=values.map((v,i)=>v==null?null:[pad+(values.length===1?0:i*(w-2*pad)/(values.length-1)),h-pad-v/max*(h-2*pad)]);

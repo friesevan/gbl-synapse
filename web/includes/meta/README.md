@@ -23,7 +23,7 @@ shields left and type icons. The field shows HP bars, animations and banners.
 | Lead | The first opponent species seen in the battle. | First stable nameplate | If the opponent swaps out within the first second, the lead may be read late or missed. "Go, X!" banners are now recorded and could settle it. |
 | Team (up to 3) | Every species revealed in the battle. | Nameplates | The third Pokémon is often never sent out. A team is "complete" only when all three appear. |
 | CP | The CP box is read and cached like names; majority vote per Pokémon. | CP text | None significant |
-| Result | A YOU WIN / GOOD EFFORT screen (read only when the battle can have ended), cross-checked with three dark balls. | Result screen, ball count | No result screen and no ball count, e.g. you leave the app |
+| Result | A YOU WIN / GOOD EFFORT screen (read only when the battle can have ended). Without one, the timeline: three dark balls, or two plus the last HP bar emptied at the end (*Results without a result screen*). | Result screen, ball count, HP bars | No result screen and an undecided timeline: unresolvable when the video cuts to the next battle or ends, else asked |
 | Forfeits | Yours: the "Surrender and exit?" dialog (a white card, confirmed by OCR), then a loss. The opponent's: a win before all their Pokémon fainted. | Dialog, ball count | Leaving the app without the dialog. An opponent's disconnect looks the same as a forfeit. |
 | Shields used | Shield icons on each nameplate; counts only increase. | HUD | None significant |
 | Form (regional, Origin, etc.) | Type-icon colours, voted over every stable frame of the battle. Forms that look identical are weighted by PvPoke ranking score, then by reviewer answers. A charged move the form can't learn rules it out. | Type icons, rankings, answers, charged moves | Forms with identical types (Dialga vs Dialga Origin) rest on priors only. Damage helps a little, since the forms' stats differ. |
@@ -201,7 +201,7 @@ v2 replaces the fixed-rate crop sampling, the 22-second gap rule and the two-rea
 1. **Keyframe sampling.** `mp4index.js` reads keyframe times from the MP4/MOV index without decoding (26 ms for a 10-minute file). Phone recordings have a keyframe about every second, and seeking exactly to one needs no forward decoding. Files without an index fall back to fixed 1 s / 0.5 s sampling.
 2. **Nameplate measurements instead of text.** `core.js` `readHud` measures both nameplates: three Poké Balls (red = available, dark = fainted), two shields, and a 64×12 fingerprint of the name. `calibrate` finds the vertical offset once, from the first battle frame, by centring the name boxes on the names’ text rows. Geometry scales with frame width.
 3. **One text read per distinct name.** `NameCache` reuses the OCR result for any nameplate within 6% of a fingerprint already read; unreadable plates are retried up to three times.
-4. **Battle structure from the HUD** (`HudTracker`). Fainted Poké Balls and used shields only increase within a battle, so a reset to fresh nameplates on both sides starts the next battle. Three fainted Poké Balls decide the result. A YOU WIN / GOOD EFFORT screen is read only when a battle can have ended (a side down to its last Pokémon, a fade to black, or 8 s without nameplates), and only when the white text is result-sized (70–115 reference px tall). Matchmaking text ends the search. A win with opponent Pokémon left is flagged as a probable early exit.
+4. **Battle structure from the HUD** (`HudTracker`). Fainted Poké Balls and used shields only increase within a battle, so a reset to fresh nameplates on both sides starts the next battle. Without a result screen the timeline decides when it can (`inferResult`, *Results without a result screen*). A YOU WIN / GOOD EFFORT screen is read only when a battle can have ended (a side down to its last Pokémon, a fade to black, or 8 s without nameplates), and only when the white text is result-sized (70–115 reference px tall). Matchmaking text ends the search. A win with opponent Pokémon left is flagged as a probable early exit.
 5. **Charged attacks** are read from the banner when its white-letter share looks like text, and credited to the Pokémon on the field (separating mirror matches, tolerating one misread letter).
 
 ### Benchmark
@@ -496,6 +496,48 @@ found, 0 extra, every opponent species, the same results).
 - Spanish move names differ from the game's for 13 moves (PokeAPI uses newer translations); Portuguese move names
   aren't in PokeAPI, so Portuguese "X usou Y!" banners resolve only English-named moves.
 - The remaining ">3 species" battle in cBePYfn3m1U (534–781 s) has no fade to split on.
+
+### Results without a result screen (2026-10-12)
+
+Most of the result questions came from videos that cut from the end of a battle straight to the next one. `core.js`
+`inferResult` now settles a result from the battle timeline when no result screen was read, and stops asking when the
+footage can't show one. A read result screen and a reviewer's answer always win. Measured on the saved harvest results
+(1,422 battles with a read result screen, the rules run as if none had been read) and the owner's 51 result answers
+(`tests/meta-benchmark/result-policy.cjs` repeats it):
+
+| Rule (`resultSource`) | Right vs read results | Right vs answers | Shipped |
+|---|---|---|---|
+| `faints`: Poké Ball counter at 3 for one side, battle seen from its start | 41/41 | – | yes |
+| same, recording started mid-battle | 7/15 | – | only if the HP bar agrees |
+| `faints`: counter at 2 on one side and ≤ 1 on the other, that side's last HP bar empty (≤ 3%) within 3 s of the end, the other ≥ 10% | 67/67 (105/105 with the above) | 3/3 | yes |
+| same with two fainted on both sides | 41/49 | – | no |
+| `surrender`: the dialog, then the HUD gone within 3 s → you forfeited | 118/118 | – | yes (was already used) |
+| fade to black with both bars alive → the opponent forfeited | 7/12 wins | 10/14 forfeits | no |
+
+The game fades to black at every battle end (knockouts, forfeits and surrenders alike: 34 of 62 undecided battles in 14
+cached videos faded within 4 s of the last HUD, as did the read ones), so a fade doesn't identify a forfeit; the final
+knockout usually happens during a charged-attack cutscene, without HP bars. The first fade after the last HUD is kept as
+`fadeAt` for later work. Timer endings (both sides alive at 0:00, decided by remaining HP) would need the clock, which
+isn't read: they stay questions.
+
+When nothing decides, the result is `unresolvable` (no question) if the next battle's HUD appears within 10 s of the last
+one (a cut, or under 3 s a split battle) or the recording ends within 10 s; otherwise the question stays. A result-sized
+white text band that OCR couldn't read (`resultUnread`, recorded from now on) keeps the question: a person can read it.
+Caveats from the same data: 126 battles whose result screen *was* read would also have met the cut rule (a result screen
+shown for a second before the cut), and 34 of the owner's 51 answers were in battles this rule now calls unresolvable
+(14 wins, 13 opponent forfeits, 6 losses, 1 tie): a person watching the last frames can often tell. Closures are
+reversible policy records, so Reopen brings any of them back.
+
+Where it runs: `HudTracker.finish({videoEnd})`, then `applyInferredResults` again in `run-node.cjs` and `ui.js` once the
+matchups' HP series exist, and in `refit.cjs` on every refit, so saved results get the current rules without decoding
+(older saved results lack `fadeAt`/`resultUnread`; the next re-extraction adds them). In Validate, `learning-loop.cjs`
+settles open result questions with a `timeline` resolution (the inferred value) or closes them with a `policy` record
+(value none, reason "No result screen; timeline inconclusive"); both are re-derived each refit, neither is a label, and
+policy closures are counted apart from model resolutions. The metrics record each refit's results by source (read /
+inferred / human / unresolvable / open) and the inferred results' agreement with reviewer answers ("Battle outcomes ·
+timeline vs your answers"). Observed meta and the usage export apply timeline results like read ones, human answers
+still win, and team win rates show how many results were read, inferred or answered. Dry run on 2026-10-12: of the open
+result questions, 64 are settled by the timeline (58 faints, 6 surrender), 775 closed as unresolvable, 717 still asked.
 
 ### Effectiveness text (`hp.js` effectBox/effectSig/effectKind, `combat.js` effectLogL)
 When a fast attack lands, the game flashes **SUPER EFFECTIVE!** or **NOT VERY EFFECTIVE…** in white just above the target's HP bar. Every sampled frame checks that strip (from 6 px left of the bar to 320 px right, 3–50 px above it, at the 886 px reference width) with a 96×12 fingerprint of near-white pixels. The strip is read only when it looks like text:

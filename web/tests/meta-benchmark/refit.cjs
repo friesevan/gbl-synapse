@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Re-score saved physical HP/cadence evidence, without decoding footage or conditioning on answers.
-const fs=require('node:fs'),K=require('../../includes/meta/combat.js'),Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),Q=require('../../includes/meta/questions.js');
+const fs=require('node:fs'),K=require('../../includes/meta/combat.js'),Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),Q=require('../../includes/meta/questions.js'),C=require('../../includes/meta/core.js');
 function loadGameMaster(file){const g=file?JSON.parse(fs.readFileSync(file,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;}
 // League CP for one battle when no label sets it: the video's league unless the nameplate CPs rule it out
 // (a CP above the cap means a higher league; three or more CPs, all at most 500, mean Little Cup).
@@ -8,6 +8,8 @@ function battleLeague(b,league){const cps=[...(b.my||[]),...(b.opponent||[])].ma
  if(top>league)return top<=1500?1500:top<=2500?2500:10000;if(top<=500&&cps.length>=3&&league>500)return 500;return league;}
 function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings,params={},channel,shadowModel,speciesPurple}={}){
  const run=structuredClone(input),byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),cache=new Map();
+ // Results without a result screen are re-derived from the saved timeline with the current rules (core.js inferResult).
+ C.applyInferredResults(run.full||[],{videoEnd:C.runEnd(run)});
  const ranks=cp=>{if(rankings)return rankings;if(!cache.has(cp)){const f=require(`../../includes/pro/data/league-${cp}.json`);cache.set(cp,new Map(f.overall.map(r=>[r.speciesId,r])));}return cache.get(cp);};
  const entries=p=>(p.candidates||[]).filter(c=>/mega|primal/i.test(p.label||'')||!/_(mega|primal)/.test(c.id)).map(c=>byId.get(c.id)).filter(Boolean);
  const summary=(sizes,turns,times)=>sizes?.length>=2?{sizes,times:times?.length===sizes.length?times:undefined,turns:turns??null,repeats:Math.max(0,sizes.length-2)}:null;

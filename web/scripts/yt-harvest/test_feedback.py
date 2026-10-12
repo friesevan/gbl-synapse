@@ -359,5 +359,30 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(out["records"][-1]["refit"], 1)
 
 
+    def test_timeline_and_policy_result_closures_are_separate_from_model_resolutions(self):
+        q = {"qid": "r1", "kind": "result", "battle": 0, "recording": "v.mp4", "options": [{"value": "Win", "label": "You won"}]}
+        q2 = {**q, "qid": "r2", "battle": 1}
+        res = self.fit_result({"r1": {"source": "timeline", "value": "Win", "rule": "faints", "label": "You won"},
+                               "r2": {"source": "policy", "value": None, "policy": "no-result-screen", "reason": "No result screen; timeline inconclusive."}})
+        res["calibration"]["result"] = {"heldOut": 3, "heldOutRight": 3}
+        res["resultSources"] = {"read": 10, "inferred": 1, "human": 3, "unresolvable": 1, "open": 2}
+        self.service._fit = lambda qs, a, v: res
+        self.service.data["questions"].update(r1=q, r2=q2)
+        self.service.retrain()
+        self.service.thread.join(10)
+        st = self.service.state()
+        self.assertEqual(st["learning"]["resolved"], 1)
+        self.assertEqual(st["learning"]["policyClosed"], 1)
+        self.assertEqual(st["resolutions"]["r2"]["source"], "policy")
+        rec = self.service.metrics()["records"][-1]
+        self.assertEqual(rec["resolved"]["timeline"], {"result": 1})
+        self.assertEqual(rec["resolved"]["policy"], {"result": 1})
+        self.assertNotIn("result", rec["resolved"].get("model", {}))
+        self.assertEqual(rec["heldOut"]["result"], {"right": 3, "total": 3})
+        self.assertEqual(rec["results"]["unresolvable"], 1)
+        # Reopen (or a human answer) replaces a policy record, and the next refit leaves it open.
+        self.service.reopen("r2")
+        self.assertNotIn("r2", self.service.state()["resolutions"])
+
 if __name__ == "__main__":
     unittest.main()

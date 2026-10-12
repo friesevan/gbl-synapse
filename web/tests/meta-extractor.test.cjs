@@ -121,8 +121,53 @@ test('the phone screen is found inside a wide frame by its edges and a readable 
 test('the Surrender dialog marks a following loss as your forfeit, ends a battle with no result screen, and is ignored if you go on to win',()=>{
  assert.equal(C.isSurrender('Surrender and exit? You won’t receive any rewards.'),true);assert.equal(C.isSurrender('YOU WIN!'),false);assert.equal(C.surrenderCandidate({white:.8}),true);assert.equal(C.surrenderCandidate({white:.05}),false);
  const a=new C.HudTracker();a.observe(0,hud(side('Melmetal'),side('Clodsire')));a.observe(10,hud(side('Melmetal'),side('Clodsire')));a.surrender(12);a.result(18,'Loss');let b=a.finish()[0];assert.equal(b.result,'Loss');assert.equal(b.ending,'you-forfeit');
- const n=new C.HudTracker();n.observe(0,hud(side('Melmetal'),side('Clodsire')));n.observe(10,hud(side('Melmetal'),side('Clodsire')));n.surrender(11);b=n.finish()[0];assert.equal(b.result,'Loss');assert.equal(b.resultSource,'surrender dialog');
+ const n=new C.HudTracker();n.observe(0,hud(side('Melmetal'),side('Clodsire')));n.observe(10,hud(side('Melmetal'),side('Clodsire')));n.surrender(11);b=n.finish()[0];assert.equal(b.result,'Loss');assert.equal(b.resultSource,'surrender');assert.equal(b.ending,'you-forfeit');
  const w=new C.HudTracker(),X=['fainted','fainted','fainted'];w.observe(0,hud(side('Melmetal'),side('Clodsire')));w.surrender(5);w.observe(20,hud(side('Melmetal'),side('Clodsire',X,0)));b=w.finish()[0];assert.equal(b.result,'Win');assert.equal(b.ending,undefined);});
+// ---- Results from the battle timeline (core.js inferResult) ----
+// A battle with given fainted counts, flags and an HP series (10/s) for its last matchup ending at `end`.
+const tl=({start=0,end=100,fm=0,fo=0,flags=[],my=[],opp=[],events=[],extra={}}={})=>({start,end,result:'Unknown',resultSource:'',fainted:{my:fm,opponent:fo},flags,events,my:[],opponent:[],
+ matchups:my.length||opp.length?[{start:end-my.length/10,end,my:'a',opponent:'b',series:{t0:end-Math.max(my.length,opp.length)/10,fps:10,my,opponent:opp}}]:[],...extra});
+const fill=(n,v)=>Array(n).fill(v);
+test('timeline results: all three fainted on the counter decides, unless the recording started mid-battle',()=>{
+ let r=C.inferResult(tl({fo:3,fm:1}));assert.equal(r.result,'Win');assert.equal(r.source,'faints');
+ assert.equal(C.inferResult(tl({fm:3,fo:2})).result,'Loss');
+ assert.equal(C.inferResult(tl({fo:3,flags:['Recording starts mid-battle: lead may be missing']})),null);
+ // Mid-battle start: the HP bar has to agree (the opponent's last bar empty, yours alive).
+ r=C.inferResult(tl({fo:3,flags:['Recording starts mid-battle: lead may be missing'],my:fill(30,.6),opp:fill(30,0)}));assert.equal(r.result,'Win');
+ assert.equal(C.inferResult(tl({fo:3,fm:3})),null);});
+test('timeline results: two fainted on the counter and the last HP bar emptied at the end is the third faint',()=>{
+ let r=C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:[...fill(10,.3),...fill(20,0)]}));assert.equal(r.result,'Win');assert.equal(r.source,'faints');
+ r=C.inferResult(tl({fm:2,fo:0,my:fill(30,.01),opp:fill(30,.7)}));assert.equal(r.result,'Loss');
+ // Not when both sides have two fainted (41/49 right in the measurement), the other bar is nearly empty too, or the
+ // empty reading is more than 3 s before the end.
+ assert.equal(C.inferResult(tl({fo:2,fm:2,my:fill(30,.5),opp:fill(30,0)})),null);
+ assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.05),opp:fill(30,0)})),null);
+ assert.equal(C.inferResult(tl({fo:2,fm:1,end:100,my:fill(30,.5),opp:fill(30,0),extra:{end:105}})),null);});
+test('timeline results: surrender dialog, then the battle ends: you forfeited',()=>{
+ const r=C.inferResult(tl({end:50,events:[{t:48,kind:'surrender'}]}));assert.deepEqual([r.result,r.ending,r.source],['Loss','you-forfeit','surrender']);
+ assert.equal(C.inferResult(tl({end:50,events:[{t:30,kind:'surrender'}]})),null);});
+test('timeline results: unresolvable when the footage cuts to the next battle or ends; a result-like screen keeps the question',()=>{
+ let r=C.inferResult(tl({end:100}),{next:107});assert.equal(r.source,'unresolvable');assert.match(r.reason,/next battle/);
+ assert.equal(C.inferResult(tl({end:100}),{next:100.5}).source,'unresolvable');
+ assert.equal(C.inferResult(tl({end:100}),{next:125}),null);
+ r=C.inferResult(tl({end:100}),{videoEnd:104});assert.equal(r.source,'unresolvable');assert.match(r.reason,/recording ends/);
+ assert.equal(C.inferResult(tl({end:100}),{videoEnd:300}),null);
+ assert.equal(C.inferResult(tl({end:100,extra:{resultUnread:1}}),{next:107}),null);
+ // The timeline still decides when it can, cut or not.
+ assert.equal(C.inferResult(tl({end:100,fo:3}),{next:107}).result,'Win');});
+test('applyInferredResults re-derives inferred and legacy sources but never a read result screen or a reviewer answer',()=>{
+ const bs=[tl({end:100,extra:{result:'Win',resultSource:'Poké Ball count',flags:['Recording starts mid-battle: lead may be missing'],fainted:{my:0,opponent:3}}}),
+  tl({start:105,end:200,extra:{result:'Loss',resultSource:'result screen'}}),tl({start:205,end:300,extra:{result:'Win',resultSource:'reviewer'}}),tl({start:306,end:400,fo:3})];
+ C.applyInferredResults(bs,{videoEnd:402});
+ assert.deepEqual(bs.map(b=>[b.result,b.resultSource]),[['Unknown','unresolvable'],['Loss','result screen'],['Win','reviewer'],['Win','faints']]);
+ assert.ok(bs[0].resultReason);assert.equal(C.applyInferredResults(bs,{videoEnd:402}),bs);assert.equal(bs[3].resultSource,'faints');
+ assert.equal(C.runEnd({end:null,ranges:[[0,10],[20,90]],videoSeconds:80}),90);assert.equal(C.runEnd({start:5,videoSeconds:100}),105);});
+test('HUD tracker: a fade to black is kept as fadeAt, an unread result-like screen as resultUnread, and finish infers results',()=>{
+ const t=new C.HudTracker();t.observe(0,hud(side('Melmetal'),side('Clodsire')));t.observe(10,hud(side('Melmetal'),side('Clodsire')));t.blackout(12);t.blackout(12.5);t.unreadResult(14);
+ const b=t.finish({videoEnd:16})[0];assert.equal(b.fadeAt,12);assert.equal(b.resultUnread,1);assert.equal(b.result,'Unknown');assert.equal(b.resultSource,'');
+ const u=new C.HudTracker();u.observe(0,hud(side('Melmetal'),side('Clodsire')));u.observe(10,hud(side('Melmetal'),side('Clodsire')));const c=u.finish({videoEnd:15})[0];assert.equal(c.resultSource,'unresolvable');
+ const Q=require('../includes/meta/questions.js');assert.equal(Q.questions([c],{pokemon:gm.pokemon,moves:gm.moves}).filter(q=>q.kind==='result').length,0);
+ assert.equal(Q.questions([b],{pokemon:gm.pokemon,moves:gm.moves}).filter(q=>q.kind==='result').length,1);});
 test('HUD tracker: a long nameplate gap mid-battle continues the battle; after a fade to black or a fresh HUD it does not',()=>{
  const F=['fainted','alive','alive'],t=new C.HudTracker();t.observe(0,hud(side('Blastoise'),side('Wigglytuff')));t.observe(10,hud(side('Blastoise',F,1),side('Wigglytuff')));t.observe(45,hud(side('Clodsire',F,1),side('Marowak')));
  let b=t.finish();assert.equal(b.length,1);assert.deepEqual(b[0].opponent.map(p=>p.label),['Wigglytuff','Marowak']);

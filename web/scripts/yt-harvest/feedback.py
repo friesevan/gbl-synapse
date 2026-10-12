@@ -33,6 +33,12 @@ EXTERNAL_SOURCES = {"freellm", "local-llm", "haiku"}
 # "freellm" (free-tier APIs, phased out 2026-10-12) needs two different providers to agree; the others
 # are one model whose two independent calls agreed above the gate's confidence threshold.
 MULTI_PROVIDER_SOURCES = {"freellm"}
+# Result questions settled by the battle timeline (learning-loop.cjs resultResolution, re-derived on every refit):
+# "timeline" carries the inferred result (Poké Ball counter / HP bar / surrender dialog); "policy" closes a result
+# question the footage can't answer (no result screen: the video cuts to the next battle or ends; value None).
+# Both are reversible (Reopen, or a human answer replaces them), never labels, and policy records are not counted
+# as model resolutions (learning.resolved, metrics_history "policy" bucket).
+TIMELINE_SOURCE, POLICY_SOURCE = "timeline", "policy"
 # Fast-move/form evidence settings are refitted (movefit-fit.cjs) once this many new labels have arrived.
 PARAM_REFIT_EVERY = 24
 
@@ -396,7 +402,10 @@ class FeedbackService:
                     self.data["resolutions"] = next_resolutions
                     self.data["predictions"] = result["predictions"]
                     self.data["learning"].update(status="idle", version=version, lastFit=now(), progress="Saved prior model; uncertain questions remain open",
-                        calibration=result["calibration"], runsRefit=result["runsRefit"], resolved=len(next_resolutions), errors=result["errors"], error=None,
+                        calibration=result["calibration"], runsRefit=result["runsRefit"], errors=result["errors"], error=None,
+                        resolved=sum(1 for r in next_resolutions.values() if r.get("source") != POLICY_SOURCE),
+                        policyClosed=sum(1 for r in next_resolutions.values() if r.get("source") == POLICY_SOURCE),
+                        resultSources=result.get("resultSources"),
                         shadowModel=result.get("shadowModel"))
                     result["learned"].update(modelVersion=version, updatedAt=now(), modelType="Bayesian species / move priors + Shadow classifier")
                     atomic_json(self.web / "tests/meta-benchmark/learned.json", result["learned"])

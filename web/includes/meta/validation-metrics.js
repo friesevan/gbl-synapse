@@ -13,7 +13,10 @@ const KINDS=[
 const STATUS=[
  {key:'answered',label:'Human answered',color:'var(--pf-human)'},
  {key:'resolved',label:'Model resolved',color:'var(--pf-model)'},
+ {key:'unresolvable',label:'Unresolvable (no result screen)',color:'var(--pf-policy)'},
  {key:'open',label:'Open',color:'var(--pf-open)'}];
+// Battle results by where they came from (metrics record `results`, learning-loop.cjs resultMetrics).
+const RESULT_SOURCES=[['read','read'],['inferred','inferred'],['human','human'],['unresolvable','unresolvable'],['open','open']];
 const KIND_LABEL={shadow:'Shadow',fastMove:'Fast move',form:'Form',result:'Battle outcome',footage:'Battle footage',league:'League / cup',lead:'Opponent lead',perspective:'Championship perspective',other:'Other'};
 
 // ---- pure helpers ----
@@ -30,19 +33,26 @@ function records(history){return (Array.isArray(history?.records)?history.record
 function accuracySeries(history){return records(history).filter(r=>KINDS.some(k=>ratio(r.heldOut?.[k.key])!==null)).map(r=>({refit:r.refit,at:r.at,backfilled:!!r.backfilled,labels:r.labels||{},
  values:Object.fromEntries(KINDS.map(k=>[k.key,ratio(r.heldOut?.[k.key])])),heldOut:r.heldOut||{}}));}
 // Queue status after each refit; only refits that recorded all three counts (no zero-filling).
-function statusSeries(history){return records(history).filter(r=>r.open&&r.resolved&&r.labels&&num(r.questions)).map(r=>{const resolved=sum(r.resolved.model)+Object.entries(r.resolved).filter(([k])=>k!=='model').reduce((s,[,v])=>s+sum(v),0),open=sum(r.open);
- return {refit:r.refit,at:r.at,backfilled:!!r.backfilled,questions:r.questions,open,resolved,answered:Math.max(0,r.questions-open-resolved),resolvedBy:r.resolved};});}
+// Policy closures ("policy": result questions the footage can't answer) are their own band, never model resolved.
+function statusSeries(history){return records(history).filter(r=>r.open&&r.resolved&&r.labels&&num(r.questions)).map(r=>{const resolved=Object.entries(r.resolved).filter(([k])=>k!=='policy').reduce((s,[,v])=>s+sum(v),0),unresolvable=sum(r.resolved.policy),open=sum(r.open);
+ return {refit:r.refit,at:r.at,backfilled:!!r.backfilled,questions:r.questions,open,resolved,unresolvable,answered:Math.max(0,r.questions-open-resolved-unresolvable),resolvedBy:r.resolved};});}
 function shadowSeries(history){return records(history).filter(r=>num(r.heldOut?.shadow?.auc)||num(r.heldOut?.shadow?.logLoss)).map(r=>({refit:r.refit,at:r.at,backfilled:!!r.backfilled,s:r.heldOut.shadow,base:r.heldOut.shadow.baseline||{}}));}
 // Headline tiles: held-out accuracy per kind with the change since the previous refit that measured it,
 // then live queue counts (answers, model resolved, open) with the change since the last refit.
 function tiles(history,live={}){const recs=records(history),out=[],last=recs.at(-1);
  for(const k of KINDS){let cur=null,prev=null;for(let i=recs.length-1;i>=0;i--){if(ratio(recs[i].heldOut?.[k.key])===null)continue;if(!cur)cur=recs[i];else{prev=recs[i];break;}}
   if(!cur)continue;const h=cur.heldOut[k.key],v=ratio(h),d=prev?v-ratio(prev.heldOut[k.key]):null;
-  out.push({key:k.key,label:`${k.plural} · held out`,value:fmtPct(v),detail:`${fmtInt(h.right)} of ${fmtInt(h.total)} right${num(h.auc)?` · AUC ${h.auc.toFixed(2)}`:''}`,
+  out.push({key:k.key,label:k.key==='result'?'Battle outcomes · timeline vs your answers':`${k.plural} · held out`,value:fmtPct(v),detail:`${fmtInt(h.right)} of ${fmtInt(h.total)} right${num(h.auc)?` · AUC ${h.auc.toFixed(2)}`:''}`,
    delta:d===null?{text:`First measured at refit ${cur.refit}`,dir:0}:Math.abs(d)<5e-4?{text:`Unchanged since refit ${prev.refit}`,dir:0}:{text:`${d>0?'▲':'▼'} ${Math.abs(d*100).toFixed(1)} pts vs refit ${prev.refit}`,dir:Math.sign(d)}});}
  const since=(now,then)=>num(now)&&num(then)&&last?{text:now===then?`Unchanged since refit ${last.refit}`:`${now>then?'+':'−'}${fmtInt(Math.abs(now-then))} since refit ${last.refit}`,dir:0}:null;
  if(num(live.answers))out.push({key:'answers',label:'Answers given',value:fmtInt(live.answers),detail:live.notSure?`${fmtInt(live.answers-live.notSure)} confirmed · ${fmtInt(live.notSure)} not sure`:'Your confirmed answers train the model',delta:since(live.answers,last?.answers?sum(last.answers):null)});
- if(num(live.resolved))out.push({key:'resolved',label:'Model resolved',value:fmtInt(live.resolved),detail:`${fmtInt(live.resolvedModel)} model · ${fmtInt(live.resolvedFree)} LLM`,delta:since(live.resolved,last?.resolved?statusSeries({records:[last]})[0]?.resolved:null)});
+ if(num(live.resolved))out.push({key:'resolved',label:'Model resolved',value:fmtInt(live.resolved),detail:`${fmtInt(live.resolvedModel)} model · ${fmtInt(live.resolvedFree)} LLM${live.resolvedTimeline?` · ${fmtInt(live.resolvedTimeline)} results from the timeline`:''}`,delta:since(live.resolved,last?.resolved?statusSeries({records:[last]})[0]?.resolved:null)});
+ // Results by source: read from a result screen, inferred from the timeline, answered by a person, unresolvable
+ // (no result screen in the footage), open. From the latest refit that recorded them; closed policy questions live.
+ const withResults=[...recs].reverse().find(r=>r.results&&typeof r.results==='object');
+ if(withResults){const r=withResults.results,total=RESULT_SOURCES.reduce((s,[k])=>s+(num(r[k])?r[k]:0),0);out.push({key:'results',label:'Battle results by source',value:fmtInt(total),
+  detail:RESULT_SOURCES.filter(([k])=>num(r[k])).map(([k,l])=>`${fmtInt(r[k])} ${l}`).join(' · '),delta:{text:`Refit ${withResults.refit}${num(live.unresolvable)?` · ${fmtInt(live.unresolvable)} questions closed as unresolvable`:''}`,dir:0}});}
+ else if(num(live.unresolvable)&&live.unresolvable)out.push({key:'results',label:'Unresolvable results',value:fmtInt(live.unresolvable),detail:'Result questions closed: no result screen, timeline inconclusive',delta:null});
  if(num(live.open))out.push({key:'open',label:'Open questions',value:fmtInt(live.open),detail:num(live.questions)?`of ${fmtInt(live.questions)} questions`:'',delta:since(live.open,last?.open?sum(last.open):null)});
  return out;}
 
@@ -154,7 +164,7 @@ function shadowFigures(history,width){const rows=shadowSeries(history);if(!rows.
 function statusFigure(history,width){const rows=statusSeries(history).slice(-40);if(!rows.length)return null;
  return stackedChart({title:'Questions after each refit',subtitle:'Human answered, model resolved and still open',width,height:220,rows,
   note:`Recorded from refit ${rows[0].refit} on${rows.length===40?' (last 40 refits shown)':''}. Earlier refits saved only answer counts (data table of the refit history).`,
-  table:['Questions after each refit',['Refit','Human answered','Model resolved','Open','Total'],[...rows].reverse().map(r=>[String(r.refit),fmtInt(r.answered),fmtInt(r.resolved),fmtInt(r.open),fmtInt(r.questions)])]});}
+  table:['Questions after each refit',['Refit','Human answered','Model resolved','Unresolvable','Open','Total'],[...rows].reverse().map(r=>[String(r.refit),fmtInt(r.answered),fmtInt(r.resolved),fmtInt(r.unresolvable),fmtInt(r.open),fmtInt(r.questions)])]});}
 const MIN_BIN=5;
 const CAL=[{key:'shadow',title:'Shadow classifier',x:'Predicted chance of Shadow',y:'Share that were Shadow',color:'var(--pf-s2)'},{key:'fastMove',title:'Fast moves',x:'Confidence in the top pick',y:'Share right',color:'var(--pf-s1)'},{key:'form',title:'Forms',x:'Confidence in the top pick',y:'Share right',color:'var(--pf-s3)'}];
 function calibrationFigures(history,width){const last=[...records(history)].reverse().find(r=>r.calibration&&Object.keys(r.calibration).length);if(!last)return null;
@@ -186,9 +196,9 @@ function milestonesSection(history){const ms=Array.isArray(history?.milestones)?
 function historySection(history){const recs=[...records(history)].reverse();if(!recs.length)return null;const box=el('details',undefined,'meta-perf-section meta-advanced');box.dataset.key='history';box.append(el('summary',`Refit history (${recs.length} refit${recs.length===1?'':'s'})`));
  if(recs.some(r=>r.backfilled))box.append(el('p','Backfilled rows were rebuilt when this history began: times and runs from each refit’s output folder, label counts from answer times (they may include answers saved while that refit ran), thresholds from the reasons quoted in resolutions, and the newest refit’s held-out metrics from what it stored. A dash means the files do not record it. Hover a row’s note for its exact sources.','hint'));
  const held=(r,k)=>{const h=r.heldOut?.[k];return h?`${fmtPct(ratio(h),1)} (${h.right}/${h.total})`:'–';};
- box.append(tableWrap('Refit history',['Refit','Time','Reason','Your labels (fast / Shadow / form / all)','Fast move','Shadow','Form','Shadow AUC / log-loss','Model resolved','Open','Notes'],recs.map(r=>{const s=statusSeries({records:[r]})[0];
-  return [String(r.refit),fmtTime(r.at),r.reason||'–',r.labels?`${fmtInt(r.labels.fastMove||0)} / ${fmtInt(r.labels.shadow||0)} / ${fmtInt(r.labels.form||0)} / ${fmtInt(sum(r.labels))}`:'–',held(r,'fastMove'),held(r,'shadow'),held(r,'form'),
-   r.heldOut?.shadow?`${fmtNum(r.heldOut.shadow.auc)} / ${fmtNum(r.heldOut.shadow.logLoss)}`:'–',s?fmtInt(s.resolved):'–',s?fmtInt(s.open):'–',r.backfilled?{text:'Backfilled',title:r.source||'Saved files'}:'Recorded'];}),[2]));return box;}
+ box.append(tableWrap('Refit history',['Refit','Time','Reason','Your labels (fast / Shadow / form / all)','Fast move','Shadow','Form','Outcome (timeline vs you)','Shadow AUC / log-loss','Results (read / inferred / human / unresolvable)','Model resolved','Open','Notes'],recs.map(r=>{const s=statusSeries({records:[r]})[0];
+  return [String(r.refit),fmtTime(r.at),r.reason||'–',r.labels?`${fmtInt(r.labels.fastMove||0)} / ${fmtInt(r.labels.shadow||0)} / ${fmtInt(r.labels.form||0)} / ${fmtInt(sum(r.labels))}`:'–',held(r,'fastMove'),held(r,'shadow'),held(r,'form'),held(r,'result'),
+   r.heldOut?.shadow?`${fmtNum(r.heldOut.shadow.auc)} / ${fmtNum(r.heldOut.shadow.logLoss)}`:'–',r.results?['read','inferred','human','unresolvable'].map(k=>fmtInt(r.results[k]||0)).join(' / '):'–',s?fmtInt(s.resolved):'–',s?fmtInt(s.open):'–',r.backfilled?{text:'Backfilled',title:r.source||'Saved files'}:'Recorded'];}),[2]));return box;}
 function notesSection(live){const box=el('details',undefined,'meta-perf-section meta-advanced meta-perf-notes');box.dataset.key='notes';box.append(el('summary','What these numbers mean'));const ul=el('ul');
  for(const [b,text] of [
   ['Held out by video.','Each labelled video is scored by a model refitted without any label from that video, so the accuracy describes videos the model has not seen. Fast moves and forms are scored on every traceable human label (your answers plus archived labels); Shadow on the classifier’s out-of-fold calls.'],

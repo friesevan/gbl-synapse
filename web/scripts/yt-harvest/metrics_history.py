@@ -11,7 +11,11 @@ Record fields (all optional except refit/at):
                                               auc, brier and the old posterior as ``baseline``
   gates                                       resolution thresholds and their held-out support per kind
   calibration                                 [[mean predicted, observed, n], ...] per kind (latest bins)
-  resolved / shadowValues / open / questions  queue state right after the refit
+  resolved / shadowValues / open / questions  queue state right after the refit; resolved is per source: "model",
+                                              the LLM sources, "timeline" (results inferred from the battle timeline)
+                                              and "policy" (result questions closed as unresolvable: not model-resolved)
+  results                                     battles of the refitted videos by result source: read (result
+                                              screen), inferred (timeline), human, unresolvable, open
   models                                      Shadow classifier and evidence-settings (movefit) versions
 """
 import datetime as dt
@@ -25,6 +29,8 @@ FORMAT = "gbl-validation-metrics"
 FILE = "metrics-history.json"
 MAX_RECORDS = 2000
 OTHER_SOURCES = {"freellm", "local-llm", "haiku"}   # external (LLM) resolvers, counted apart from the model
+# Result-question closures by rule (feedback.py TIMELINE_SOURCE / POLICY_SOURCE), also counted apart from the model.
+RULE_SOURCES = {"timeline", "policy"}
 # Mirrors SHADOW_GATE in tests/meta-benchmark/learning-loop.cjs; used only when a refit's output lacks
 # its own ``passes`` flags (outputs written before the history existed).
 SHADOW_GATE = {"accuracy": .95, "calls": 25, "lowerBound": .8, "videos": 5}
@@ -107,7 +113,7 @@ def queue_counts(questions, answers, resolutions):
             continue
         r = resolutions.get(qid)
         if r:
-            source = r.get("source") if r.get("source") in OTHER_SOURCES else "model"
+            source = r.get("source") if r.get("source") in OTHER_SOURCES | RULE_SOURCES else "model"
             resolved.setdefault(source, {})[kind] = resolved.get(source, {}).get(kind, 0) + 1
             if kind == "shadow" and source == "model":
                 key = "shadow" if r.get("value") is True else "notShadow"
@@ -147,6 +153,10 @@ def model_metrics(learning):
                                   "sweep": [list(x) for x in c.get("sweep") or [] if isinstance(x, (list, tuple)) and len(x) == 3]})
         if c.get("bins"):
             bins[kind] = _bins(c["bins"], ("meanP", "acc"))
+    # Results inferred from the timeline against reviewer answers (learning-loop.cjs resultMetrics).
+    r = cal.get("result") or {}
+    if r.get("heldOut"):
+        held["result"] = _clean({"right": r.get("heldOutRight"), "total": r.get("heldOut")})
     cv = sm.get("cv") or {}
     new, old = cv.get("new") or {}, cv.get("old") or {}
     if new.get("n"):
@@ -182,7 +192,8 @@ def build_record(version, learning, questions, answers, resolutions, snapshot=No
            "reason": reason or learning.get("reason"), "answers": given, "labels": labels,
            **model_metrics(learning),
            "resolved": resolved, "shadowValues": values, "open": open_, "questions": len(questions),
-           "runsRefit": learning.get("runsRefit"), "errors": len(learning.get("errors") or [])}
+           "runsRefit": learning.get("runsRefit"), "errors": len(learning.get("errors") or []),
+           "results": learning.get("resultSources") if isinstance(learning.get("resultSources"), dict) else None}
     return _clean(rec)
 
 

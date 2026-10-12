@@ -93,6 +93,33 @@ class ObservedTests(unittest.TestCase):
         self.assertEqual(b['ending'], 'opponent-forfeit')
         self.assertEqual(b['resultSource'], 'reviewer')
 
+    def test_timeline_results_count_like_detected_ones_and_human_answers_still_win(self):
+        raw = json.loads(self.result.read_text())
+        raw['full'][0].update(result='Unknown', resultSource='')
+        self.write(self.result, raw)
+        qid = 'claude-test:video123.mp4:0:result'
+        self.write(self.work / 'feedback.json', {'answers': {}, 'resolutions': {qid: {'source': 'timeline', 'value': 'Loss:you-forfeit', 'rule': 'surrender'}}})
+        b = self.catalog.state()['occurrences'][0]['battle']
+        self.assertEqual((b['result'], b['ending'], b['resultSource']), ('Loss', 'you-forfeit', 'surrender'))
+        self.write(self.work / 'feedback.json', {'answers': {}, 'resolutions': {qid: {'source': 'policy', 'value': None, 'policy': 'no-result-screen'}}})
+        b = self.catalog.state()['occurrences'][0]['battle']
+        self.assertEqual((b['result'], b['resultSource']), ('Unknown', 'unresolvable'))
+        self.write(self.work / 'feedback.json', {'answers': {qid: {'kind': 'result', 'battle': 0, 'recording': 'video123.mp4', 'value': 'Win', 'source': 'reviewer'}},
+                                                 'resolutions': {qid: {'source': 'timeline', 'value': 'Loss', 'rule': 'faints'}}})
+        b = self.catalog.state()['occurrences'][0]['battle']
+        self.assertEqual((b['result'], b['resultSource']), ('Win', 'reviewer'))
+
+    def test_read_result_screens_keep_priority_and_legacy_sources_are_renamed(self):
+        raw = json.loads(self.result.read_text())
+        raw['full'][0].update(result='Win', resultSource='Poké Ball count')
+        self.write(self.result, raw)
+        self.assertEqual(self.catalog.state()['occurrences'][0]['battle']['resultSource'], 'faints')
+        raw['full'][0].update(result='Loss', resultSource='result screen')
+        self.write(self.result, raw)
+        self.write(self.work / 'feedback.json', {'answers': {}, 'resolutions': {'claude-test:video123.mp4:0:result': {'source': 'timeline', 'value': 'Win', 'rule': 'faints'}}})
+        b = self.catalog.state()['occurrences'][0]['battle']
+        self.assertEqual((b['result'], b['resultSource']), ('Loss', 'result screen'))
+
     def test_repeat_cup_is_assigned_to_the_cup_and_verified_date_narrows_it(self):
         path = self.web / 'scripts/yt-harvest/data/gbl-schedule.json'
         s = json.loads(path.read_text())
