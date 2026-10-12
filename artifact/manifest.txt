@@ -15,6 +15,7 @@ includes/meta/core.js
 includes/meta/hp.js
 includes/meta/meta.css
 includes/meta/mp4index.js
+includes/meta/move-names.json
 includes/meta/observed-core.js
 includes/meta/observed.js
 includes/meta/questions.js

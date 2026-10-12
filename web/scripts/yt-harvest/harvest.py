@@ -66,6 +66,14 @@ DL_CLAIM = ("SELECT id, meta, meta_status, title, channel_id, duration FROM vide
             "AND (allowed=1 OR (meta_status='todo' AND rel_label='relevant')) "
             "ORDER BY COALESCE(upload_date, strftime('%Y%m%d', approx_ts, 'unixepoch'), '0') DESC, rel_score DESC LIMIT 32")
 
+# A downloaded video needs analysis when it has none yet, or when a re-analysis was requested (reprocess row):
+# an analysed video keeps x_status='done' and its result file until the new result replaces it, so
+# Observed meta and the learning loop never lose it.
+REPROCESS = "id IN (SELECT id FROM reprocess)"
+X_CLAIM = ("SELECT id, dl_path, sha256, upload_date, league, duration, meta, x_status FROM videos WHERE dl_status='done' "
+           "AND deleted_date IS NULL AND (x_status IS NULL OR (x_status IN ('done','failed') AND " + REPROCESS + ")) "
+           "ORDER BY upload_date DESC LIMIT 16")
+
 # ------------------------------------------------------------------------------------- queries
 
 LEAGUES_EN = ["great league", "ultra league", "master league", "little cup", "great league remix",
@@ -153,6 +161,8 @@ class State:
         self.x("UPDATE videos SET meta_status='todo' WHERE meta_status='working'")
         self.x("UPDATE videos SET dl_status=NULL WHERE dl_status='working'")
         self.x("UPDATE videos SET x_status=NULL WHERE x_status='working'")
+        # A re-analysis of an already analysed video keeps its result until replaced (reprocess row kept).
+        self.x("UPDATE videos SET x_status='done' WHERE x_status='reworking'")
 
     def q(self, sql, args=()):
         with self.lock:
@@ -474,7 +484,8 @@ class Harvester:
             for row in r:
                 if row["id"] not in self.inflight:
                     self.inflight.add(row["id"])
-                    self.state.x(f"UPDATE videos SET {status_col}=? WHERE id=?", (working, row["id"]))
+                    self.state.x(f"UPDATE videos SET {status_col}=? WHERE id=?",
+                                 (working(row) if callable(working) else working, row["id"]))
                     return dict(row)
         return None
 
@@ -609,8 +620,8 @@ class Harvester:
 
     def backlog_hours(self):
         """Estimated hours of extraction work already downloaded and waiting (or running)."""
-        queued = self.state.q("SELECT COALESCE(SUM(duration),0) s FROM videos WHERE dl_status='done' AND "
-                              "deleted_date IS NULL AND (x_status IS NULL OR x_status='working')")[0]["s"]
+        queued = self.state.q("SELECT COALESCE(SUM(duration),0) s FROM videos WHERE dl_status='done' AND deleted_date IS NULL "
+                              "AND (x_status IS NULL OR x_status IN ('working','reworking') OR " + REPROCESS + ")")[0]["s"]
         with self.clock:
             vs, busy = self.c["xVideoS"], self.c["xBusyS"]
         # Measured video-seconds per busy worker-second once enough work is done (the probe makes
@@ -671,7 +682,8 @@ class Harvester:
             rows = self.state.q("SELECT dl_status, dl_path, x_status, deleted_date FROM videos WHERE id=?", (vid,))
             r = rows[0] if rows else None
             main_file = bool(r) and os.path.basename(r["dl_path"] or "") == name
-            pending = main_file and r["dl_status"] == "done" and not r["deleted_date"] and r["x_status"] != "done"
+            pending = main_file and r["dl_status"] == "done" and not r["deleted_date"] and (
+                r["x_status"] != "done" or bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,))))
             if pending or retained_file(name, self.a.keep):
                 continue
             if not r:
@@ -798,9 +810,7 @@ class Harvester:
     # batch). Measured alone, one worker analyses 5-8x real time using about two cores.
     def extract_worker(self):
         while self.alive():
-            row = self._claim("SELECT id, dl_path, sha256, upload_date, league, duration, meta FROM videos WHERE dl_status='done' "
-                              "AND x_status IS NULL AND deleted_date IS NULL ORDER BY upload_date DESC LIMIT 16",
-                              (), "x_status", "working")
+            row = self._claim(X_CLAIM, (), "x_status", lambda row: "reworking" if row["x_status"] == "done" else "working")
             if not row:
                 self.stop.wait(10)
                 continue
@@ -847,12 +857,19 @@ class Harvester:
     def extract_one(self, r):
         vid, path = r["id"], r["dl_path"]
         source_sha = dict(r).get("sha256")  # Legacy replay callers may have no recorded hash.
+        out_dir = os.path.join(self.a.work_dir, "results")
+        res = os.path.join(out_dir, f"{vid}.json")
+        # Requested re-analysis of an analysed video: the old result stays in place (and x_status 'done')
+        # until a new one replaces it; any failure keeps it.
+        requested = bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,)))
+        keep_old = requested and os.path.exists(res)
         if not path or not os.path.exists(path):
+            if keep_old:
+                self.state.x("UPDATE videos SET x_status='done', dl_status=NULL, err='file missing: download again' WHERE id=?", (vid,))
+                return
             self.state.x("UPDATE videos SET x_status='failed', err='file missing' WHERE id=?", (vid,))
             self.remove_video_files(vid, "file missing")
             return
-        out_dir = os.path.join(self.a.work_dir, "results")
-        res = os.path.join(out_dir, f"{vid}.json")
         lg = self._reviewed_league(vid, json.loads(r["league"] or "{}"))
         self.state.x("UPDATE videos SET league=? WHERE id=?", (json.dumps(lg), vid))
         cp = (L.get_format(lg.get("leagueId") or "", self.schedule["cups"])[1] or {}).get("cp", 1500)
@@ -864,7 +881,7 @@ class Harvester:
         env = {**os.environ, "LEAGUE": str(cp), "GAMEMASTER": gm, "CROP": "auto", "LEARNED_PATH": learned_snapshot}
         if getattr(self.a, "ffmpeg_threads", 1):
             env["FFMPEG_THREADS"] = str(getattr(self.a, "ffmpeg_threads", 1))
-        ok = os.path.exists(res)
+        ok = os.path.exists(res) and not requested
         reused_result = ok
         t = time.time()
         probe, plan = None, {}
@@ -924,10 +941,13 @@ class Harvester:
                         break
                     time.sleep(2)
             if p.returncode is None or (p.returncode != 0 and not self.alive()):
-                self.state.x("UPDATE videos SET x_status=NULL WHERE id=?", (vid,))   # interrupted: retry next run
+                # Interrupted: retry next run (a kept result stays readable meanwhile).
+                self.state.x("UPDATE videos SET x_status=? WHERE id=?", ("done" if keep_old else None, vid))
                 return
             ok = p.returncode == 0 and os.path.exists(res + ".tmp")
             if ok:
+                if keep_old:
+                    shutil.copy2(res, res + ".previous")   # the old result is replaced atomically, never missing
                 os.replace(res + ".tmp", res)
                 if probe:
                     result = read_json(res, {})
@@ -967,8 +987,14 @@ class Harvester:
             os.remove(learned_snapshot)
         except FileNotFoundError:
             pass
-        self.state.x("UPDATE videos SET x_status=?, x_date=? WHERE id=?",
-                     ("done" if ok else "failed", dt.date.today().isoformat(), vid))
+        if not ok and keep_old:
+            # A failed re-analysis keeps the earlier result; the request is dropped so it doesn't loop.
+            log.warning("re-analysis %s failed; the earlier result is kept", vid)
+            self.state.x("UPDATE videos SET x_status='done', err='re-analysis failed' WHERE id=?", (vid,))
+            self.state.x("DELETE FROM reprocess WHERE id=?", (vid,))
+        else:
+            self.state.x("UPDATE videos SET x_status=?, x_date=? WHERE id=?",
+                         ("done" if ok else "failed", dt.date.today().isoformat(), vid))
         if ok:
             self.state.x("DELETE FROM reprocess WHERE id=?", (vid,))
         self.inc("extracted" if ok else "extractFailed")
@@ -1089,17 +1115,33 @@ class Harvester:
                     log.info("requeue %s ignored: footage marked obscured", vid)
                     os.replace(path, path + ".obscured")
                     continue
-                self.state.x("UPDATE videos SET dl_status=?,x_status=NULL,deleted_date=NULL,attempts=0,"
+                # The result file and x_status stay as they are, so Observed meta and the learning loop keep the
+                # video until the new analysis replaces it (extract_one never reuses a result with a reprocess row).
+                self.state.x("UPDATE videos SET dl_status=?,deleted_date=NULL,attempts=0,"
                              "err=NULL,rel_label='relevant',allowed=1,updated=? WHERE id=?",
                              ("done" if existing else None, time.time(), vid))
                 self.state.x("INSERT OR REPLACE INTO reprocess(id,requested) VALUES(?,?)", (vid, time.time()))
-                # A prior result must not short-circuit a requested screen/model reanalysis.
-                result = os.path.join(self.a.work_dir, "results", vid + ".json")
-                if os.path.exists(result):
-                    os.replace(result, result + ".previous")
-                self.registry.pop(vid, None)
                 os.remove(path)
                 log.info("requeued %s (%s)", vid, "local video" if existing else "redownload required")
+
+    def resume_reprocess(self):
+        """At start: every requested re-analysis whose video is not on disk is downloaded again (dl_status NULL);
+        one on disk goes straight to the extraction queue. Results and x_status are left as they are."""
+        n_dl = n_local = 0
+        for row in self.state.q("SELECT v.id, v.dl_path, v.dl_status FROM videos v JOIN reprocess r ON r.id=v.id"):
+            if row["dl_status"] == "working":
+                continue
+            if row["dl_path"] and os.path.isfile(row["dl_path"]):
+                self.state.x("UPDATE videos SET dl_status='done', deleted_date=NULL WHERE id=?", (row["id"],))
+                n_local += 1
+            else:
+                self.state.x("UPDATE videos SET dl_status=NULL, deleted_date=NULL, attempts=0, err=NULL, allowed=1 WHERE id=?",
+                             (row["id"],))
+                n_dl += 1
+        if n_dl or n_local:
+            log.info("requested re-analyses: %d to download again, %d already on disk (earlier results stay until replaced)",
+                     n_dl, n_local)
+        return n_dl, n_local
 
     def write_summary(self):
         with self.summary_lock:
@@ -1149,6 +1191,7 @@ class Harvester:
         log.info("start: deadline %s, %d queries, download dir %s, work dir %s, policy=%s, keep=%s",
                  dt.datetime.fromtimestamp(self.deadline).strftime("%H:%M"), len(self.queries), self.a.download_dir,
                  self.a.work_dir, "cc-only" if self.a.cc_only else "all plausible battle videos", self.a.keep)
+        self.resume_reprocess()
         ts = [threading.Thread(target=self.discover_search, name="search", daemon=True),
               threading.Thread(target=self.discover_channels, name="channels", daemon=True),
               threading.Thread(target=self.reporter, name="reporter", daemon=True)]
@@ -1183,6 +1226,7 @@ class Harvester:
         self.state.x("UPDATE videos SET meta_status='todo' WHERE meta_status='working'")
         self.state.x("UPDATE videos SET dl_status=NULL WHERE dl_status='working'")
         self.state.x("UPDATE videos SET x_status=NULL WHERE x_status='working'")
+        self.state.x("UPDATE videos SET x_status='done' WHERE x_status='reworking'")
         sm = self.write_summary()
         n = self.export_registry()
         log.info("done: registry %d entries; summary %s", n, os.path.join(self.a.work_dir, "summary.json"))
@@ -1191,7 +1235,8 @@ class Harvester:
     def wait_extract_then_stop(self):
         """Smoke runs: after the last download, give extraction time to finish before stopping."""
         while self.alive():
-            busy = self.state.q("SELECT COUNT(*) FROM videos WHERE dl_status='done' AND x_status IS NULL AND deleted_date IS NULL")[0][0]
+            busy = self.state.q("SELECT COUNT(*) FROM videos WHERE dl_status='done' AND deleted_date IS NULL AND "
+                                "(x_status IS NULL OR " + REPROCESS + ")")[0][0]
             if self.a.no_extract or not busy:
                 return
             time.sleep(5)

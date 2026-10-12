@@ -66,13 +66,18 @@ function readName(eng,{dict,locales={},language,alt=null,minConfidence=45}){cons
  const own=h=>h&&h.lang===language.lang?h:null;
  return {hit:own(exact)||englishHit||own(fuzzy),switched};}
 function outcome(text){const key=normalize(text);if(key.length>=6&&key.length<=11&&distance(key,'youwin')<=1)return 'Win';if(key.length>=9&&key.length<=13&&distance(key,'goodeffort')<=1)return 'Loss';if(/\byou\s+win\b/i.test(text))return 'Win';if(/\bgood\s+effort\b|\byou\s+lose\b/i.test(text))return 'Loss';if(/\btie\b/i.test(text))return 'Tie';return localOutcome(text);}
-// Result screens in other UI languages, as read from harvested videos (white text, English OCR model for
-// Latin scripts; CJK screens are read with that language's model). One misread letter is tolerated; long
-// phrases are also found inside junk.
-const RESULT_TEXT=[['duhastgewonnen','Win'],['gutgekampft','Loss'],['ganaste','Win'],['hasganado','Win'],['ganado','Win'],['buenintento','Loss'],['vocevenceu','Win'],['otimatentativa','Loss']];
-function localOutcome(text){const key=normalize(text);for(const [p,v] of RESULT_TEXT){if(Math.abs(key.length-p.length)<=1&&distance(key,p)<=1)return v;if(p.length>=9&&key.includes(p))return v;}
- const cjk=nameKey(text,'ja');for(const [p,v] of RESULT_TEXT_CJK)if(cjk.includes(p))return v;return null;}
-const RESULT_TEXT_CJK=[];
+// Result screens in other UI languages: the game's own texts (Pokémon GO i18n strings combat_result_victory /
+// combat_result_defeat, checked on harvested videos). Japanese and Korean screens are in English letters ("WIN!",
+// "NICE TRY!", "YOU WIN!"), so the English OCR reads them; Chinese ones (獲勝！/ 辛苦了！) need the chi_tra model.
+// One misread letter is tolerated for phrases of 6+ letters (shorter ones must be exact); long phrases are also
+// found inside junk.
+const RESULT_TEXT=[['duhastgewonnen','Win'],['gutgekampft','Loss'],['ganaste','Win'],['hasganado','Win'],['ganado','Win'],['buenintento','Loss'],['vocevenceu','Win'],['otimatentativa','Loss'],
+ ['win','Win'],['nicetry','Loss'],['gagne','Win'],['beleffort','Loss'],['haivinto','Win'],['peccato','Loss']];
+function localOutcome(text){const key=normalize(text);for(const [p,v] of RESULT_TEXT){if(p.length<6?key===p:Math.abs(key.length-p.length)<=1&&distance(key,p)<=1)return v;if(p.length>=9&&key.includes(p))return v;}
+ const cjk=nameKey(text,'zh-Hant');for(const [p,v] of RESULT_TEXT_CJK)if(cjk.includes(p))return v;return null;}
+const RESULT_TEXT_CJK=[['獲勝','Win'],['获胜','Win'],['辛苦了','Loss']];
+// "Finding opponent" / "Battle starting" under the matchmaking spinner, in every UI language.
+const isMatchmaking=text=>/finding opponent|battle starting|gegner wird gesucht|kampf beginnt|recherche d.?adversaire|d[ée]but du combat|ricerca dell.?avversario|inizio della lotta|buscando (?:rival|oponente)|comienz[ao] (?:del|el) combate|batalha come[cç]ando|対戦相手を|対戦準備中|대전\s*상대를|대전\s*준비|尋找對手|寻找对手|準備對戰|准备对战/i.test(String(text));
 class Tracker{
  constructor(){this.battles=[];this.current=null;this.pending={};this.lastSeen=-Infinity;this.lastOutcome=-Infinity;this.resultPending=null;}
  start(t){this.current={id:globalThis.crypto?.randomUUID?.()||String(Math.random()),start:t,end:t,my:[],opponent:[],events:[],result:'Unknown',flags:['Confirm battle boundary and lead'],reviewed:false,leadConfirmed:false};}
@@ -175,7 +180,8 @@ function bandStats(img){const s=img.width/REF_W;let white=0,black=0,n=0,run=0,ta
 const resultCandidate=st=>st.white>=.01&&st.whiteRun>=70&&st.whiteRun<=115;
 // The "Surrender and exit?" dialog is a white card filling the middle band; its dark text is read only then.
 const surrenderCandidate=st=>st.white>=.5;
-const isSurrender=text=>/surrend|won.?t receive any rewards/i.test(text);
+// combat_surrender in every UI language (CJK dialogs are read with that language's model).
+const isSurrender=text=>/surrend|won.?t receive any rewards/i.test(text)||/aufgeben und schlie|keine belohnungen|abandonner et quitter|pas de r[ée]compenses|arrenderti e abbandonare|alcuna ricompensa|rendirte y salir|ninguna recompensa|se render e sair|receber[áa] recompensas|降参しますか|リワードは受け取れません|항복하고|리워드는\s*받을|要投降|無法領取任何獎勵|无法领取/i.test(String(text));
 // Nameplate text fingerprints: the same species renders identically, so one OCR per distinct image.
 // An unreadable plate is retried on later frames (up to `retries` times) before it is cached as unreadable.
 // Reuses one OCR result for near-identical fingerprints. Two fingerprints match when they differ in at most
@@ -214,10 +220,20 @@ class HudTracker{
   // A fresh HUD within 20 s of a battle's start, with the nameplates on screen throughout and nobody fainted, is
   // the same battle: the "used" shield or ball before it was a misread while the HUD settled (24 of 1,585 saved
   // battles were such starts split off, 0–18 s long, each followed at once by the rest of the battle).
-  if(this.current&&fresh&&this.current.used>0&&t-this.current.start<20&&gap<8&&this.current.fainted.my+this.current.fainted.opponent===0){const c=this.current;c.used=0;c.shieldsUsed={my:0,opponent:0};c.events=c.events.filter(e=>e.kind!=='shield');}
+  // Likewise when two shields "went" on the same frame (both sides, or one side 2 → 0) and the HUD showed that for at
+  // most 3 s before a fresh HUD (within 15 s, a charged-attack cutscene): shield icons hide or blur as a charged attack
+  // starts; a real shield takes one. Nobody may have fainted. In 35 saved videos 5 of 264 battles were
+  // such 28–56 s parts split off at 0.5–1 s gaps; cGATSvEItIM had 3 more, one across an 8 s cutscene.
+  const c0=this.current,settling=c0&&t-c0.start<20&&gap<8,transient=c0&&c0.usedJump>=2&&this.lastHud-c0.usedAt<=3&&gap<15;
+  if(c0&&fresh&&c0.used>0&&(settling||transient)&&this.current.fainted.my+this.current.fainted.opponent===0){const c=this.current;c.used=0;c.shieldsUsed={my:0,opponent:0};c.events=c.events.filter(e=>e.kind!=='shield');}
+  // After a fade to black, a HUD that returns (≥ 3 s later) with fewer fainted Pokémon than the battle has seen starts
+  // the next battle even when it doesn't read as fresh (a misread ball or shield on every frame): fainted counts never go
+  // down within a battle. cBePYfn3m1U merged 4 battles into one 772 s "battle" that way (fades at 136, 322 and 522 s).
+  const reset=b0&&b0.endCue!==undefined&&gap>=3&&gap<=25&&!fresh&&hud.my.fainted+hud.opponent.fainted<b0.fainted.my+b0.fainted.opponent;
+  if(reset){this.close(true);this.open(t,true);}
   if(this.current&&((gap>25&&!resumes)||(fresh&&this.current.used>0)))this.close(true);
   if(!this.current){if(!fresh&&t-this.lastHud<25){this.lastHud=t;return;}this.open(t,!fresh);}
-  const b=this.current;b.end=t;this.lastHud=t;b.used=Math.max(b.used,used);
+  const b=this.current;b.end=t;this.lastHud=t;if(used>0&&!b.used){b.usedAt=t;b.usedJump=used;}b.used=Math.max(b.used,used);
   for(const side of ['my','opponent']){const s=hud[side];
    if(s.fainted>b.fainted[side]){b.events.push({t,kind:'faint',side,label:`${side==='my'?'Your':'Opponent'} Pokémon fainted (${s.fainted}/3)`});b.fainted[side]=s.fainted;}
    if(2-s.shields>b.shieldsUsed[side]){b.events.push({t,kind:'shield',side,label:`${side==='my'?'You':'Opponent'} used a shield`});b.shieldsUsed[side]=2-s.shields;}
@@ -247,7 +263,7 @@ class HudTracker{
   for(const b of this.battles){if(b.surrender!==undefined){if(b.result==='Unknown'&&b.end<=b.surrender+3){b.result='Loss';b.resultSource='surrender dialog';}if(b.result==='Loss')b.ending='you-forfeit';delete b.surrender;}
    if(b.result==='Win'&&b.fainted.opponent<3&&b.opponent.length<3){b.flags.push('Win before all opponent Pokémon fainted: opponent may have left; team incomplete');b.ending=b.ending||'opponent-forfeit';}
    for(const side of ['my','opponent'])for(const p of b[side])resolveForm(p);
-   delete b.used;delete b.endCue;delete b.resultSearchOver;delete b.active;}
+   delete b.used;delete b.usedAt;delete b.usedJump;delete b.endCue;delete b.resultSearchOver;delete b.active;}
   return this.battles;}
 }
 // Keeps the candidate forms whose types match the majority icon reading, and the most-read CP.
@@ -264,6 +280,50 @@ function resolveForm(p){const top=o=>o&&Object.entries(o).sort((a,b)=>b[1]-a[1])
 function parseBanner(text){const t=String(text).replace(/[“”"|_—=~‘\[\](){}<>*#^]/g,' ').replace(/\s+/g,' ');
  let m=/\bgo[.,:;]?\s+([a-z][a-z .'’-]{1,24}?)\s*[!1l]/i.exec(t);if(m)return {kind:'go',name:m[1].trim()};
  m=/([a-z][a-z .'’-]{1,40}?)\s+used\s+([a-z][a-z '’-]{1,30}?)\s*[!1.]/i.exec(t);if(m)return {kind:'move',actor:m[1].trim(),move:m[2].trim()};return null;}
+// ---- Banners in other UI languages (game strings battle_throw_callout / battle_charged_move_callout) ----
+// Latin scripts come from the English OCR text: "Los, X!" "X hat Y eingesetzt!" (de), "Vas-y, X !" "X a utilisé Y !"
+// (fr), "Vai, X!" "X usa Y!" (it), "¡Adelante, X!" "¡X ha usado Y!" "¡X usó Y!" (es), "Vamos, X!" "X usou Y!" (pt).
+// CJK banners are read with the video's language model: "ゆけっ！X！" "XはYを使った！" (ja), "가랏! X!"
+// "X(은)는 Y(을)를 썼다!" (ko), "上吧！X！" "X 使出了 Y！" (zh, on two lines).
+const LATIN_GO=/\b(?:los|vas-y|vas y|vai|adelante|vamos)[.,:;]?\s+([a-zà-ÿ][a-zà-ÿ .'’-]{1,24}?)\s*[!1]/i;
+const LATIN_MOVE=[/([a-zà-ÿ][a-zà-ÿ .'’-]{1,40}?)\s+hat\s+([a-zà-ÿ][a-zà-ÿ '’-]{1,30}?)\s+eingesetzt/i,/([a-zà-ÿ][a-zà-ÿ .'’-]{1,40}?)\s+a\s+utilis[ée]\s+([a-zà-ÿ][a-zà-ÿ '’-]{1,30}?)\s*[!1.]/i,
+ /([a-zà-ÿ][a-zà-ÿ .'’-]{1,40}?)\s+(?:ha\s+usado|us[óo]u?|usa)\s+([a-zà-ÿ][a-zà-ÿ '’-]{1,30}?)\s*[!1.]/i];
+// Opponents' Pokémon are announced as "相手が Xをくりだした！" (ja), "상대가 X(을)를 내보냈다!" (ko), "對手派出了X！" (zh).
+const ZH_BANNER={go:[/上吧[!！]*([^!！]+)/,/派出了([^!！]+)/],move:/^(.+?)使出了(.+?)[!！]?$/};
+const CJK_BANNER={ja:{go:[/ゆ[けげ][っッつ]?[!！。]*([^!！]+)/,/手が([^!！]+?)をく/],move:/^(.+?)[はば](.+?)を使/},
+ ko:{go:[/가랏[!！]*([^!！]+)/,/상대가([^!！]+?)\(?[을울]?\)?[를틀]내/],move:/^(.+?)\(?[은온]?\)?[는눈](.+?)\(?[을울]?\)?[를틀]썼/},'zh-Hant':ZH_BANNER,'zh-Hans':ZH_BANNER};
+function parseLocalBanner(text,lang){
+ if(LOCALES[lang]?.script){const pat=CJK_BANNER[lang];if(!pat)return null;const t=String(text).normalize('NFKC').replace(/[\s|_"“”'‘’「」『』]/g,'');let m=pat.move.exec(t);if(m)return {kind:'move',actor:m[1],move:m[2]};for(const re of pat.go){m=re.exec(t);if(m)return {kind:'go',name:m[1]};}return null;}
+ const t=String(text).replace(/[“”"|_—=~‘\[\](){}<>*#^¡¿]/g,' ').replace(/\s+/g,' ');for(const re of LATIN_MOVE){const m=re.exec(t);if(m)return {kind:'move',actor:m[1].trim(),move:m[2].trim()};}
+ const m=LATIN_GO.exec(t);return m?{kind:'go',name:m[1].trim()}:null;}
+// move-names.json (PokeAPI) → localised name key → PvPoke move, per language. A "+" move or Aegislash's charge variant
+// gives way to the plain move (as English matching does); null when several plain moves share the name (Weather
+// Ball, Techno Blast, Hidden Power: the banner doesn't show the type).
+function moveDictionary(moves,names,lang){const table=names?.[lang];if(!table)return null;const byId=new Map(moves.map(m=>[m.moveId,m])),map=new Map();
+ const variant=m=>/_PLUS$|^AEGISLASH_CHARGE_/.test(m.moveId);
+ for(const [id,name] of Object.entries(table)){const m=byId.get(id),key=nameKey(name,lang);if(!m||!key)continue;const o=map.get(key);
+  map.set(key,!map.has(key)?m:o===null||o===m?o:variant(m)?o:variant(o)?m:null);}return map;}
+// Exact name, the English name (Latin languages list only names that differ), or one wrong character when only
+// one move is that close (≥ 3 CJK characters / 5 letters).
+function findMove(text,lang,moveMaps,moves){const cjk=!!LOCALES[lang]?.script,key=nameKey(text,lang),map=moveMaps?.[lang];if(key.length<2)return null;
+ if(map?.has(key))return map.get(key);if(!cjk){const ms=moves.filter(x=>normalize(x.name.replace(/\s*\([^)]*\)$/,''))===key);if(ms.length)return ms.length===1?ms[0]:null;}
+ if(!map||key.length<(cjk?3:5))return null;let found=null;for(const [k,m] of map)if(Math.abs(k.length-key.length)<=1&&distance(k,key)<=1){if(!m||found&&found!==m)return null;found=m;}return found;}
+// Actor or "Go" name → English nameplate key; junk before the name is dropped (last 1–3 words, or up to 3
+// leading CJK characters).
+function findSpecies(text,lang,locales,dict){const cjk=!!LOCALES[lang]?.script,cands=[];
+ if(cjk){const s=String(text).trim(),mega=LOCALES[lang].mega&&s.startsWith(LOCALES[lang].mega);for(let i=0;i<=(mega?0:Math.min(3,s.length-2));i++)cands.push(s.slice(i));}   // never cut a Mega prefix
+ else{const w=String(text).split(' ').filter(Boolean);for(const n of [1,2,3])if(n<=w.length)cands.push(w.slice(-n).join(' '));}
+ for(const c of cands){const h=(locales?.[lang]&&matchLocale(c,locales[lang],lang))||(!cjk&&match(c,dict));if(h)return h.key;}return null;}
+// A banner in another UI language → {kind:'go',name} or {kind:'move',actor,move,lang} with the English nameplate
+// key and the PvPoke move name, for HudTracker.go/move. lang: the CJK language the text was read in, or the
+// video's nameplate language for Latin text ('en' tries every Latin language: Spanish, Italian and Portuguese
+// nameplates mostly equal English, so those videos stay 'en').
+function localBanner(text,{lang='en',locales={},moveMaps={},moves=[],dict}){const cjk=!!LOCALES[lang]?.script;
+ const langs=cjk?[lang]:[...new Set([lang,'de','fr','es','it'])].filter(l=>l!=='en'&&!LOCALES[l]?.script);
+ const pb=parseLocalBanner(text,cjk?lang:'de');if(!pb)return null;
+ for(const l of langs){if(pb.kind==='go'){const name=findSpecies(pb.name,l,locales,dict);if(name)return {kind:'go',name};continue;}
+  const move=findMove(pb.move,l,moveMaps,moves),actor=move&&findSpecies(pb.actor,l,locales,dict);if(move&&actor)return {kind:'move',actor,move:move.name,lang:l};}
+ return null;}
 // Banner crop: a 96×12 fingerprint of its white letters and their share (text when ~3–30%).
 // The banner sits at a fixed share of the FULL screen height (30.2%, height 3.8%), unlike the
 // nameplates, which hang from the top. With the top cut off (dy < 0, YouTube crops) the full height is
@@ -272,11 +332,25 @@ function bannerBox(img,dy){const s=img.width/REF_W,full=img.height-dy*s,y0=Math.
 function bannerRead(img,dy){const box=bannerBox(img,dy),[x0,y0,x1,y1]=box,sig=new Uint8Array(96*12),d=img.data;let n=0;
  for(let r=0;r<12;r++)for(let c=0;c<96;c++){const x=Math.floor(x0+(c+.5)*(x1-x0)/96),y=Math.floor(y0+(r+.5)*(y1-y0)/12);if(y<0||y>=img.height)continue;const i=(y*img.width+x)*4;if(Math.min(d[i],d[i+1],d[i+2])>200){sig[r*96+c]=1;n++;}}
  return {box,sig,textPixels:n/sig.length};}
+// CJK banners: thin glyphs, and over a light sky the translucent box leaves the text pale blue (≈150,215,255), so
+// the white-pixel share above stays near 0 (0.2% on a Japanese banner). Their strokes still make sharp brightness
+// steps: the share of pixels differing by > 60 from the pixel 2 px to the left is 2.5–3.4% on Japanese banners and
+// ≤ 1.8% otherwise (sky, arena, "NICE!") over 60 s of lC6aiKQuZ5c. sig: 96×12 cells holding such a step.
+// search > 0: the box is moved up or down by up to that many rows to the band with the most steps (the banner's
+// height share differs between phones: afvH9iu5WsE and stLd7OkIg3Y put the text just above the English box).
+function bannerEdges(img,box,{search=0}={}){let [x0,y0,x1,y1]=box.map(Math.round);const d=img.data,W=img.width,H=img.height,sig=new Uint8Array(96*12),h=y1-y0;
+ const step=(i,j)=>Math.abs(d[i]+d[i+1]+d[i+2]-d[j]-d[j+1]-d[j+2])>180;
+ if(search>0){const top=Math.max(0,y0-search),bottom=Math.min(H,y1+search),rows=[];for(let y=top;y<bottom;y++){let c=0;for(let x=Math.max(2,x0);x<Math.min(W,x1);x+=2){const i=(y*W+x)*4;if(step(i,i-8))c++;}rows.push(c);}
+  let best=-1,at=y0,sum=0;for(let k=0;k<rows.length;k++){sum+=rows[k];if(k>=h)sum-=rows[k-h];if(k>=h-1&&sum>best){best=sum;at=top+k-h+1;}}y0=at;y1=at+h;box=[x0,y0,x1,y1];}
+ let e=0,n=0;
+ for(let y=Math.max(0,y0);y<Math.min(H,y1);y++)for(let x=Math.max(2,x0);x<Math.min(W,x1);x++){const i=(y*W+x)*4;n++;
+  if(step(i,i-8)){e++;sig[Math.min(11,Math.floor((y-y0)*12/(y1-y0)))*96+Math.min(95,Math.floor((x-x0)*96/(x1-x0)))]=1;}}
+ return {box,sig,share:n?e/n:0};}
 // "Go, Marowak!" names the Pokémon being sent out at that moment (either side), even with the
 // nameplates hidden: kept as a 'go' event for switch timing and leads.
-HudTracker.prototype.go=function(t,text,dict){const b=this.current;if(!b)return false;const pb=parseBanner(text);if(pb?.kind!=='go')return false;const hit=match(pb.name,dict);if(!hit)return false;
+HudTracker.prototype.go=function(t,text,dict,parsed=null){const b=this.current;if(!b)return false;const pb=parsed||parseBanner(text);if(pb?.kind!=='go')return false;const hit=match(pb.name,dict);if(!hit)return false;
  const last=b.events.filter(e=>e.kind==='go').at(-1);if(last&&last.actor===hit.key&&t-last.t<6)return true;b.events.push({t,kind:'go',actor:hit.key,label:text.trim()});return true;};
-HudTracker.prototype.move=function(t,text,confidence,moves){const b=this.current;if(!b||confidence<40)return;const pb=parseBanner(text);if(pb?.kind!=='move')return;
+HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null){const b=this.current;if(!b||confidence<40)return;const pb=parsed||parseBanner(text);if(pb?.kind!=='move')return;
  const move=moves.find(m=>normalize(m.name)===normalize(pb.move));if(!move)return;
  // Junk can precede the name: try the last 1–3 words and keep the one that matches a Pokémon on the field.
  const words=pb.actor.split(' ').filter(Boolean),cands=[1,2,3].filter(n=>n<=words.length).map(n=>normalize(words.slice(-n).join(' '))),keys=[b.active.my,b.active.opponent,...b.my.map(p=>p.key),...b.opponent.map(p=>p.key)].filter(Boolean);
@@ -289,5 +363,5 @@ HudTracker.prototype.move=function(t,text,confidence,moves){const b=this.current
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,parseBanner,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

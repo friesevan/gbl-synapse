@@ -179,16 +179,69 @@ class Pipeline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             h=self.fake(directory);vid='abcdefghijk'
             h.state.x("INSERT INTO videos(id,dl_status,x_status,deleted_date) VALUES(?,'done','done','today')",(vid,))
+            results=Path(directory)/'results';results.mkdir();(results/f'{vid}.json').write_text('{"battles":[1]}')
             requeue=Path(directory)/'requeue';requeue.mkdir()
             (requeue/'request.json').write_text(json.dumps({'videoId':vid}))
             h.inflight.add(vid);h.consume_requeues()
             self.assertTrue((requeue/'request.json').exists())
             h.inflight.clear();h.consume_requeues()
             row=h.state.q('SELECT * FROM videos')[0]
-            self.assertIsNone(row['dl_status']);self.assertIsNone(row['x_status']);self.assertIsNone(row['deleted_date'])
+            self.assertIsNone(row['dl_status']);self.assertIsNone(row['deleted_date'])
+            # The earlier analysis stays visible to Observed meta and the learning loop until replaced.
+            self.assertEqual(row['x_status'],'done');self.assertEqual((results/f'{vid}.json').read_text(),'{"battles":[1]}')
+            self.assertFalse((results/f'{vid}.json.previous').exists())
             self.assertTrue(h.state.q('SELECT * FROM reprocess'))
             self.assertFalse((requeue/'request.json').exists())
             h.state.db.close()
+
+    def test_requested_reanalysis_replaces_result_only_on_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            h=self.fake(directory);vid='abcdefghijk';path=Path(directory)/(vid+'.mp4')
+            results=Path(directory)/'results';results.mkdir();res=results/f'{vid}.json';res.write_text('{"battles":["old"],"full":[]}')
+            h.state.x("INSERT INTO videos(id,dl_status,x_status,dl_path,deleted_date) VALUES(?,'prior','done',?,'today')",(vid,str(path)))
+            h.state.x('INSERT INTO reprocess(id,requested) VALUES(?,1)',(vid,))
+            # Start-up: the missing video is downloaded again; the result and x_status are untouched.
+            self.assertEqual(h.resume_reprocess(),(1,0))
+            row=h.state.q('SELECT * FROM videos')[0];self.assertIsNone(row['dl_status']);self.assertEqual(row['x_status'],'done')
+            # Once downloaded, the extraction queue takes it although x_status is 'done'.
+            path.write_bytes(b'fake');h.state.x("UPDATE videos SET dl_status='done',deleted_date=NULL")
+            claimed=h._claim(H.X_CLAIM,(),'x_status',lambda r:'reworking' if r['x_status']=='done' else 'working')
+            self.assertEqual(claimed['id'],vid);self.assertEqual(h.state.q('SELECT x_status FROM videos')[0][0],'reworking')
+            h.export_validation=lambda *a,**kw:0
+            seen=[]
+            def process(code):
+                class Process:
+                    def __init__(self,command,**kwargs):
+                        seen.append(json.loads(res.read_text())['battles'])   # still readable while re-analysing
+                        if code==0:Path(command[-1]).write_text('{"battles":["new"],"full":[]}')
+                        self.returncode=code
+                    def poll(self):return self.returncode
+                return Process
+            patches=lambda code:(patch('harvest.subprocess.Popen',process(code)),patch('harvest.gamemaster_for',return_value=''),
+                                  patch('harvest.write_league_refinement',return_value=None))
+            # Interrupted by STOP: the claim returns to 'done' and the request stays for the next run.
+            p1,p2,p3=patches(1)
+            with p1,p2,p3:h.extract_one(dict(claimed,league='{}',duration=600,upload_date='20200101',meta='{}'))
+            self.assertEqual(h.state.q('SELECT x_status FROM videos')[0][0],'done');self.assertTrue(h.state.q('SELECT * FROM reprocess'))
+            h.deadline=float('inf')
+            p1,p2,p3=patches(1)
+            with p1,p2,p3:h.extract_one(dict(claimed,league='{}',duration=600,upload_date='20200101',meta='{}'))
+            self.assertEqual(json.loads(res.read_text())['battles'],['old'],'a failed re-analysis keeps the earlier result')
+            self.assertEqual(h.state.q('SELECT x_status FROM videos')[0][0],'done');self.assertFalse(h.state.q('SELECT * FROM reprocess'))
+            h.state.x('INSERT INTO reprocess(id,requested) VALUES(?,2)',(vid,))
+            p1,p2,p3=patches(0)
+            with p1,p2,p3:h.extract_one(dict(claimed,league='{}',duration=600,upload_date='20200101',meta='{}'))
+            self.assertEqual(seen,[['old'],['old'],['old']])
+            self.assertEqual(json.loads(res.read_text())['battles'],['new']);self.assertEqual(json.loads((results/f'{vid}.json.previous').read_text())['battles'],['old'])
+            self.assertEqual(h.state.q('SELECT x_status FROM videos')[0][0],'done');self.assertFalse(h.state.q('SELECT * FROM reprocess'))
+            h.state.db.close()
+
+    def test_interrupted_reanalysis_claim_returns_to_done(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st=H.State(os.path.join(directory,'state.sqlite'))
+            st.x("INSERT INTO videos(id,x_status) VALUES('abcdefghijk','reworking')");st.db.close()
+            st=H.State(os.path.join(directory,'state.sqlite'))
+            self.assertEqual(st.q('SELECT x_status FROM videos')[0][0],'done');st.db.close()
 
     def test_stop_drains_active_extractor_and_preserves_learning_context(self):
         with tempfile.TemporaryDirectory() as directory:

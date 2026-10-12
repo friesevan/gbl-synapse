@@ -366,7 +366,7 @@ harvester start (not restarted).
   re-extraction. Only Validate's "battles are shown" requeue downloads again; nothing was requeued.
 - Open: CJK result screens and "Go"/charged-move banners in other languages (the examined CJK videos cut
   their result screens); French and Italian result texts (no sample); the browser has no CJK OCR models;
-  `aura-features.cjs` still uses the phone bar windows (Shadow agent's file).
+  `aura-features.cjs` still uses the phone bar windows (Shadow agent's file). (All but the last closed 2026-10-12.)
 
 ## Status 2026-10-12 (fast-move refit, Shadow default, free-LLM result gate)
 
@@ -393,3 +393,30 @@ harvester start (not restarted).
 - `<work>/after-harvest.sh <harvester pid>`: refit every 2 h during the harvest; on exit commit the
   registry, re-export the observed meta, launch the 8 h trainer, then pull the 32B model and run all gates.
 - Ollama runs locally (`ollama serve`, port 11434); an unexpected `qwen3.6:35b-a3b` is also present.
+
+## Status 2026-10-12 ~03:00 (multilingual re-analysis, requeue fix)
+
+Details: `includes/meta/README.md`, *Result screens, banners and battle boundaries in other languages*.
+Takes effect on the next harvester start.
+
+- **Requeue no longer hides results.** `consume_requeues` used to move `results/<id>.json` to `.previous` and clear
+  `x_status`, so 268 requeued videos vanished from Observed meta and the refit evidence until re-analysed (restored by
+  hand at ~02:00). Now a request only adds the `reprocess` row and marks the video for download (`dl_status` NULL, or
+  'done' if on disk); the result and `x_status='done'` stay. The extract claim (`X_CLAIM`) also takes downloaded videos
+  with a `reprocess` row (claimed as `x_status='reworking'`, back to 'done' on restart). The new result goes to `.tmp`
+  and replaces the old one only on success (old copy kept as `.previous`); a failed re-analysis keeps the old result and
+  drops the request; an interrupted one keeps both. At start `resume_reprocess` sends every pending request whose video
+  isn't on disk back to the download queue and logs the count. Cleanup and the backlog estimate count pending
+  re-analyses. Tests in `test_service.py` (the result stays readable throughout).
+- **Requeued 2026-10-12 01:32** (reason "re-analyse with multilingual nameplate OCR", 286 requests): ja 107, ko 41,
+  zh 21 (0 battles, plus 3 with ≤ 2), de 42, es 61, pt 14. The DE/ES/PT ones had 0 battles (20) or result screens read
+  for < 25% of battles (97): UI text that wasn't English. Language from the title script (kana/hangul/han), else the
+  video's metadata language, else title words. Excluded: 3 human "no footage" answers, 16 DE/ES/PT videos whose
+  results were already read, new-code results with a non-English `nameLanguage`. 30 of the 286 had a new-code probe
+  without any HUD; their whole-video re-analysis is unlikely to find battles (21 were pending at 02:00; drop their
+  `reprocess` rows if downloads are scarce): GjrTxzBGmcM J2Uq59xrdyI iFVh-hxAUps dXyR5ee0sLs PG3jMtnxvyI Hmqa1AOAyd4
+  maw_a7oKYMM xoZAVSbei7s YK_Nfssjryc C5TtEKHRr94 SHTMjKIi5Gc Ct_D1pfkqbA LEQWGm1Mtg8 GlEZhL_VX6s Q7JzmTMzt54 G2mCZY-pEYs
+  xRjQrJGyD_o sfpAFWr3F8I u3GMf3EbYVg PeaYPAqXSEg oCnU0jXgAPk t5UhT-00jYk yGJyhC8f9bc Kp4beLraLEg 1gj94UpucYM OW5M9m0o17w
+  LC21LciODO8 6bk9nbypShQ hBgoNV-zhoU Kx3FBsCOHSo (maw_a7oKYMM is a known-good video: keep it).
+- Result screens, banners, dialogs and effectiveness texts in Japanese, Korean, Chinese, French and Italian (plus German,
+  Spanish, Portuguese banners); split/merge rules in the tracker; CJK models fetched on demand in the browser.

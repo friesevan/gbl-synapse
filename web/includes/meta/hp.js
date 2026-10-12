@@ -124,8 +124,14 @@ function effectSig(img,box,yOffset=0){const [x0,y0,x1,y1]=box,sig=new Uint8Array
 // The words sit in the strip's top five rows (of 12), with ink in every one of rows 1–4; arena glare,
 // the bar's own edge and move effects light the lower rows instead. Only text-shaped strips are read.
 function effectShape(sig){const row=r=>{let n=0;for(let c=0;c<96;c++)n+=sig[r*96+c];return n;};let top=0;for(let r=0;r<6;r++)top+=row(r);for(let r=1;r<5;r++)if(row(r)<8)return false;return top>=50;}
-// OCR text → 'super' | 'notVery' | null (tolerates a misread letter or two).
-const effectKind=text=>{const t=String(text).toLowerCase().replace(/[^a-z ]/g,'');return /\bnot\b|v[ae]ry\s*eff/.test(t)&&/eff|v[ae]ry/.test(t)?'notVery':/sup[ae]r|eff[ei]ct/.test(t)?'super':null;};
+// OCR text → 'super' | 'notVery' | null (tolerates a misread letter or two). Other UI languages (game strings
+// super_effective / not_very_effective) are tried only when the English rule finds nothing: "Nicht sehr effektiv",
+// "Pas très efficace", "Non è molto efficace", "No muy eficaz", "Não é muito eficaz" ("Sehr effektiv",
+// "Super efficace", "Superefficace", "Supereficaz"), and CJK text read with that language's model.
+const effectKind=text=>{const t=String(text).toLowerCase().replace(/[^a-z ]/g,'');const en=/\bnot\b|v[ae]ry\s*eff/.test(t)&&/eff|v[ae]ry/.test(t)?'notVery':/sup[ae]r|eff[ei]ct/.test(t)?'super':null;if(en)return en;
+ const l=String(text).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ');
+ if(/\bnicht\s*sehr|\bpas\s*tres\s*eff|\bnon\s*e?\s*molto\s*eff|\bno\s*muy\s*efi|\bnao\s*e?\s*muito\s*efi/.test(l))return 'notVery';if(/\bsehr\s*effektiv|efficace|eficaz/.test(l))return 'super';
+ const c=String(text).normalize('NFKC').replace(/\s+/g,'');return /いまひとつ|イマヒトツ|별로인|不太好|效果不好/.test(c)?'notVery':/ばつぐん|バツグン|굉장했|絕佳|绝佳/.test(c)?'super':null;};
 // HP of every Pokémon in a battle at every turn (fraction of max HP, step 0.5 s), from the HP-bar series
 // of all its matchups (b.matchups[].series: {t0, fps, my:[], opponent:[]}). Readings are smoothed
 // (median of 5, dropping glitch frames) and never rise (HP never goes up in PvP). Before its first

@@ -38,6 +38,11 @@ const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'me
 const TESSDATA_LOCALES=process.env.TESSDATA_LOCALES||path.join(os.homedir(),'.cache/gbl-synapse/tessdata'),wantLocales=process.env.NAME_LOCALES==='off'?[]:process.env.NAME_LOCALES?process.env.NAME_LOCALES.split(','):Object.keys(C.LOCALES);
 const localNames=require('../../includes/meta/species-names.json').names,locales=Object.fromEntries(wantLocales.filter(l=>C.LOCALES[l]&&(!C.LOCALES[l].script||fs.existsSync(path.join(TESSDATA_LOCALES,C.LOCALES[l].ocr+'.traineddata')))).map(l=>[l,C.localeDictionary(gm.pokemon,localNames,l,dict)]));
 const nameLanguage=new C.NameLanguage();
+// Banners in other UI languages: localised move names (move-names.json, PokeAPI) per language.
+const localMoves=require('../../includes/meta/move-names.json').names,moveMaps=Object.fromEntries(Object.keys(C.LOCALES).map(l=>[l,C.moveDictionary(gm.moves,localMoves,l)]));
+// The language model to read a result screen, banner, dialog or effect text with: the video's CJK language once
+// recognised (and its model present), else null (English OCR).
+const cjkLang=()=>C.LOCALES[nameLanguage.lang]?.script&&locales[nameLanguage.lang]?nameLanguage.lang:null;
 const ocrDirectory=process.env.OCR_CACHE_DIR??path.join(os.homedir(),'.cache/gbl-synapse/ocr-v1'),ocrEngine=Ocr.createTesseractOcr({directory:ocrDirectory,enabled:ocrDirectory!=='off'});
 const exactCacheEnabled=process.env.VIDEO_EXACT_CACHE!=='off',targetGateEnabled=process.env.SURRENDER_TARGET_GATE!=='off';
 const calibrationCache=Calibration.createCalibrationCache({enabled:exactCacheEnabled});
@@ -47,7 +52,7 @@ const now=()=>Number(process.hrtime.bigint())/1e6;
 function recognizePgm(pgm,{lines=1}={}){return ocrEngine.recognize(pgm,{inputPath:path.join(tmp,'crop.pgm'),args:['-','--psm',lines>1?'6':'7','tsv']});}
 // A nameplate read with a CJK language model (core.js LOCALES[lang].ocr). TSV is requested by variable, not the
 // "tsv" config file, which a separate tessdata directory lacks.
-function ocrLocale(img,box,lang){const t0=now(),pgm=Dialog.grayscalePgm(img,box),r=ocrEngine.recognize(pgm,{inputPath:path.join(tmp,'crop.pgm'),args:['-','-l',C.LOCALES[lang].ocr,'--tessdata-dir',TESSDATA_LOCALES,'--psm','7','-c','tessedit_create_tsv=1']});
+function ocrLocale(img,box,lang,{whiteText=false,lines=1}={}){const t0=now(),pgm=Dialog.grayscalePgm(img,box,{whiteText}),r=ocrEngine.recognize(pgm,{inputPath:path.join(tmp,'crop.pgm'),args:['-','-l',C.LOCALES[lang].ocr,'--tessdata-dir',TESSDATA_LOCALES,'--psm',lines>1?'6':'7','-c','tessedit_create_tsv=1']});
  metrics.localeReads=(metrics.localeReads||0)+1;metrics.ms.ocr+=now()-t0;return r;}
 function ocr(img,box,{whiteText=false,lines=1}={}){const t0=now(),pgm=Dialog.grayscalePgm(img,box,{whiteText}),result=recognizePgm(pgm,{lines});
  metrics.ms.ocr+=now()-t0;return result;}
@@ -69,11 +74,18 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
  function nameOf(img,s,t){let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;const r=ocr(img,s.nameBox),box=s.nameBox,res=C.readName(r,{dict,locales,language:nameLanguage,alt:lang=>ocrLocale(img,box,lang)});hit=res.hit;names.set(s.bits,hit);if(res.switched){names.forgetUnread();metrics.nameLanguageAt=t;}}else metrics.cached++;return hit;}
  let dy=null,k=0,filled=0,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*rowsUsed*4,frame=Buffer.alloc(W*H*4);
+ // Banners: English text first ("Go, X!", "X used Y!"); other Latin-script UIs from the same text; a CJK UI
+ // (once recognised) only with its language model (core.js localBanner). Chinese banners take two lines.
+ function readBanner(t,img,box){const lang=cjkLang();let r;
+  if(!lang){r=ocr(img,box,{whiteText:true});if(!tracker.go(t,r.text,dict))tracker.move(t,r.text,r.confidence,gm.moves);if(C.parseBanner(r.text))return;}
+  else r=ocrLocale(img,box,lang,{lines:lang.startsWith('zh')?2:1});   // pale text on the translucent box: plain grey
+  const lb=C.localBanner(r.text,{lang:nameLanguage.lang,locales,moveMaps,moves:gm.moves,dict});if(!lb)return;metrics.localBanners=(metrics.localBanners||0)+1;
+  if(lb.kind==='go')tracker.go(t,r.text,dict,lb);else tracker.move(t,r.text,r.confidence,gm.moves,lb);}
  function readSurrender(t,img,box){
   metrics.surrenderCandidates=(metrics.surrenderCandidates||0)+1;
   if(targetGateEnabled&&!Dialog.hasSurrenderTarget(tracker,t)){metrics.surrenderSkippedNoBattle=(metrics.surrenderSkippedNoBattle||0)+1;return;}
   const t0=now(),pgm=Dialog.grayscalePgm(img,box),compute=()=>{metrics.surrenderReads=(metrics.surrenderReads||0)+1;return recognizePgm(pgm,{lines:2});};
-  const positive=exactCacheEnabled?surrenderCache.evaluate({t,identity:pgm,compute}).isSurrender:C.isSurrender(compute().text);
+  const lang=cjkLang(),positive=lang?C.isSurrender(ocrLocale(img,box,lang,{lines:2}).text):exactCacheEnabled?surrenderCache.evaluate({t,identity:pgm,compute}).isSurrender:C.isSurrender(compute().text);
   metrics.ms.ocr+=now()-t0;
   if(positive){lastSurrender=t;tracker.surrender(t);}
  }
@@ -104,11 +116,16 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
      if(!hudOffset.trusted&&(hud.my.hit||hud.opponent.hit))hudOffset.trust();
      tracker.observe(t,hud);}
     else{const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});if(band.black>.9)tracker.blackout(t);
-     if(tracker.awaitingResult(t)&&C.resultCandidate(band)){metrics.resultReads++;const r=ocr(img,[0,y0,W,y1],{whiteText:true,lines:2});const value=C.outcome(r.text.replace(/\s+/g,' '));if(value)tracker.result(t,value);else if(/finding opponent|battle starting/i.test(r.text))tracker.matchmaking();}
+     if(tracker.awaitingResult(t)&&C.resultCandidate(band)){metrics.resultReads++;const r=ocr(img,[0,y0,W,y1],{whiteText:true,lines:2});let value=C.outcome(r.text.replace(/\s+/g,' ')),text=r.text;
+      // Chinese result screens (獲勝！/ 辛苦了！) and CJK matchmaking text need the video's language model.
+      if(!value&&cjkLang()&&!C.isMatchmaking(text)){metrics.localeResultReads=(metrics.localeResultReads||0)+1;text=ocrLocale(img,[0,y0,W,y1],cjkLang(),{whiteText:true,lines:2}).text;value=C.outcome(text);}
+      if(value)tracker.result(t,value);else if(C.isMatchmaking(text))tracker.matchmaking();}
      else if(C.surrenderCandidate(band)&&t-lastSurrender>4)readSurrender(t,img,[0,y0,W,y1]);
 }
     // Banners ("X used Y!", "Go, X!"), with or without nameplates on screen; OCR only new text.
-    if(tracker.current&&dy!==null){const bn=C.bannerRead(img,dy);if(bn.textPixels>=.03&&bn.textPixels<=.5&&diffShare(bn.sig,lastBanner)>=.04){lastBanner=bn.sig;metrics.bannerReads++;const r=ocr(img,bn.box,{whiteText:true});if(!tracker.go(t,r.text,dict))tracker.move(t,r.text,r.confidence,gm.moves);}}
+    // A CJK UI's banners are found by their stroke edges instead (core.js bannerEdges); Chinese ones take two lines.
+    if(tracker.current&&dy!==null){if(cjkLang()){const b0=C.bannerBox(img,dy),h=b0[3]-b0[1],bb=cjkLang().startsWith('zh')?[b0[0],b0[1]-h/2,b0[2],b0[3]+h/2]:b0,be=C.bannerEdges(img,bb,{search:h});if(be.share>=.02&&be.share<=.2&&diffShare(be.sig,lastBanner)>=.04){lastBanner=be.sig;metrics.bannerReads++;readBanner(t,img,be.box);}}
+     else{const bn=C.bannerRead(img,dy);if(bn.textPixels>=.03&&bn.textPixels<=.5&&diffShare(bn.sig,lastBanner)>=.04){lastBanner=bn.sig;metrics.bannerReads++;readBanner(t,img,bn.box);}}}
     metrics.ms.hud+=now()-t0;}
    // The surrender dialog shows for under a second, so it is looked for on every frame of a battle
    // (cheap band statistics; OCR only when a white card fills the middle band).
@@ -120,7 +137,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     // "SUPER EFFECTIVE!" / "NOT VERY EFFECTIVE…" above a bar: the attack on that Pokémon. Each distinct
     // look of the text is read once (fingerprint cache); repeats within 0.8 s count once.
     for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=Hp.effectBox(bar,W),e=Hp.effectSig(band,box,Y0);if(e.share<.03||e.share>.45||!Hp.effectShape(e.sig))continue;
-     let kind=effCache.get(e.sig);if(kind===undefined&&t-(effRead[side]??-9)<.9)continue;if(kind===undefined){metrics.effectReads=(metrics.effectReads||0)+1;const r=ocr(img,box,{whiteText:true});kind=Hp.effectKind(r.text);if(kind||r.text.replace(/[^A-Za-z]/g,'').length>=6)effRead[side]=t;if(process.env.EFFDEBUG){const g=e.sig;let L=0,T=0;const rows=[];for(let rr=0;rr<12;rr++){let n=0;for(let c=0;c<96;c++)if(g[rr*96+c]){n++;T++;if(c<38)L++;}rows.push(n);}(metrics.effDebug||(metrics.effDebug=[])).push({t:+t.toFixed(1),side,kind,text:r.text.slice(0,30),share:+e.share.toFixed(3),left:+(L/T).toFixed(2),rows:rows.join(',')});}effCache.set(e.sig,kind);}
+     let kind=effCache.get(e.sig);if(kind===undefined&&t-(effRead[side]??-9)<.9)continue;if(kind===undefined){metrics.effectReads=(metrics.effectReads||0)+1;const lang=cjkLang(),r=lang?ocrLocale(img,box,lang,{whiteText:true}):ocr(img,box,{whiteText:true});kind=Hp.effectKind(r.text);if(kind||r.text.replace(lang?/[\s\p{P}]/gu:/[^A-Za-z]/g,'').length>=(lang?3:6))effRead[side]=t;if(process.env.EFFDEBUG){const g=e.sig;let L=0,T=0;const rows=[];for(let rr=0;rr<12;rr++){let n=0;for(let c=0;c<96;c++)if(g[rr*96+c]){n++;T++;if(c<38)L++;}rows.push(n);}(metrics.effDebug||(metrics.effDebug=[])).push({t:+t.toFixed(1),side,kind,text:r.text.slice(0,30),share:+e.share.toFixed(3),left:+(L/T).toFixed(2),rows:rows.join(',')});}effCache.set(e.sig,kind);}
      if(kind){const last=effects.findLast?.(x=>x.side===side)??[...effects].reverse().find(x=>x.side===side);if(!last||last.kind!==kind||t-last.t>.8)effects.push({t,side,kind});else last.t=t;}}metrics.denseFrames++;metrics.ms.bars+=now()-t0;}
    waitFrom=now();}}
  const status=await finishedDecode;if(status.error||status.code!==0||filled)throw status.error||Error(`Incomplete ffmpeg decode (exit ${status.code}, ${filled} trailing bytes)`);}

@@ -529,6 +529,14 @@ class TestBattleTypes(unittest.TestCase):
                 doc = H.write_league_refinement(p, {"leagueId": "great", "championship": True}, SCHED, "20250103")
                 self.assertEqual(doc["battles"][0]["best"], "championship")
                 self.assertEqual(doc["battles"][0]["battleType"], "championship")
+                # The post-analysis hook writes exactly league.refine_video's document (refine-all's sidecar).
+                with open(p) as f:
+                    res = json.load(f)
+                vl = {"leagueId": "great", "cupCandidates": []}
+                doc = H.write_league_refinement(p, vl, SCHED, "20250103")
+                self.assertEqual(doc, L.refine_video(res, vl, SCHED, L.load_gamemaster(), "20250103"))
+                with open(p.replace(".json", ".leagues.json")) as f:
+                    self.assertEqual(json.load(f), doc)
             finally:
                 L.load_gamemaster = orig
 

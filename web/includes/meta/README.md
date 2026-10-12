@@ -320,7 +320,7 @@ The same causes cost battles in videos that did produce some:
   - Result screens: DU HAST GEWONNEN! / GUT GEKÄMPFT!, ¡GANASTE! / ¡HAS GANADO! / ¡BUEN INTENTO!,
     VOCÊ VENCEU! / ÓTIMA TENTATIVA! (read from harvested videos). The CJK videos examined cut their result
     screens, so CJK results come only from the Poké Ball count.
-  - The browser reads the Latin-script languages; CJK needs the Node runner (no bundled CJK models).
+  - The browser reads the Latin-script languages; CJK models are fetched on demand (2026-10-12, below).
 - **Recalibration** (`core.js` HudOffset, run-node and the browser).
   - A frame whose HUD doesn't read is calibrated again: every 4th such frame until the offset has named a
     species, then every 20th. A new offset (> 4 px from every proven one) is kept only if its nameplates
@@ -409,17 +409,93 @@ as English) went from 0 to 10 results each.
 - Removed by the tracker rules, all noise: the one-frame battle in ktg6J7if8Rc at 1751.5 s (the real battle
   starts 0.5 s later) and a 2-s start in cGATSvEItIM.
 
-**Left**
-- Result screens, "Go, X!" and "X used Y!" banners and effectiveness text in CJK languages; French and
-  Italian result texts (no sample yet). "NO MUY EFICAZ" and similar aren't read.
-- The browser has no CJK models.
-- Re-extraction needs the videos: 101 + 39 + 20 earlier zero-battle runs with Japanese, Korean or Chinese
-  titles, and the German, Spanish and Portuguese videos (results).
-- Splits longer than 20 s and merged battles remain in some edited videos (khxysRLr8AE: its first battle is
-  split at 31 s).
+**Left** (see the follow-up below for what 2026-10-12 closed)
 - Not examined: the 4 English videos with ≤ 14 HUD keyframes (Rocket, events).
 - The no-HUD probe is about 12 s slower (inset search).
 - `aura-features.cjs` (the Shadow agent's) still assigns bars with the phone windows.
+
+### Result screens, banners and battle boundaries in other languages (2026-10-12)
+
+**Game strings.** Taken from the game's own localisation (Pokémon GO i18n text as datamined publicly by PokeMiners,
+`pogo_assets/Texts`; only the few strings below are copied, as matchers):
+
+| Key | ja | ko | zh-Hant | de / fr / it / es / pt |
+| --- | --- | --- | --- | --- |
+| combat_result_victory / _defeat | WIN! / NICE TRY! | YOU WIN! / NICE TRY! | 獲勝！/ 辛苦了！ | DU HAST GEWONNEN! … / GAGNÉ ! · BEL EFFORT ! / Hai vinto! · Peccato! / (es, pt already read) |
+| battle_charged_move_callout | XはYを使った！ | X(은)는 Y(을)를 썼다! | X 使出了 Y！(two lines) | X hat Y eingesetzt! / X a utilisé Y ! / X usa Y! / ¡X ha usado Y! · ¡X usó Y! / X usou Y! |
+| battle_throw_callout (_opponent) | ゆけっ！X！(相手が Xをくりだした！) | 가랏! X! (상대가 X(을)를 내보냈다!) | 上吧！X！(對手派出了X！) | Los, X! / Vas-y, X ! / Vai, X! / ¡Adelante, X! / Vamos, X! |
+| combat_surrender, matchmaking, effectiveness | 降参しますか？… | 항복하고… | 要投降並退出對戰嗎？… | all five languages |
+
+- **Results** (`core.js` RESULT_TEXT, outcome): the Japanese and Korean screens are in English letters, so the English
+  OCR reads them ("WIN!" must be exact; 6+ letter phrases tolerate one wrong letter). Chinese screens are read again with
+  `chi_tra` when the English read finds nothing (`run-node.cjs`, `ui.js`). Surrender dialogs of a CJK video are read with
+  its model; matchmaking text (`isMatchmaking`) in every language.
+- **Banners** (`core.js` parseLocalBanner, localBanner): English is parsed first, exactly as before. Otherwise the
+  Latin-script patterns are tried on the same text (Spanish, Italian and Portuguese videos stay `en`, their names being
+  English), and a CJK video's banner is read only with its model. The actor goes through the species dictionaries
+  (English key), the move through `move-names.json`: PokeAPI `move_names.csv` (BSD-3-Clause; Japanese kana names, as the
+  game) mapped to PvPoke moves by English name (`tests/meta-benchmark/build-move-names.cjs`; 348 of 352 PvPoke moves).
+  Checked against the game's own move names: 345/349 ja, 344 ko, 344 zh-Hant, 345 de, 345 it, 338 fr, 336 es identical.
+  A "+" move gives way to the plain one; names shared by typed variants (Weather Ball, Techno Blast, Hidden Power)
+  are not resolved.
+- **Finding CJK banners** (`core.js` bannerEdges): their thin strokes over the translucent box are pale blue on a light
+  sky (≈150,215,255), so the white-pixel test that finds English banners saw 0.2% text on a Japanese banner and read
+  none. A CJK video's banners are found by sharp brightness steps instead (2.5–3.4% of pixels on banners, ≤ 1.8%
+  otherwise), the box moved up or down by up to its height to the band with most steps (some phones put the text above
+  the English box), twice as tall for Chinese; read as plain grey, not as white text.
+- **Effectiveness** (`hp.js` effectKind): the five Latin languages' texts and the CJK ones (read with the video's model)
+  are recognised when the English rule finds nothing. Few are seen: the text needs a located HP bar under it.
+
+Before → after on the cached test videos (HEAD 9657478 vs this code, same crops; results = result screen or surrender):
+
+| Video | UI | Battles | Results read | "X used Y" | "Go"/"sent out" |
+| --- | --- | --- | --- | --- | --- |
+| afvH9iu5WsE | ja | 5 → 5 | 0 → 0 (result screens cut) | 0 → 27 | 0 → 25 |
+| lC6aiKQuZ5c | ja | 7 → 7 | 0 → 3 | 0 → 36 | 0 → 29 |
+| stLd7OkIg3Y | ja | 4 → 4 | 0 → 4 | 0 → 36 | 0 → 20 |
+| L2Iyrc06j00 | ja | 6 → 6 | 0 → 0 (cut) | 0 → 44 | 0 → 24 |
+| -mROfxnNVBk | ko | 5 → 5 | 3 → 5 | 0 → 40 | 0 → 17 |
+| maw_a7oKYMM | zh-Hant | 6 → 7 | 0 → 0 (cut) | 0 → 6 | 0 → 24 |
+| ktg6J7if8Rc | de | 16 → 15 | 15 → 15 | 0 → 121 | 0 → 105 |
+| aOHJSU0dVok | de | 10 → 10 | 10 → 10 | 0 → 40 | 0 → 64 |
+| cGATSvEItIM | de | 14 → 10 | 10 → 10 | 0 → 73 | 0 → 80 |
+
+**Battle boundaries** (`core.js` HudTracker; diagnosed by replaying recorded tracker calls of 17 videos):
+- *Splits.* A fresh HUD (all balls, both shields) after a "used" shield starts a new battle. In the saved new-code results
+  the remaining 28–56 s splits all came from **one frame on which two shields vanished at once** (both sides, or one side
+  2 → 0) right before a fresh HUD: the shield icons hide as a charged attack starts. Such a jump, shown for ≤ 3 s and
+  followed within 15 s (a cutscene) by a fresh HUD with nobody fainted, is now a misread; a real shield takes one.
+- *Merges.* cBePYfn3m1U read your first ball as fainted on every frame, so no HUD was ever fresh and four battles merged
+  into one of 772 s, separated only by fades to black. After a fade to black, a HUD returning ≥ 3 s later with fewer
+  fainted Pokémon than the battle has seen now starts the next battle (fainted counts never go down within one).
+- Effect (replayed, same OCR): cGATSvEItIM 14 → 10 battles, ktg6J7if8Rc 16 → 15, 0lQexfzN7e0, 2SA7zcwXR4w, 2xJ2kb-_P6k,
+  ZY_8dEQE1x0 one fewer each (the 28–56 s parts rejoined), ginzc90Wae4 7 → 6, cBePYfn3m1U 1 → 4, maw_a7oKYMM 6 → 7 (two
+  "more than three opponent species" battles split at their fades); oF54HR4xMiA, xnSxb3QLToc and the other test
+  videos unchanged.
+
+**Browser** (`ui.js`). Latin-script results, banners and effectiveness work as in Node. CJK models (jsDelivr,
+`cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@4.1.0/`, the same files as `~/.cache/gbl-synapse/tessdata`: kor
+verified byte-identical) are fetched only when needed: after 6 distinct plates without an English or Latin name while no
+language is decided, Japanese, Korean, then Chinese (1.7–2.5 MB each) are tried on up to 8 plates each, with a status
+message; `NameLanguage` switches after two exact matches as in Node, the other models are released, and results,
+banners, dialogs and effect texts are read with the video's model. If a model can't be fetched (offline, or a page such
+as the claude.ai artifact that blocks the download) the run continues in English and the final status says to use the
+local app or the Node runner. Checked in a browser: the Japanese model loads from the CDN and reads ゼクロム (92%).
+
+**Checks.** `meta-locale.test.cjs` (strings, banners, effect texts, the split rules). parity.cjs against main
+(97f5142): 5 of 7 stretches identical; bB0ZrWjwdZw (a Spanish UI) and PbzVRPgmBQY (German) differ only by the newly read
+banners ("¡Adelante, Carbink!", "Altaria ha usado Fuerza Lunar!") and the inference they feed; boundaries, species and
+results unchanged. Labelled benchmark: 8 of the 9 recordings (10min, hour-gl, hour, 5 CC videos) give identical JSON against
+main; 1p_u7XyvWwU's battles 1, 2 and 4 now end at their last battle HUD (199, 386, 715 s) instead of at a transition HUD
+18–25 s later, after the result screen and a fade (the post-fade rule). score.cjs is unchanged everywhere (all battles
+found, 0 extra, every opponent species, the same results).
+
+**Left**
+- Results of videos that cut their result screens (most CJK uploads) still come only from the Poké Ball count.
+- Chinese two-line banners read poorly with `chi_tra` fast (maw_a7oKYMM); effectiveness texts need the HP-bar locator.
+- Spanish move names differ from the game's for 13 moves (PokeAPI uses newer translations); Portuguese move names
+  aren't in PokeAPI, so Portuguese "X usou Y!" banners resolve only English-named moves.
+- The remaining ">3 species" battle in cBePYfn3m1U (534–781 s) has no fade to split on.
 
 ### Effectiveness text (`hp.js` effectBox/effectSig/effectKind, `combat.js` effectLogL)
 When a fast attack lands, the game flashes **SUPER EFFECTIVE!** or **NOT VERY EFFECTIVE…** in white just above the target's HP bar. Every sampled frame checks that strip (from 6 px left of the bar to 320 px right, 3–50 px above it, at the 886 px reference width) with a 96×12 fingerprint of near-white pixels. The strip is read only when it looks like text:
@@ -870,7 +946,7 @@ No video, frames or trainer names are stored. Under **Your analyses**, each reco
 
 ## Contributor workflow
 
-1. Select a battle recording. English, German, French, Spanish, Portuguese and Italian game UIs are read in the browser; Japanese, Korean and Chinese ones need the Node runner, which has their OCR models (*Battles from zero-battle videos*). Portrait screen recordings work best; browser codec support determines which MP4/MOV/WebM files can be decoded. iPhone recordings are HEVC (H.265): Chrome, Edge and Safari on macOS decode them, Firefox does not. H.264 MP4 is the most portable choice.
+1. Select a battle recording. English, German, French, Spanish, Portuguese and Italian game UIs are read in the browser; for Japanese, Korean and Chinese ones the browser fetches that language's OCR model (about 2 MB) from jsDelivr when the nameplates aren't English, and points to the local app or Node runner if it can't (*Result screens, banners and battle boundaries in other languages*). Portrait screen recordings work best; browser codec support determines which MP4/MOV/WebM files can be decoded. iPhone recordings are HEVC (H.265): Chrome, Edge and Safari on macOS decode them, Firefox does not. H.264 MP4 is the most portable choice.
 2. Set the actual **recording date**, league, cup and rating bracket. The recording date deliberately does not default to today: old recordings must not masquerade as current usage.
 3. Optional: pause during a normal battle and use **Read this frame** to check the nameplate reading (names, Poké Balls, shields). The layout is found automatically; only the charged-attack banner box is adjustable.
 4. Select a start/end range and sampling (keyframes by default), then analyze. Cancel preserves partial detections. First use loads a local English OCR model; subsequent sessions reuse its browser cache.
