@@ -518,7 +518,7 @@ class FeedbackService:
                 if a["value"] == "rocket" and confirmed(a):
                     b["battleType"] = "rocket"
                     b.pop("leagueId", None)
-                elif a["value"] not in (None, "other", "rocket"):
+                elif a["value"] not in (None, "other", "rocket", "gbl"):
                     b["leagueId"] = a["value"]
                     b.pop("battleType", None)
                 else:
@@ -535,12 +535,14 @@ class FeedbackService:
             if a["value"] == "rocket" and confirmed(a):
                 labels["videoType"] = "rocket"
                 labels.pop("leagueId", None)
-            elif a["value"] not in (None, "other", "rocket"):
+            elif a["value"] not in (None, "other", "rocket", "gbl"):
                 labels["leagueId"] = a["value"]
                 if labels.get("videoType") == "rocket":
                     labels.pop("videoType")
             else:
                 labels.pop("leagueId", None)
+                if a["value"] == "gbl" and confirmed(a) and labels.get("videoType") == "rocket":
+                    labels.pop("videoType")   # "Not Team Rocket": clears the flag, names no cup
         perspective_requeue = False
         if q["kind"] == "perspective":
             # Championship broadcasts: which phone is the creator side (left/right re-analyses that screen).
@@ -592,7 +594,7 @@ class FeedbackService:
                 if entry:
                     review = entry.get("leagueReview") or {}
                     previous = review.get("previous") or {k: entry.get(k) for k in ("leagueId", "leagueGuess", "leagueConfidence")}
-                    if a["value"] in (None, "other", "rocket"):
+                    if a["value"] in (None, "other", "rocket", "gbl"):
                         entry.update(previous)
                         entry.pop("reviewerLeague", None)
                         entry.pop("leagueReview", None)

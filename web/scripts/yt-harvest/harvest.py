@@ -952,7 +952,7 @@ class Harvester:
                                    "timestampBasis": "original-source-seconds"}
             atomic_json(res, result)
             try:
-                refined = write_league_refinement(res, lg, self.schedule, r["upload_date"])
+                refined = write_league_refinement(res, lg, self.schedule, r["upload_date"], json.loads(r["meta"] or "{}"))
             except Exception as ex:  # refinement is best-effort
                 log.info("league refinement %s: %s", vid, ex)
                 refined = None
@@ -1424,44 +1424,14 @@ def gamemaster_for(upload_date):
             return None
 
 
-def write_league_refinement(result_path, video_league, schedule, upload_date):
-    """Post-analysis hook: per-battle league from observed CPs/species (league.refine_battle_league),
-    Team Rocket flags (impossible or over-cap opponent CPs) and the championship format."""
+def write_league_refinement(result_path, video_league, schedule, upload_date, meta=None):
+    """Post-analysis hook (league.refine_video): per battle the league from the CPs, the cup from the video's text
+    (meta: title, tags, chapters, description; else video_league's textCups), Team Rocket flags and the championship
+    format. The schedule at the upload date only picks a same-name variant and confirms or contradicts the cup."""
     with open(result_path, encoding="utf-8") as f:
         res = json.load(f)
-    cands = sorted(set((video_league.get("cupCandidates") or []) + ([video_league["leagueId"]] if video_league.get("leagueId") else [])
-                       + list(L.BASE)))
-    gm = L.load_gamemaster()
-    screens = len(((res.get("probe") or {}).get("screens")) or [])
-    championship = bool(video_league.get("championship"))
-    possible = championship or bool(video_league.get("possibleChampionship")) or screens >= 2
-    out = []
-    for b in res.get("battles", []):
-        def team(side):
-            return [{"species": (m.get("form") or {}).get("id") or m.get("formId"), "cp": m.get("cp")}
-                    for m in b.get(side + "Detail") or []]
-        my, opp = team("my"), team("opponent")
-        mons = my + opp
-        obs = {"cps": [m["cp"] for m in mons if isinstance(m.get("cp"), (int, float))],
-               "species": [m["species"] for m in mons if isinstance(m.get("species"), str)],
-               "teams": {"my": my, "opponent": opp}}
-        r = L.refine_battle_league(obs, cands, schedule, gm)
-        rocket = r.get("rocket") or {"flag": False, "reasons": []}
-        cap = r["cpCap"]
-        best = r["ranked"][0]["id"] if r["ranked"] else None
-        entry = {"start": b.get("start"), "best": best,
-                 "ranked": [x["id"] for x in r["ranked"][:4]], "cpCap": cap, "eliminated": len(r["eliminated"]),
-                 "options": [{"id": x["id"], "name": x["name"], "cp": x["cp"], "score": x["score"]} for x in r["ranked"][:4]],
-                 "cps": obs["cps"], "rocket": rocket["flag"], "rocketReasons": rocket["reasons"]}
-        if rocket["flag"]:
-            entry["battleType"] = "rocket"
-        elif championship:
-            entry["battleType"] = "championship"
-            ccap = L.plausible_cap([m.get("cp") for m in my])   # the creator side's CPs, if readable
-            entry["best"] = L.CHAMPIONSHIP_ID if ccap in (None, 1500) else f"{L.CHAMPIONSHIP_ID}@{ccap}"
-        out.append(entry)
-    doc = {"video": {**video_league, "championship": championship, "possibleChampionship": possible, "screens": screens},
-           "battles": out}
+    doc = L.refine_video(res, video_league, schedule, L.load_gamemaster(), upload_date,
+                         meta=meta if (meta or {}).get("title") else None)
     with open(result_path.replace(".json", ".leagues.json"), "w") as f:
         json.dump(doc, f, indent=1)
     return doc

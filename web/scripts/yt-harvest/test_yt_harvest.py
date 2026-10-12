@@ -278,20 +278,39 @@ class TestValidation(unittest.TestCase):
         self.assertEqual([q["kind"] for q in qs], ["footage"])
         self.assertEqual(qs[0]["clip"], [150.0, 170.0])
 
-    def test_league_question_once_per_video(self):
-        opts = [{"id": "great", "name": "Great League", "cp": 1500, "score": 3.0},
-                {"id": "spooky", "name": "Spooky Cup", "cp": 1500, "score": 2.5}]
-        refined = {"battles": [{"best": "great", "options": opts, "cps": [1498]}, {"best": "great", "options": opts, "cps": [1500]}]}
+    def test_no_league_or_cup_questions(self):
+        # A reviewer cannot verify a cup: uncaptured or low-confidence cups never become questions, compilation or not.
+        refined = {"battles": [{"best": "great", "cupStatus": "uncaptured", "cps": [1498]}, {"best": "great", "cupStatus": "uncaptured"}]}
         battles = [{"start": 10}, {"start": 200}]
-        qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.5}, refined)
-        self.assertEqual(len(qs), 1)
-        self.assertEqual(qs[0]["options"][-1]["value"], "other")
-        self.assertTrue(qs[0]["allBattles"])
-        # Confident video-level guess: nothing to ask.
-        self.assertEqual(V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.95}, refined), [])
-        # Compilation: each ambiguous battle is asked.
-        qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"kindGuess": "compilation"}, refined)
-        self.assertEqual([q["battle"] for q in qs], [0, 1])
+        for guess in ({"leagueConfidence": 0.2}, {"kindGuess": "compilation"}):
+            self.assertEqual(V.harvest_questions("v1", {"battles": battles}, self.META, guess, refined), [])
+
+    def test_withdraw_open_league_questions(self):
+        with tempfile.TemporaryDirectory() as d:
+            q = lambda qid, kind="league": {"qid": f"youtube-harvest:v1.mp4:{qid}", "kind": kind}  # noqa: E731
+            docs = [q("league"), q("1:league"), q("0:rocket"), q("0:lead", "lead"), q("answered:league")]
+            os.makedirs(os.path.join(d, "validation", "v1"))
+            for doc in docs:
+                with open(os.path.join(d, "validation", "v1", doc["qid"] + ".json"), "w") as f:
+                    json.dump(doc, f)
+            with open(os.path.join(d, "feedback.json"), "w") as f:
+                json.dump({"answers": {docs[4]["qid"]: {"value": "mega@1500"}}}, f)
+            inbox = os.path.join(d, "inbox.json")
+            with open(inbox, "w") as f:
+                json.dump({"format": "meta-validation-inbox", "questions": docs + [{"qid": "extractor:x", "kind": "shadow"}]}, f)
+            fb_before = open(os.path.join(d, "feedback.json")).read()
+            self.assertEqual(V.withdraw_league_questions(d, inbox, os.path.join(d, "bak"), dry_run=True)["withdrawn"], 2)
+            s = V.withdraw_league_questions(d, inbox, os.path.join(d, "bak"))
+            self.assertEqual((s["withdrawn"], s["keptAnswered"], s["inboxRemoved"]), (2, 1, 2))
+            left = sorted(os.listdir(os.path.join(d, "validation", "v1")))
+            self.assertEqual(len(left), 3)                    # Rocket, lead and the answered league question stay
+            self.assertEqual(sorted(x["qid"] for x in json.load(open(inbox))["questions"]),
+                             sorted([docs[2]["qid"], docs[3]["qid"], docs[4]["qid"], "extractor:x"]))
+            manifest = json.load(open(os.path.join(d, "bak", "withdrawn.json")))
+            self.assertEqual({r["source"] for r in manifest["questions"]}, {"policy"})
+            self.assertEqual(manifest["reason"], V.WITHDRAWN_REASON)
+            self.assertTrue(os.path.exists(os.path.join(d, "bak", "v1", docs[0]["qid"] + ".json")))   # moved, reversible
+            self.assertEqual(open(os.path.join(d, "feedback.json")).read(), fb_before)            # never written
 
     def test_decorate_and_inbox(self):
         with tempfile.TemporaryDirectory() as d:
@@ -534,11 +553,11 @@ class TestNewQuestions(unittest.TestCase):
                                             {"best": "master", "options": opts, "rocket": False}]}
         qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.95}, refined)
         rocket = [q for q in qs if q["qid"].endswith("0:rocket")]
-        self.assertEqual(rocket[0]["options"][0]["value"], "rocket")
+        self.assertEqual([o["value"] for o in rocket[0]["options"]], ["rocket", "gbl"])   # no cup options
         self.assertEqual(rocket[0]["modelTop"], "rocket")
         lead = [q for q in qs if q["kind"] == "lead"]
         self.assertEqual([q["battle"] for q in lead], [1])            # the Rocket battle is not asked
-        self.assertEqual(lead[0]["modelTop"], "Azumarill")
+        self.assertEqual(lead[0]["modelTop"], "azumarill")             # the member key; the label is the identity
         # Every battle flagged: one video-level Rocket question.
         refined["battles"][1]["rocket"] = True
         qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.95}, refined)
@@ -552,8 +571,29 @@ class TestNewQuestions(unittest.TestCase):
         self.assertNotIn("league", kinds)
         p = next(q for q in qs if q["kind"] == "perspective")
         self.assertEqual([o["value"] for o in p["options"]], ["left", "right", "single", "switches", "gbl"])
-        # League options always offer Team Rocket.
-        self.assertIn("rocket", [o["value"] for o in V._league_options(opts)])
+
+    def test_lead_labels_show_the_full_identity_and_keep_member_keys(self):
+        names = {"ninetales_alolan": "Ninetales (Alolan)", "lugia": "Lugia", "azumarill": "Azumarill"}
+        self.assertEqual(V.lead_label("Ninetales", {"form": {"id": "ninetales_alolan", "p": 1}, "shadowP": .99}, names),
+                         "Shadow Ninetales (Alolan)")
+        self.assertEqual(V.lead_label("Ninetales", {"form": {"id": "ninetales_alolan_shadow", "p": 1}}, names), "Shadow Ninetales (Alolan)")
+        self.assertEqual(V.lead_label("Ninetales", {"form": {"id": "ninetales_alolan", "p": 1}, "shadowP": .5}, names), "Ninetales (Alolan)")
+        self.assertEqual(V.lead_label("Ninetales", {"form": {"id": "ninetales_alolan", "p": .7}}, names), "Ninetales")   # unsure form
+        self.assertEqual(V.lead_label("Ho-Oh", {}, names), "Ho-Oh")
+        battles = [{"start": 5, "opponent": ["Ninetales", "Lugia", "Ho-Oh"], "flags": [],
+                    "opponentDetail": [{"name": "Ninetales", "form": {"id": "ninetales_alolan", "p": 1}, "shadowP": 1},
+                                       {"name": "Lugia", "form": {"id": "lugia", "p": 1}, "shadowP": 0}, {"name": "Ho-Oh"}]}]
+        full = [{"opponent": [{"label": "Ninetales", "key": "ninetales"}, {"label": "Lugia", "key": "lugia"}, {"label": "Ho-Oh", "key": "hooh"}]}]
+        orig = V._species_names
+        V._species_names = lambda: {**names, "ninetales_alolan": "Ninetales (Alolan)"}
+        try:
+            q = V.lead_questions("v1", battles, full=full)[0]
+        finally:
+            V._species_names = orig
+        self.assertEqual([(o["value"], o["label"]) for o in q["options"][:3]],
+                         [("ninetales", "Shadow Ninetales (Alolan)"), ("lugia", "Lugia"), ("hooh", "Ho-Oh")])
+        self.assertIn("Shadow Ninetales (Alolan)", q["detail"])
+        self.assertEqual(V.lead_questions("v1", battles)[0]["options"][2]["value"], "ho-oh")   # no full result: name-derived key
 
 
 
@@ -713,6 +753,58 @@ class MegaVariantRules(unittest.TestCase):
                                    battle_date="20261008", keywords={"mega@1500": 3})
         self.assertIsNone(r["cpCap"])
         self.assertEqual(r["ranked"][0]["id"], "mega@1500")
+
+    def cup(self, meta, cap=1500, start=10, day="20261005"):
+        return L.battle_cup(L.text_cups(meta, self.S), cap, start, self.S, L.schedule_formats(self.S, day))
+
+    def test_cup_comes_from_the_text_never_the_schedule_alone(self):
+        # Title > tags > chapters > description; the schedule only picks the Mega variant the text's name stands for.
+        c = self.cup({"title": "Shadow Palkia - Color Cup"})
+        self.assertEqual((c["cup"], c["status"], c["source"], c["confidence"], c["variant"]),
+                         ("colormega", "text-confirmed", "title", 1.0, "color -> colormega"))
+        self.assertEqual(self.cup({"title": "Lugia", "tags": ["color cup"]})[("source")], "tags")
+        # Nothing named: uncaptured, with what the schedule ran at the CP as a hint only.
+        c = self.cup({"title": "Shadow Palkia climbs"})
+        self.assertEqual((c["cup"], c["status"], c["reason"]), (None, "uncaptured", "no-cup-named"))
+        self.assertEqual(c["scheduled"], ["Mega Color Cup: Great League Edition", "Retro Cup"])   # upload week + lag window
+        # The description alone is too weak (channel blurbs name every league).
+        c = self.cup({"title": "Shadow Palkia", "description": "Great League, Ultra League and Master League videos"})
+        self.assertEqual((c["status"], c["reason"]), ("uncaptured", "weak-text"))
+        # Several cups at the battle's CP: penalised below the threshold; a bare league word yields to a named cup.
+        self.assertEqual(self.cup({"title": "Retro Cup and Color Cup"})["reason"], "several-cups")
+        self.assertEqual(self.cup({"title": "Color Cup Great League"})["cup"], "colormega")
+        # Same-name variants named together are one candidate, settled by the schedule.
+        self.assertEqual(self.cup({"title": "Color Cup", "tags": ["mega color cup"]})["cup"], "colormega")
+        # A league named in the text resolves to its scheduled Mega Edition; other CPs do not compete.
+        self.assertEqual(self.cup({"title": "Great League climb"}, day="20261008")["cup"], "mega@1500")
+        self.assertEqual(self.cup({"title": "Great League and Ultra League"}, cap=2500, day="20261008")["cup"], "mega@2500")
+        self.assertEqual(self.cup({"title": "Ultra League team"})["reason"], "other-cp")
+        # Text the schedule contradicts stays the cup (text-only, saying what ran); no schedule record says so too.
+        c = self.cup({"title": "Retro Cup"}, day="20261015")
+        self.assertEqual((c["cup"], c["status"], c["reason"]), ("retro", "text-only", "disagrees"))
+        self.assertEqual(self.cup({"title": "Retro Cup"}, day="20240101")["reason"], "no-record")
+        # Compilations: chapters only, per segment.
+        meta = {"title": "Best moments compilation", "chapters": [{"start": 0, "title": "Retro Cup"}, {"start": 100, "title": "Color Cup"},
+                                                                  {"start": 200, "title": "Outro"}]}
+        self.assertEqual(self.cup(meta, start=50)["cup"], "retro")
+        self.assertEqual((self.cup(meta, start=150)["cup"], self.cup(meta, start=150)["source"]), ("colormega", "chapters"))
+        self.assertEqual(self.cup(meta, start=250)["reason"], "compilation")
+        self.assertEqual(self.cup({"title": "Funny moments in Color Cup"})["reason"], "compilation")
+        # Localised names count as the cup's name.
+        self.assertEqual(L.keyword_hits("Marowak en Copa Color", self.S), {"color": 1})
+
+    def test_refine_video_league_from_cps_cup_from_text(self):
+        mon = lambda c: {"form": {"id": "x"}, "cp": c}  # noqa: E731
+        res = {"battles": [{"start": 5, "myDetail": [mon(1490)], "opponentDetail": [mon(1495)]},
+                           {"start": 50, "myDetail": [mon(2490)], "opponentDetail": [mon(2481)]}]}
+        doc = L.refine_video(res, {}, self.S, {}, "20261005", meta={"title": "Color Cup"})
+        a, b = doc["battles"]
+        self.assertEqual((a["league"], a["cup"], a["cupStatus"], a["best"]), ("great", "colormega", "text-confirmed", "colormega"))
+        self.assertEqual((b["league"], b["cup"], b["cupStatus"], b["cupReason"], b["best"]), ("ultra", None, "uncaptured", "other-cp", "ultra"))
+        self.assertIn("formats", doc["video"]["textCups"])
+        # A reviewer's video-wide label is the cup (at its CP).
+        doc = L.refine_video(res, {"leagueId": "retro", "reviewerLeague": True}, self.S, {}, "20261005", meta={"title": "Color Cup"})
+        self.assertEqual((doc["battles"][0]["cup"], doc["battles"][0]["cupSource"], doc["battles"][1]["cup"]), ("retro", "reviewer", None))
 
     def test_refine_all_rewrites_only_sidecars_with_backup(self):
         import hashlib

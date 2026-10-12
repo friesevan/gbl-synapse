@@ -82,6 +82,7 @@ REASONS = {
     'footage': 'Footage labelled no-footage or obscured',
     'other-league': 'Not 1,500 CP (Ultra, Master, Little or unknown league)',
     'restricted-cup': 'Restricted 1,500 CP cup (not in --cups)',
+    'unknown-cup': 'Cup not named in the video text (may be a restricted cup)',
     'partial': 'Partial team (fewer than three identified members)',
     'boundary': 'Battle boundary flagged (more than three opponent species)',
     'lead-unknown': 'Recording starts mid-battle: lead unknown',
@@ -330,19 +331,21 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
             reason = 'footage'
         elif lg.get('cp') != 1500:
             reason = 'other-league'
+        elif (o.get('cupRange') or {}).get('status') == 'uncaptured':
+            reason = 'unknown-cup'
         elif (lg.get('cupId') or 'great') not in cups:
             reason = 'restricted-cup'
-        in_gl = reason in (None, 'restricted-cup')
+        in_gl = reason in (None, 'restricted-cup', 'unknown-cup')
         if in_gl:
-            cup_id = lg.get('cupId') or 'great'
-            by_cup[(cup_id, 'Great League' if cup_id == 'great' else lg.get('cup') or cup_id)] += 1
+            cup_id = 'unknown' if reason == 'unknown-cup' else lg.get('cupId') or 'great'
+            by_cup[(cup_id, 'Great League' if cup_id == 'great' else 'Unknown cup' if cup_id == 'unknown' else lg.get('cup') or cup_id)] += 1
         h = harvested.get(vid, {})
         collected = o['battleDate'] if o.get('dateVerified') and o.get('battleDate') else (o['source'].get('uploadDate') or h.get('uploadDate'))
         channel = o['source'].get('channel') or h.get('channel')
         creator = h.get('channelId') or channel or ('video:' + vid)
         base = {'videoId': vid, 'battle': o['battleIndex'], 'start': b.get('start') or 0, 'end': b.get('end'),
                 'collectedAt': collected, 'dateBasis': 'recording' if o.get('dateVerified') and o.get('battleDate') else 'upload',
-                'creator': creator, 'channel': channel or ('unknown channel (' + vid + ')'), 'cup': lg.get('cupId') or 'great',
+                'creator': creator, 'channel': channel or ('unknown channel (' + vid + ')'), 'cup': lg.get('cupId') or ('unknown' if reason == 'unknown-cup' else 'great'),
                 'result': b.get('result'), 'fainted': json.dumps(b.get('fainted'), sort_keys=True),
                 'shields': json.dumps(b.get('shieldsUsed'), sort_keys=True)}
         if reason is None:

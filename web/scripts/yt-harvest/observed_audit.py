@@ -28,7 +28,7 @@ def summarize(state):
             reasons[r['reason']] += 1
         if r.get('repeat'):
             repeat += 1
-        if r.get('reason') == 'contradicted':
+        if r.get('reason') == 'disagrees':
             key = (o['league']['id'], o['league']['cp'], o['league'].get('source'),
                    tuple(sorted(s['id'] for s in r.get('scheduled', []))))
             cats[key] += 1

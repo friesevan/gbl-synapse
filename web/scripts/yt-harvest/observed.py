@@ -33,6 +33,8 @@ def stamp(path):
 
 
 MODEL_KINDS = {'shadow': 'shadow', 'fast': 'fastMove', 'form': 'form'}
+# League answers that name no cup: "rocket" (a battle type) and "gbl" (the Rocket question's "not a Rocket battle").
+NOT_A_LEAGUE = ('rocket', 'gbl')
 
 
 def model_answers(feedback):
@@ -172,10 +174,12 @@ class ObservedCatalog:
                     break
             occurrences.sort(key=lambda o: (o['source'].get('uploadDate') or '', o['source']['videoId'], o['battle']['start']), reverse=True)
             revision = hashlib.sha256(repr(sig).encode()).hexdigest()[:20]
-            periods = {}
+            periods, by_league = {}, {}
             for o in occurrences:
                 r = o['cupRange']
                 periods[r['status']] = periods.get(r['status'], 0) + 1
+                row = by_league.setdefault(o['league']['name'], {})
+                row[r['status']] = row.get(r['status'], 0) + 1
                 if r.get('reason'):
                     periods[r['reason']] = periods.get(r['reason'], 0) + 1
                 if r.get('repeat'):
@@ -187,7 +191,7 @@ class ObservedCatalog:
                                   'cups': {k: c.get('name') for k, c in (schedule.get('cups') or {}).items() if isinstance(c, dict)}},
                      'pvpoke': self.pvpoke(pvpoke_files),
                      'summary': {
-                'periodStatus': periods,
+                'periodStatus': periods, 'cupStatusByLeague': by_league,
                 'videos': len(videos_with_battles), 'battles': len(occurrences),
                 'completeCreatorTeams': sum(o['complete']['my'] for o in occurrences),
                 'completeOpponentTeams': sum(o['complete']['opponent'] for o in occurrences),
@@ -222,26 +226,35 @@ class ObservedCatalog:
         result = b.get('result') or source_b.get('result') or 'Unknown'
         result_source = b.get('resultSource') or source_b.get('resultSource') or 'Unresolved'
         ending = None
-        league_answers = sorted((a for a in answers if a.get('kind') == 'league' and a.get('value') != 'other'),
+        league_answers = sorted((a for a in answers if a.get('kind') == 'league' and a.get('value') not in (None, 'other')),
                                 key=lambda a: str(a.get('answeredAt') or ''))
-        league_labels = [a for a in league_answers if a.get('value') != 'rocket']
+        league_labels = [a for a in league_answers if a.get('value') not in NOT_A_LEAGUE]
         per_b = next((x for x in labels.get('battles', []) if x.get('n') == index + 1), {})
         inferred = next((x for x in leagues.get('battles', []) if x.get('start') == b.get('start')), {})
         battle_type = self._battle_type(league_answers, per_b, labels, leagues, inferred)
         champion = battle_type == 'championship'
-        league_id = (league_labels[-1]['value'] if league_labels and not champion else per_b.get('leagueId') or labels.get('leagueId')
-                     or inferred.get('best') or video.get('leagueId') or (leagues.get('video') or {}).get('leagueId'))
-        if champion and not str(league_id or '').startswith('championship'):
-            league_id = inferred.get('best') if str(inferred.get('best') or '').startswith('championship') else 'championship'
+        # The league comes from the CPs; the cup from the video's text (league.battle_cup, stored in the sidecar) or a
+        # reviewer's label. The schedule alone never assigns a cup: without one the battle stays under its league with
+        # an unknown cup. Sidecars written before this rule (no cupStatus) count as uncaptured.
+        reviewer_cup = league_labels[-1]['value'] if league_labels else per_b.get('leagueId') or labels.get('leagueId')
+        cup_source = 'reviewer' if reviewer_cup else inferred.get('cupSource') if 'cupStatus' in inferred else None
+        league_id = reviewer_cup or (inferred.get('cup') if 'cupStatus' in inferred else None)
+        if champion:
+            league_id = (league_id if str(league_id or '').startswith('championship') else inferred.get('best')
+                         if str(inferred.get('best') or '').startswith('championship') else 'championship')
+            cup_source = cup_source or 'title'
         cup_id, _, cp_suffix = str(league_id or '').partition('@')
         cup = (schedule.get('cups') or {}).get(cup_id, {})
-        cp = int(cp_suffix) if cp_suffix.isdigit() else 1500 if champion else inferred.get('cpCap') or cup.get('cp') or {'great': 1500, 'ultra': 2500, 'master': 10000, 'little': 500}.get(cup_id)
+        base_cp = {'great': 1500, 'ultra': 2500, 'master': 10000, 'little': 500}
+        cp = (int(cp_suffix) if cp_suffix.isdigit() else 1500 if champion else inferred.get('cpCap') or cup.get('cp')
+              or base_cp.get(cup_id) or base_cp.get(inferred.get('league')))
         league_name = 'Championship' if champion else {500: 'Little League', 1500: 'Great League', 2500: 'Ultra League', 10000: 'Master League'}.get(cp, 'Unassigned league')
-        cup_name = 'Championship' if champion else 'all' if cup_id in ('great', 'ultra', 'master', 'little') else cup.get('name') or cup_id or 'all'
+        cup_name = ('Championship' if champion else 'unknown' if not cup_id else 'all' if cup_id in base_cp
+                    else inferred.get('cupName') if inferred.get('cup') == league_id and inferred.get('cupName') else cup.get('name') or cup_id)
         league = {'id': league_id, 'cupId': cup_id or None, 'cup': cup_name, 'cp': cp, 'name': league_name,
-                  'format': 'championship' if champion else 'gbl',
-                  'source': 'reviewer' if league_labels or per_b.get('leagueId') or labels.get('leagueId') or labels.get('videoType') == 'championship' else 'inferred',
-                  'confidence': 1 if league_labels else video.get('leagueConfidence')}
+                  'format': 'championship' if champion else 'gbl', 'cupSource': cup_source,
+                  'source': 'reviewer' if reviewer_cup or labels.get('videoType') == 'championship' else 'inferred',
+                  'confidence': 1 if reviewer_cup else inferred.get('cupConfidence')}
         for a in answers:
             if a.get('kind') == 'result':
                 result, _, ending = str(a['value']).partition(':')
@@ -256,8 +269,10 @@ class ObservedCatalog:
         upload = date(video.get('uploadDate'))
         battle_date = date(b.get('battleDate') or raw.get('battleDate') or video.get('recordedDate'))
         date_verified = bool(battle_date and (b.get('dateVerified') or raw.get('dateVerified') or video.get('recordedDateVerified')))
+        uncaptured = None if league_id else 'no-league' if not cp else (inferred.get('cupReason') if 'cupStatus' in inferred
+                                                                         else 'not-refined') or 'no-cup-named'
         period = self._period(cup_id, cp, battle_date if date_verified else upload, schedule, date_verified,
-                              'championship' if champion else None if league_id else 'no-league')
+                              'championship' if champion else uncaptured)
         start, end = b.get('start', 0), b.get('end')
         url = 'https://www.youtube.com/watch?v=' + vid + '&t=' + str(max(0, int(start or 0))) + 's'
         events = b.get('events') or source_b.get('moves') or []
@@ -267,8 +282,10 @@ class ObservedCatalog:
                                        key=lambda a: str(a.get('answeredAt') or ''), reverse=True)), None)
         lead_confirmed = bool(b.get('leadConfirmed'))
         if lead:
-            at = next((j for j, m in enumerate(teams['opponent']) if str(m.get('name') or '').lower() == str(lead['value']).lower()
-                       or str(m.get('id') or '').lower() == str(lead['value']).lower()), None)
+            # The value is the member key (since lead options show the full identity); older answers hold the name.
+            value = str(lead['value']).lower()
+            at = next((j for j, m in enumerate(teams['opponent']) if value in (str(m.get('key') or '').lower(),
+                       str(m.get('name') or '').lower(), str(m.get('id') or '').lower())), None)
             if at is not None:
                 teams['opponent'].insert(0, teams['opponent'].pop(at))
                 lead_confirmed = True
@@ -403,24 +420,18 @@ class ObservedCatalog:
 
     @staticmethod
     def _period(cup, cp, anchor, schedule, verified, unscheduled=None):
-        """Checks the battle's observed cup against the GBL schedule for its date.
-        status: confirmed (verified recording date inside a period of this cup), estimated (one period of
-        this cup in the upload-date lag window; repeat=True when the cup ran in several periods of the window, which
-        are listed and spanned), unassigned (reason: ambiguous = different cups, no-date, no-league,
-        championship, contradicted, outside-schedule). contradicted = the schedule ran other formats at this
-        CP on those dates but never this cup: the observed cup or the date is wrong."""
-        base = {'start': None, 'end': None, 'source': 'unassigned', 'estimated': True, 'status': 'unassigned'}
-        if unscheduled or not cup:
-            reason = unscheduled or 'no-league'
-            return {**base, 'reason': reason, 'candidates': [],
-                    'dateBasis': 'championship battles are not on the GBL schedule' if reason == 'championship'
-                    else 'no league or cup was identified'}
-        if not anchor:
-            return {**base, 'reason': 'no-date', 'candidates': [], 'dateBasis': 'no verified recording date or upload date'}
-        day = dt.date.fromisoformat(anchor)
-        low = day if verified else day - dt.timedelta(days=UPLOAD_LAG_DAYS)
+        """Checks the battle's cup (taken from the video's text, or a reviewer's label) against the GBL schedule.
+        status: text-confirmed (the schedule ran this cup: a verified recording date inside one of its periods, or the
+        upload date with its lag window overlapping them; repeat=True when it ran in several periods of the window,
+        which are listed and spanned), text-only (reason: disagrees = the schedule ran other formats at this CP on those
+        dates, never this cup, listed in `scheduled`; no-record = no schedule period at this CP covers the dates, or no
+        date; championship = not on the GBL schedule), uncaptured (no cup in the text: reason says why, and
+        `scheduled` lists what the schedule ran at the battle's CP, a hint only, never assigned)."""
+        base = {'start': None, 'end': None, 'source': 'unassigned', 'estimated': True}
+        day = dt.date.fromisoformat(anchor) if anchor else None
+        low = (day if verified else day - dt.timedelta(days=UPLOAD_LAG_DAYS)) if day else None
         candidates, active = [], []
-        for p in schedule.get('periods', []):
+        for p in schedule.get('periods', []) if day else []:
             if p.get('start', '9999') > day.isoformat() or p.get('end', '') < low.isoformat():
                 continue
             for f in p.get('formats', []):
@@ -431,7 +442,23 @@ class ObservedCatalog:
                 if f.get('id') == cup:
                     candidates.append({'id': f.get('id'), 'start': p['start'], 'end': p['end'], 'source': p.get('source'), 'season': p.get('season'),
                                        'confidence': p.get('confidence')})
-        window = {'from': low.isoformat(), 'to': day.isoformat()}
+        seen = {}
+        for a in active:
+            seen.setdefault((a['id'], a['name']), a)
+        scheduled = list(seen.values())[:6]
+        window = {'from': low.isoformat(), 'to': day.isoformat()} if day else None
+        if unscheduled == 'championship':
+            return {**base, 'status': 'text-only', 'reason': 'championship', 'candidates': [], 'scheduled': [],
+                    'dateBasis': 'championship battles are not on the GBL schedule'}
+        if unscheduled or not cup:
+            reason = unscheduled or 'no-cup-named'
+            return {**base, 'status': 'uncaptured', 'reason': reason, 'candidates': [], 'window': window,
+                    'scheduled': [] if reason == 'no-league' else scheduled,
+                    'dateBasis': 'no league was identified' if reason == 'no-league'
+                    else 'the video text names no cup for this battle; the schedule is a hint only'}
+        if not day:
+            return {**base, 'status': 'text-only', 'reason': 'no-record', 'candidates': [], 'scheduled': [],
+                    'dateBasis': 'no verified recording date or upload date'}
         ids = {c['id'] for c in candidates}
         if len(candidates) > 1 and len(ids) == 1:
             # The same cup ran in more than one period of the window (a repeat week): not ambiguous for the meta, which
@@ -440,7 +467,7 @@ class ObservedCatalog:
             seasons = {c.get('season') for c in candidates}
             return {**span, 'source': 'recording-date' if verified else 'upload-date', 'scheduleSource': candidates[0].get('source'),
                     'season': seasons.pop() if len(seasons) == 1 else None, 'confidence': candidates[0].get('confidence'),
-                    'estimated': not verified, 'status': 'confirmed' if verified else 'estimated', 'repeat': True,
+                    'estimated': not verified, 'status': 'text-confirmed', 'repeat': True,
                     'periods': [{k: c.get(k) for k in ('start', 'end', 'season')} for c in candidates],
                     'candidates': candidates, 'window': window,
                     'uploadInPeriod': None if verified else any(c['start'] <= anchor <= c['end'] for c in candidates),
@@ -449,20 +476,14 @@ class ObservedCatalog:
         if len(candidates) == 1:
             c = candidates[0]
             return {**c, 'scheduleSource': c.get('source'), 'source': 'recording-date' if verified else 'upload-date',
-                    'estimated': not verified, 'status': 'confirmed' if verified else 'estimated', 'window': window,
+                    'estimated': not verified, 'status': 'text-confirmed', 'window': window,
                     'uploadInPeriod': None if verified else c['start'] <= anchor <= c['end'],
                     'dateBasis': 'verified recording date' if verified else 'upload date with %d-day recording lag window' % UPLOAD_LAG_DAYS}
-        if candidates:
-            return {**base, 'reason': 'ambiguous', 'window': window, 'candidates': candidates,
-                    'dateBasis': 'ambiguous upload-based recording period'}
         if active:
-            seen = {}
-            for a in active:
-                seen.setdefault(a['id'], a)
-            return {**base, 'reason': 'contradicted', 'contradiction': True, 'window': window, 'candidates': [],
-                    'scheduled': list(seen.values())[:6],
+            return {**base, 'status': 'text-only', 'reason': 'disagrees', 'contradiction': True, 'window': window,
+                    'candidates': [], 'scheduled': scheduled,
                     'dateBasis': 'the schedule ran other formats at this CP on these dates, never this cup'}
-        return {**base, 'reason': 'outside-schedule', 'window': window, 'candidates': [],
+        return {**base, 'status': 'text-only', 'reason': 'no-record', 'window': window, 'candidates': [], 'scheduled': [],
                 'dateBasis': 'no schedule period at this CP covers these dates'}
 
     @staticmethod

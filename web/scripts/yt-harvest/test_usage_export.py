@@ -94,11 +94,27 @@ class UsageExportTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value))
 
+    CUPS = {'vmega': 'mega@1500', 'vcolor': 'color', 'vultra': 'ultra'}
+
     def result(self, vid, battles):
         self.write(self.work / 'results' / (vid + '.json'), {'full': battles})
+        # league.refine_video's sidecar: the cup the video text names (Great League unless listed above).
+        cup = self.CUPS.get(vid, 'great')
+        cp = 2500 if cup == 'ultra' else 1500
+        self.write(self.work / 'results' / (vid + '.leagues.json'), {'video': {}, 'battles': [
+            {'start': b['start'], 'league': 'ultra' if cp == 2500 else 'great', 'cpCap': cp, 'cup': cup,
+             'cupStatus': 'text-only', 'cupSource': 'title'} for b in battles]})
 
     def build(self, **kw):
         return ue.build(self.work, self.web, self.pool, today=dt.date(2026, 10, 11), prior_samples=200, **kw)
+
+    def test_uncaptured_cup_is_not_counted_as_open_great_league(self):
+        self.write(self.work / 'results/vcolor.leagues.json', {'video': {}, 'battles': [
+            {'start': s, 'league': 'great', 'cpCap': 1500, 'cup': None, 'cupStatus': 'uncaptured', 'cupReason': 'no-cup-named'}
+            for s in (10, 100)]})
+        _, report = self.build()
+        self.assertEqual(report['exclusions']['unknown-cup']['count'], 1)   # where the Color Cup battle was 'restricted-cup'
+        self.assertNotIn('restricted-cup', report['exclusions'])
 
     def test_eligibility_rules_and_reasons(self):
         usage, report = self.build()

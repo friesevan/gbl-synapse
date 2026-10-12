@@ -8,7 +8,9 @@ const {execFileSync}=require('node:child_process'),os=require('node:os'),path=re
 function harvester(){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'observed-e2e-')),work=path.join(dir,'work'),web=path.join(dir,'web'),put=(f,v)=>{fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,JSON.stringify(v));};
  const member=(id,shadowP)=>({id,key:id,inference:{shadowP,forms:[{value:id,p:1}]}});
  put(path.join(work,'results/video123.json'),{full:[{start:5,end:90,result:'Loss',my:[],opponent:[member('azumarill',0),member('umbreon',.62),member('medicham',0)]}]});
- put(path.join(web,'tests/meta-benchmark/sources/registry.json'),[{id:'video123',title:'A match',uploadDate:'20261010',leagueId:'great',channel:'Creator A'}]);
+ put(path.join(web,'tests/meta-benchmark/sources/registry.json'),[{id:'video123',title:'A Great League match',uploadDate:'20261010',leagueId:'great',channel:'Creator A'}]);
+ // league.py refine_video: the league from the CPs, the cup from the title (the registry's guess is never the cup).
+ put(path.join(work,'results/video123.leagues.json'),{video:{},battles:[{start:5,league:'great',cpCap:1500,cup:'great',cupStatus:'text-confirmed',cupSource:'title',cupConfidence:1}]});
  put(path.join(web,'scripts/yt-harvest/data/gbl-schedule.json'),{cups:{great:{cp:1500,name:'Great League'}},periods:[{start:'2026-10-06',end:'2026-10-12',season:28,formats:[{id:'great',cp:1500}]}],seasons:[{season:28,name:'Twilight Trails',start:'2026-09-08',end:'2026-11-30'}]});
  const qid='claude-test:video123.mp4:0:opponent:umbreon:shadow';put(path.join(work,'validation/video123',qid+'.json'),{qid});
  const script='import json,sys\nfrom pathlib import Path\nsys.path.insert(0,sys.argv[3])\nfrom observed import ObservedCatalog\nprint(json.dumps(ObservedCatalog(Path(sys.argv[1]),Path(sys.argv[2])).state()))';
@@ -19,7 +21,7 @@ test('unidentified lineup shows why per member, links to its Validate question, 
  const context={window:{MetaObservedCore:C,MetaValidation:{focus:qid=>{focused.push(qid);return true;}}},document:{hidden:false,createElement:tag=>new Node(tag),createElementNS:(ns,tag)=>new Node(tag),getElementById:()=>badge},fetch:async url=>({ok:true,json:async()=>url.includes('since='+data.revision)?{revision:data.revision,unchanged:true}:data}),setTimeout:()=>1,clearTimeout:()=>{}};
  vm.runInNewContext(fs.readFileSync(require.resolve('../includes/meta/observed.js'),'utf8'),context);const view=context.window.MetaObserved.mount({host,speciesName:id=>id[0].toUpperCase()+id.slice(1)});await new Promise(r=>setImmediate(r));
  const text=()=>descendants(host).map(n=>n.textContent||'').join('\n'),tab=name=>descendants(host).find(n=>n.tag==='button'&&String(n.textContent).startsWith(name));
- assert.match(text(),/No identified teams in this selection yet/);assert.match(text(),/Season 28 · Twilight Trails/);assert.match(text(),/1 estimated from upload date/);
+ assert.match(text(),/No identified teams in this selection yet/);assert.match(text(),/Season 28 · Twilight Trails/);assert.match(text(),/1 text-confirmed \(schedule agrees\)/);
  tab('Unidentified (1)').onclick();assert.match(text(),/Shadow status unknown · 62% Shadow/);const ask=descendants(host).find(n=>n.className==='secondary meta-observed-ask');assert.equal(ask.dataset.qid,h.qid);ask.onclick();assert.deepEqual(focused,[h.qid]);
  await view.refresh();assert.ok(tab('Unidentified (1)'),'an unchanged revision keeps the view');
  h.resolve(true);data=h.state();await view.refresh();

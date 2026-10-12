@@ -316,7 +316,9 @@ def option_values(q):
 def prompt_lead(q, variant):
     names = [v for v in option_values(q) if v != "other"]
     order = ordered(names, variant, q["qid"]) + ["other"]
-    choices = {**{n: f"the right nameplate shows {n}" for n in names}, "other": "it shows another Pokémon"}
+    # Values are member keys since lead options show the full identity; the nameplate prints the detected name.
+    shown = {o["value"]: o.get("name") or o["value"] for o in q.get("options") or [] if isinstance(o.get("value"), str)}
+    choices = {**{n: f"the right nameplate shows {shown.get(n, n)}" for n in names}, "other": "it shows another Pokémon"}
     return ("This is the top strip of a Pokémon GO trainer battle screen, just after the battle started. The RIGHT "
             "white nameplate names the opponent's Pokémon (the left one is the player's). Which Pokémon is on the "
             "opponent's (right) nameplate? Regional forms may be printed without the form name.\n"

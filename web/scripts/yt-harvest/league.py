@@ -7,11 +7,17 @@
    rules the observed teams violate are eliminated). Usable from Node by shelling out:
        python3 -I league.py refine '{"cps":[1498,1500],"species":["medicham","azumarill"]}' 2025-01-10
    prints JSON with the ranked surviving formats.
-3. refine-all WORK_DIR [--dry-run] [--backup-dir D] [--web-root W]: rewrites results/*.leagues.json from the stored
-   results with the current rules (no re-analysis); only sidecars are written, each existing one backed up first.
+3. refine_video / refine-all WORK_DIR [--dry-run] [--backup-dir D] [--web-root W]: the *.leagues.json sidecar of an
+   analysed video, and a rewrite of all of them from the stored results with the current rules (no re-analysis; only
+   sidecars are written, each existing one backed up first).
 
-Ranking, in order: formats the GBL schedule ran in the upload-lag window, the video's keywords (a keyword cup the
-schedule did not run stands for its same-name Mega variant that it did), CP cap fit, species eligibility.
+Owner's policy (2026-10-12): the LEAGUE of a battle comes from its CPs (the video shows them). The CUP cannot be seen
+in the video, so it comes only from the video's text (text_cups / battle_cup): an exact cup name in the title (1.0),
+tags (0.8), chapter titles (0.7), description (0.45), +0.1 per further source; several cups at the battle's CP share
+the score (top^2 / sum); compilations count chapters only, per segment. At or above CUP_THRESHOLD (0.6) the cup is
+taken; below it the cup is "uncaptured" (the battle stays under its league). The GBL schedule never assigns a cup: it
+only picks between same-name variants the text names (Color Cup / Mega Color Cup; Great League / Great League: Mega
+Edition) and confirms (text-confirmed) or contradicts (text-only) the text; for uncaptured cups it is a hint only.
 """
 import datetime as dt
 import json
@@ -26,6 +32,7 @@ UPLOAD_LAG_DAYS = 14
 
 BASE = {"great": ("Great League", 1500), "ultra": ("Ultra League", 2500),
         "master": ("Master League", 10000), "little": ("Little Cup", 500)}
+LEAGUE_BY_CAP = {cp: k for k, (_, cp) in BASE.items()}
 # Keyword patterns per base league (title/tags/description/chapters), several languages.
 LEAGUE_WORDS = {
     "great": r"great league|\bgl\b|liga super|super ?liga|superliga|ligue super|superliga|スーパーリーグ|超級聯盟|"
@@ -114,12 +121,21 @@ def get_format(key, cups):
     return fid, c
 
 
+# Cup names as creators write them in other languages (titles of the harvested videos), next to the schedule's aliases.
+LOCAL_CUP_ALIASES = {
+    "color": ["copa color", "copa de color", "farb-cup", "farbcup", "farb cup", "coupe des couleurs", "coupe couleur",
+              "4色カップ"],
+    "colormega": ["mega copa color", "mega farb-cup", "mega farbcup", "mega farb cup", "メガ4色カップ"],
+    "retro": ["copa retro", "copa retrô", "retro-cup", "coupe rétro", "レトロカップ"],
+}
+
+
 def _cup_patterns(schedule):
     pats = {}
     for cid, c in schedule.get("cups", {}).items():
         if cid in BASE:
             continue
-        names = [c.get("name", "")] + list(c.get("aliases", []))
+        names = [c.get("name", "")] + list(c.get("aliases", [])) + LOCAL_CUP_ALIASES.get(cid, [])
         names = [n.lower() for n in names if n and len(n) >= 4]
         # "Mega Color Cup" is also written "Color Cup Mega" (titles, tags).
         names += [n[5:] + " mega" for n in names if n.startswith("mega ") and not n.endswith(" mega")]
@@ -209,10 +225,11 @@ def keyword_hits(text, schedule):
     return hits
 
 
-def scheduled_variant(fid, sched, schedule):
+def scheduled_variant(fid, sched, schedule, base_editions=False):
     """The schedule-window format that stands for a text-matched format the schedule did not run: the Mega variant
     of the same-name cup at the same CP (Color Cup -> Mega Color Cup), or the one scheduled CP edition of a bare
-    Mega Edition. None when fid itself ran in the window, or when the choice is not unique."""
+    Mega Edition; with base_editions, also a league's own Mega Edition (Great League -> Great League: Mega Edition).
+    None when fid itself ran in the window, or when the choice is not unique."""
     if fid in sched:
         return None
     cups = schedule.get("cups", {})
@@ -223,6 +240,8 @@ def scheduled_variant(fid, sched, schedule):
             found |= {k for k in sched if k.partition("@")[0] == mega and (get_format(k, cups)[1] or {}).get("cp") == cp}
     if fid == "mega":
         found |= {k for k in sched if k.partition("@")[0] == "mega"}
+    if base_editions and fid in BASE:
+        found |= {k for k in sched if k.partition("@")[0] == "mega" and (get_format(k, cups)[1] or {}).get("cp") == cp}
     if len(found) > 1:
         top = max(sched[k] for k in found)
         found = {k for k in found if sched[k] == top}
@@ -322,17 +341,150 @@ def guess_league(meta, schedule):
     conf = round(min(0.97, conf), 2)
     if kind == "compilation" or len([f for f in chap_leagues]) >= 2:
         kind = "compilation"
-    _, cup = get_format(top[0], cups)
-    name = (cup or {}).get("name") or top[0]
-    sched_name = next((f.get("name") for p in schedule.get("periods", []) for f in p.get("formats", [])
-                       if f.get("name") and format_key(f["id"], f.get("cp"), cups) == top[0]), None)
-    if top[0] not in BASE and sched_name:
-        name = sched_name          # e.g. "Great League: Mega Edition"
-    elif cup and "@" in top[0]:
-        name = f"{name} ({cup['cp']} CP)"
-    return _with_championship({"leagueGuess": name, "leagueId": top[0], "leagueConfidence": conf,
+    return _with_championship({"leagueGuess": format_name(top[0], schedule), "leagueId": top[0], "leagueConfidence": conf,
                                "leagueEvidence": sorted(set(evidence))[:12], "cupCandidates": sorted(sched),
-                               "leagueKeywords": words, "kindGuess": kind}, meta)
+                               "leagueKeywords": words, "kindGuess": kind, "textCups": text_cups(meta, schedule)}, meta)
+
+
+def format_name(fid, schedule):
+    """Display name of a format key: the schedule's own name for an edition ("Great League: Mega Edition")."""
+    cups = schedule.get("cups", {})
+    _, cup = get_format(fid, cups)
+    name = (cup or {}).get("name") or fid
+    sched_name = next((f.get("name") for p in schedule.get("periods", []) for f in p.get("formats", [])
+                       if f.get("name") and format_key(f["id"], f.get("cp"), cups) == fid), None)
+    if fid not in BASE and sched_name:
+        return sched_name
+    if cup and "@" in fid:
+        return f"{name} ({cup['cp']} CP)"
+    return name
+
+
+# ---------------------------------------------------------------- the cup, from the video's own text
+# The video shows the CPs (so the league), never the cup. The cup comes from what the creator wrote: an exact cup name
+# in the title counts most, then tags, chapter titles, description. The GBL schedule only picks between same-name
+# variants the text names (Color Cup / Mega Color Cup; Great League / Great League: Mega Edition) and confirms or
+# contradicts; on its own it never assigns a cup. Below CUP_THRESHOLD the cup is "uncaptured".
+CUP_SOURCES = ("title", "tags", "chapters", "description")
+CUP_WEIGHTS = {"title": 1.0, "tags": 0.8, "chapters": 0.7, "description": 0.45}
+CUP_CORROBORATION = 0.1     # each further source naming the same cup
+CUP_THRESHOLD = 0.6
+
+
+def text_cups(meta, schedule):
+    """What the video's text names. Returns {"formats": {fid: {"score", "sources", "cp"}}, "segments": [{"start",
+    "end", "formats"}] (chapters naming a format), "compilation": bool}. score = the strongest source's weight plus
+    CUP_CORROBORATION per further source (at most 1)."""
+    cups = schedule.get("cups", {})
+    found = {}
+    for src, text in (("title", meta.get("title")), ("tags", " ".join(meta.get("tags") or [])),
+                      ("description", (meta.get("description") or "")[:2000])):
+        for fid in keyword_hits(text, schedule):
+            found.setdefault(fid, set()).add(src)
+    chs = [c for c in meta.get("chapters") or [] if isinstance(c, dict)]
+    segments = []
+    for i, ch in enumerate(chs):
+        fids = sorted(keyword_hits(ch.get("title"), schedule))
+        if not fids:
+            continue
+        end = chs[i + 1].get("start") if i + 1 < len(chs) else ch.get("end")
+        segments.append({"start": ch.get("start") or 0, "end": end, "formats": fids})
+        for fid in fids:
+            found.setdefault(fid, set()).add("chapters")
+    formats = {}
+    for fid, srcs in found.items():
+        w = sorted((CUP_WEIGHTS[s] for s in srcs), reverse=True)
+        formats[fid] = {"score": round(min(1.0, w[0] + CUP_CORROBORATION * (len(w) - 1)), 2),
+                        "sources": [s for s in CUP_SOURCES if s in srcs], "cp": (get_format(fid, cups)[1] or {}).get("cp")}
+    kind = guess_kind(meta.get("title"), chs, len({f for s in segments for f in s["formats"]}))
+    return {"formats": formats, "segments": segments, "compilation": kind == "compilation"}
+
+
+def _competitors(scores, cap, cps):
+    """The formats named at this CP (all of them when the CP is unknown). A bare league word ("Great League") yields to
+    a cup at its CP named at least as strongly: it is the generic word, not a second cup."""
+    at = {f: s for f, s in scores.items() if cap is None or cps.get(f) == cap}
+    out = {}
+    for f, s in at.items():
+        rivals = [v for g, v in at.items() if g not in BASE and cps.get(g) == cps.get(f)]
+        if f in BASE and rivals and max(rivals) >= s:
+            continue
+        out[f] = s
+    return out
+
+
+def _merge_variants(comp, schedule, sched):
+    """Same-name variants the text names together (Color Cup and Mega Color Cup; Great League and Great League: Mega
+    Edition) are one candidate: the schedule picks the one it ran in the window, else the more strongly named one."""
+    cups = schedule.get("cups", {})
+    pairs = list(cup_variants(schedule))
+    for f in comp:
+        if f.partition("@")[0] == "mega":
+            base = LEAGUE_BY_CAP.get((get_format(f, cups)[1] or {}).get("cp"))
+            if base:
+                pairs.append((base, f))
+    out = dict(comp)
+    for plain, mega in pairs:
+        if plain not in out or mega not in out:
+            continue
+        ran = [f for f in (plain, mega) if f in sched]
+        if len(ran) == 1:
+            keep = ran[0]
+        elif out[plain] != out[mega]:
+            keep = max((plain, mega), key=out.get)
+        else:
+            continue
+        out[keep] = max(out.pop(plain), out.pop(mega))
+    return out
+
+
+def battle_cup(text, cap, start, schedule, sched):
+    """The cup of one battle from the video's text (text_cups), for a battle whose CPs show `cap` (None: unreadable).
+    sched: schedule_formats() of the battle's window. Returns {"cup", "status" ("text-confirmed" | "text-only" |
+    "uncaptured"), "source", "confidence", "reason", "variant", "scheduled" (names the schedule ran at the CP)}."""
+    cups = schedule.get("cups", {})
+    text = text or {}
+    formats = text.get("formats") or {}
+    cps = {f: v.get("cp") for f, v in formats.items()}
+    out = {"cup": None, "status": "uncaptured", "source": None, "confidence": 0.0, "reason": None, "variant": None}
+    pick = None
+    seg = next((s for s in text.get("segments") or [] if isinstance(start, (int, float)) and (s.get("start") or 0) <= start
+                and (s.get("end") is None or start < s["end"])), None)
+    if seg:
+        comp = _merge_variants(_competitors({f: CUP_WEIGHTS["chapters"] for f in seg["formats"] if f in cps}, cap, cps),
+                               schedule, sched)
+        if len(comp) == 1:
+            pick = (next(iter(comp)), "chapters", CUP_WEIGHTS["chapters"])
+        elif len(comp) > 1:
+            out["reason"] = "several-cups"
+    if pick is None and out["reason"] is None:
+        comp = _merge_variants(_competitors({f: v["score"] for f, v in formats.items()}, cap, cps), schedule, sched)
+        if text.get("compilation"):
+            out["reason"] = "compilation"           # a compilation's cups come from its chapters only
+        elif not comp:
+            out["reason"] = "other-cp" if formats else "no-cup-named"
+        else:
+            fid = max(comp, key=lambda f: (comp[f], f))
+            conf = round(comp[fid] * comp[fid] / sum(comp.values()), 2)
+            src = next((s for s in CUP_SOURCES if s in formats[fid]["sources"]), None)
+            if conf >= CUP_THRESHOLD:
+                pick = (fid, src, conf)
+            else:
+                out.update(reason="several-cups" if len(comp) > 1 else "weak-text", confidence=conf, source=src)
+    fcap = cap if cap is not None else (cps.get(pick[0]) if pick else None)
+    ran = [k for k in sorted(sched) if (get_format(k, cups)[1] or {}).get("cp") == fcap] if fcap is not None else []
+    out["scheduled"] = [format_name(k, schedule) for k in ran]
+    if pick is None:
+        return out
+    fid, src, conf = pick
+    alt = scheduled_variant(fid, sched, schedule, base_editions=True)
+    if alt:
+        out["variant"] = f"{fid} -> {alt}"
+        fid = alt
+    out.update(cup=fid, source=src, confidence=conf,
+               status="text-confirmed" if fid in sched else "text-only",
+               reason=None if fid in sched else "disagrees" if ran else "no-record")
+    return out
 
 
 def _with_championship(guess, meta):
@@ -579,14 +731,19 @@ def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=No
 
 # ---------------------------------------------------------------- video-level document and bulk rewrite
 
-def refine_video(res, video_league, schedule, gamemaster, upload_date=None, lag_days=UPLOAD_LAG_DAYS):
-    """The *.leagues.json document of one analysed video (what harvest.write_league_refinement stores), with every
-    battle ranked against the schedule at the upload date (+ lag window) and the video's own keyword format.
+def refine_video(res, video_league, schedule, gamemaster, upload_date=None, lag_days=UPLOAD_LAG_DAYS, meta=None):
+    """The *.leagues.json document of one analysed video (what harvest.write_league_refinement stores). Per battle:
+    the league from the CPs it shows, the cup from the video's text (battle_cup: title, tags, chapters, description;
+    the schedule at the upload date + lag window only picks a same-name variant and confirms or contradicts), Team
+    Rocket flags and the championship format. A reviewer's video-wide label (reviewerLeague) is the cup instead.
 
-    res: the stored result ({"battles": [...], "probe": {...}}); video_league: guess_league() output."""
-    kws = dict(video_league.get("leagueKeywords") or {})     # what the title/tags/description named
-    cands = sorted(set((video_league.get("cupCandidates") or []) + ([video_league["leagueId"]] if video_league.get("leagueId") else [])
-                       + list(kws) + list(BASE)))
+    res: the stored result ({"battles": [...], "probe": {...}}); video_league: guess_league() output (its textCups, or
+    meta to compute them)."""
+    text = text_cups(meta, schedule) if meta else video_league.get("textCups") or {}
+    cups = schedule.get("cups", {})
+    sched = schedule_formats(schedule, upload_date, lag_days=lag_days) if upload_date else {}
+    reviewer = video_league.get("leagueId") if video_league.get("reviewerLeague") else None
+    reviewer_cp = (get_format(reviewer, cups)[1] or {}).get("cp") if reviewer else None
     screens = len(((res.get("probe") or {}).get("screens")) or [])
     championship = bool(video_league.get("championship"))
     possible = championship or bool(video_league.get("possibleChampionship")) or screens >= 2
@@ -596,24 +753,35 @@ def refine_video(res, video_league, schedule, gamemaster, upload_date=None, lag_
             return [{"species": (m.get("form") or {}).get("id") or m.get("formId"), "cp": m.get("cp")}
                     for m in b.get(side + "Detail") or []]
         my, opp = team("my"), team("opponent")
-        mons = my + opp
-        obs = {"cps": [m["cp"] for m in mons if isinstance(m.get("cp"), (int, float))],
-               "species": [m["species"] for m in mons if isinstance(m.get("species"), str)],
-               "teams": {"my": my, "opponent": opp}}
-        r = refine_battle_league(obs, cands, schedule, gamemaster, battle_date=upload_date, keywords=kws, lag_days=lag_days)
-        rocket = r.get("rocket") or {"flag": False, "reasons": []}
-        entry = {"start": b.get("start"), "best": r["ranked"][0]["id"] if r["ranked"] else None,
-                 "ranked": [x["id"] for x in r["ranked"][:4]], "cpCap": r["cpCap"], "eliminated": len(r["eliminated"]),
-                 "options": [{"id": x["id"], "name": x["name"], "cp": x["cp"], "score": x["score"]} for x in r["ranked"][:4]],
-                 "cps": obs["cps"], "rocket": rocket["flag"], "rocketReasons": rocket["reasons"]}
+        cps = [m["cp"] for m in my + opp if isinstance(m.get("cp"), (int, float))]
+        cap = plausible_cap([c for c in cps if c and c <= CP_CEILING])
+        rocket = rocket_evidence(my, opp, gamemaster)
+        if reviewer and (cap is None or reviewer_cp == cap):
+            ran = [k for k in sorted(sched) if (get_format(k, cups)[1] or {}).get("cp") == reviewer_cp]
+            c = {"cup": reviewer, "status": "text-confirmed" if reviewer in sched else "text-only", "source": "reviewer",
+                 "confidence": 1.0, "reason": None if reviewer in sched else "disagrees" if ran else "no-record",
+                 "variant": None, "scheduled": [format_name(k, schedule) for k in ran]}
+        else:
+            c = battle_cup(text, cap, b.get("start"), schedule, sched)
+        league_cp = cap if cap is not None else (get_format(c["cup"], cups)[1] or {}).get("cp") if c["cup"] else None
+        league = LEAGUE_BY_CAP.get(league_cp) or ("master" if league_cp and league_cp > 2500 else None)
+        entry = {"start": b.get("start"), "league": league, "cpCap": cap, "cup": c["cup"],
+                 "cupName": format_name(c["cup"], schedule) if c["cup"] else None, "cupStatus": c["status"],
+                 "cupSource": c["source"], "cupConfidence": c["confidence"], "cupReason": c["reason"],
+                 "cupVariant": c["variant"], "scheduled": c["scheduled"],
+                 "best": c["cup"] or league, "cps": cps, "rocket": rocket["flag"], "rocketReasons": rocket["reasons"]}
         if rocket["flag"]:
             entry["battleType"] = "rocket"
         elif championship:
             entry["battleType"] = "championship"
             ccap = plausible_cap([m.get("cp") for m in my])
             entry["best"] = CHAMPIONSHIP_ID if ccap in (None, 1500) else f"{CHAMPIONSHIP_ID}@{ccap}"
+            # Play! Pokémon events are not on the GBL schedule; the title or a reviewer named the format.
+            entry.update(cup=entry["best"], cupName="Championship", cupStatus="text-only", cupReason="championship",
+                         cupSource="reviewer" if reviewer else "title", cupConfidence=1.0, cupVariant=None, scheduled=[])
         out.append(entry)
-    return {"video": {**video_league, "championship": championship, "possibleChampionship": possible, "screens": screens},
+    return {"video": {**video_league, "textCups": text, "championship": championship, "possibleChampionship": possible,
+                      "screens": screens},
             "battles": out}
 
 
@@ -701,7 +869,7 @@ def refine_all(work_dir, web_root=None, backup_dir=None, dry_run=False, schedule
             video_league = guess_league(meta, schedule)
             summary["noMetadata"] += 1
         video_league = reviewed_league(video_league, schedule, _read_json(os.path.join(work_dir, "labels", name), {}), registry.get(vid))
-        doc = refine_video(res, video_league, schedule, gamemaster, meta.get("uploadDate"))
+        doc = refine_video(res, video_league, schedule, gamemaster, meta.get("uploadDate"), meta=meta if meta.get("title") else None)
         summary["videos"] += 1
         before = {b.get("start"): b.get("best") for b in (old or {}).get("battles", [])} if isinstance(old, dict) else {}
         for b in doc["battles"]:

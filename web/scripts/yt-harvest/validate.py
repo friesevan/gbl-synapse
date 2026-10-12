@@ -2,7 +2,8 @@
 
 Every decision the pipeline could not settle becomes a short question with the moment to watch:
   - extractor questions (fast move, Shadow, form, result) come from tests/meta-benchmark/export-questions.cjs;
-  - harvester questions (here): which league/cup a battle is in, and videos where no battle was found.
+  - harvester questions (here): Team Rocket flags, championship perspective, opponent leads, and videos where no
+    battle was found. Never the league or cup: the league comes from the CPs, the cup from the video's text.
 Each question carries `video` (YouTube id, link, channel, licence), so the Validate tab can play the
 moment on YouTube when there is no local copy. No frames, descriptions or trainer names are stored.
 The inbox (all open questions, one JSON file) is what the tab loads when the site runs locally.
@@ -13,7 +14,6 @@ import os
 import re
 
 SOURCE = "youtube-harvest"
-CLOSE = 1.0
 # Footage answers. "rocket" and "championship" battles look like GBL and train the extractor (fast
 # moves, Shadow, outcomes) but never count toward the GBL meta; championships get their own format.
 # "obscured": real battles, but an overlay hides part of the screen, so the video can't be analysed.
@@ -67,14 +67,12 @@ def _q(vid, qid, kind, title, detail, options, clip, battle=None, **kw):
             "options": options, "clip": [round(clip[0], 1), round(clip[1], 1)], "focus": "center", **kw}
 
 
-def _league_options(opts):
-    out = [{"value": o["id"], "label": o["name"] + (f" ({o['cp']} CP)" if o.get("cp") and o["cp"] < 10000 else ""),
-            "hint": f"score {o['score']}"} for o in opts]
-    return out + [ROCKET_OPTION, {"value": "other", "label": "Another league or cup"}]
+# "gbl" clears the automatic flag without naming a cup (feedback.py and observed.py treat it like "other").
+NOT_ROCKET_OPTION = {"value": "gbl", "label": "Not Team Rocket (a GBL battle)", "hint": "Counts toward the observed meta"}
 
 
-def _rocket_options(opts):
-    return [ROCKET_OPTION] + [o for o in _league_options(opts) if o["value"] != "rocket"]
+def _rocket_options():
+    return [ROCKET_OPTION, NOT_ROCKET_OPTION]
 
 
 def harvest_questions(vid, result, meta, video_league, refined, schedule=None):
@@ -122,56 +120,63 @@ def harvest_questions(vid, result, meta, video_league, refined, schedule=None):
             out.append(_q(vid, "rocket", "league", "These look like Team Rocket battles. Confirm?",
                           f"Opponent CPs no player's Pokémon can reach: {'; '.join(rb[i].get('rocketReasons') or [])}. "
                           "Rocket battles still train fast moves, Shadow and outcomes, but never count toward the GBL meta.",
-                          _rocket_options(rb[i].get("options") or []), [battles[i].get("start", 0), battles[i].get("start", 0) + 12],
+                          _rocket_options(), [battles[i].get("start", 0), battles[i].get("start", 0) + 12],
                           battle=i, allBattles=True, modelTop="rocket", modelP=None))
         else:
             for i in rocket[:3]:
                 out.append(_q(vid, f"{i}:rocket", "league", f"Battle {i + 1}: a Team Rocket battle?",
                               f"{'; '.join(rb[i].get('rocketReasons') or [])}. Rocket battles train the extractor but are "
                               "left out of the observed meta.",
-                              _rocket_options(rb[i].get("options") or []), [battles[i].get("start", 0), battles[i].get("start", 0) + 12],
+                              _rocket_options(), [battles[i].get("start", 0), battles[i].get("start", 0) + 12],
                               battle=i, modelTop="rocket", modelP=None))
-    out += lead_questions(vid, battles, skip=set(rocket))
-    if championship:
-        return out   # the format is Championship; the GBL league/cup question does not apply
-    vguess, vconf = video_league.get("leagueGuess", "Unknown"), float(video_league.get("leagueConfidence") or 0)
-    compilation = video_league.get("kindGuess") == "compilation"
-    open_ = []
-    for i, r in enumerate(rb[:len(battles)]):
-        if r.get("rocket"):
-            continue
-        opts = r.get("options") or []
-        close = [o for o in opts if opts and opts[0]["score"] - o["score"] < CLOSE]
-        if len(close) > 1:
-            open_.append((i, r, opts))
-    bests = {r.get("best") for r in rb if r.get("best") and not r.get("rocket")}
-    per_battle = compilation or len(bests) > 1
-    if not per_battle and open_ and vconf < 0.9:
-        # One question for the whole video, asked at its first ambiguous battle.
-        i, r, opts = open_[0]
-        b = battles[i]
-        out.append(_q(vid, "league", "league", "Which league or cup are these battles in?",
-                      f"The video looks like {vguess} ({round(vconf * 100)}% from the title and the GBL schedule). "
-                      f"CPs seen: {', '.join(str(c) for c in r.get('cps', [])[:6]) or 'none read'}. "
-                      "Pause at the start of a battle: the CPs and the teams usually settle it.",
-                      _league_options(opts), [b.get("start", 0), b.get("start", 0) + 12], battle=i, allBattles=True,
-                      modelTop=opts[0]["id"], modelP=None))
-    elif per_battle:
-        for i, r, opts in open_:
-            b = battles[i]
-            out.append(_q(vid, f"{i}:league", "league", f"Battle {i + 1}: which league or cup?",
-                          f"{'This looks like a compilation, so each battle is checked. ' if compilation else ''}"
-                          f"CPs seen: {', '.join(str(c) for c in r.get('cps', [])[:6]) or 'none read'}. "
-                          "The CPs and the teams at the start of the battle usually settle it.",
-                          _league_options(opts), [b.get("start", 0), b.get("start", 0) + 12], battle=i,
-                          modelTop=opts[0]["id"], modelP=None))
+    out += lead_questions(vid, battles, skip=set(rocket), full=result.get("full"))
+    # No league/cup questions: a reviewer cannot verify a cup from the footage. The league comes from the CPs and the
+    # cup from the video's text (league.battle_cup); the Team Rocket question above stays, since that is verifiable.
     return out
 
 
-def lead_questions(vid, battles, skip=()):
+_GM = {}
+
+
+def _species_names():
+    """{speciesId: "Ninetales (Alolan)"} from the PvPoke gamemaster ({} when it is unavailable)."""
+    if "names" not in _GM:
+        try:
+            import league
+            _GM["names"] = {k: v.get("speciesName") for k, v in league.load_gamemaster().items() if v.get("speciesName")}
+        except (OSError, ValueError, KeyError):
+            _GM["names"] = {}
+    return _GM["names"]
+
+
+def member_key(name):
+    """The observed-meta member key of a detected name (observed._member: label lowercased, spaces removed)."""
+    return str(name or "").lower().replace(" ", "")
+
+
+def lead_label(name, detail, names=None):
+    """The fullest identity known for a detected opponent: "Shadow Ninetales (Alolan)" when the form and the Shadow
+    status are settled (form p >= .98; Shadow p >= .98), the form alone otherwise, else the detected name."""
+    detail = detail if isinstance(detail, dict) else {}
+    form = detail.get("form") or {}
+    fid, p = str(form.get("id") or detail.get("formId") or ""), form.get("p")
+    shadow = fid.endswith("_shadow")
+    fid = fid.removesuffix("_shadow")
+    names = _species_names() if names is None else names
+    label = names.get(fid) if fid and (p is None or p >= .98) else None
+    sp = detail.get("shadowP")
+    if label and (shadow or (isinstance(sp, (int, float)) and sp >= .98)):
+        label = "Shadow " + label
+    return label or name
+
+
+def lead_questions(vid, battles, skip=(), full=None):
     """Opponent lead confirmations for complete, cleanly started teams (observed meta lists a team with
-    its lead only when the lead is confirmed). At most LEAD_QUESTIONS_PER_VIDEO per video."""
+    its lead only when the lead is confirmed). At most LEAD_QUESTIONS_PER_VIDEO per video. Options show the
+    full identity (lead_label); their values are the member keys, which observed.py matches (as it still
+    matches older answers' species names)."""
     out = []
+    full = full if isinstance(full, list) else []
     for i, b in enumerate(battles):
         if len(out) >= LEAD_QUESTIONS_PER_VIDEO:
             break
@@ -179,11 +184,19 @@ def lead_questions(vid, battles, skip=()):
         flags = " ".join(b.get("flags") or [])
         if i in skip or len(opp) != 3 or len(set(opp)) != 3 or re.search(r"mid-battle|More than three", flags):
             continue
+        details = [d for d in b.get("opponentDetail") or [] if isinstance(d, dict)]
+        fb = (full[i] if i < len(full) and isinstance(full[i], dict) else {}).get("opponent") or []
+        keyed = {str(m.get("label") or m.get("name") or ""): m.get("key") for m in fb if isinstance(m, dict) and m.get("key")}
+        opts = []
+        for j, n in enumerate(opp):
+            d = details[j] if j < len(details) and details[j].get("name") in (None, n) else \
+                next((x for x in details if x.get("name") == n), {})
+            opts.append({"value": keyed.get(n) or member_key(n), "label": lead_label(n, d), "name": n})
         out.append(_q(vid, f"{i}:lead", "lead", f"Battle {i + 1}: which Pokémon did the opponent lead with?",
-                      f"Detected opponent team, in order of appearance: {', '.join(opp)}. The lead is the first Pokémon "
-                      "on the opponent's side when the battle starts.",
-                      [{"value": n, "label": n} for n in opp] + [{"value": "other", "label": "Another Pokémon"}],
-                      [b.get("start", 0), b.get("start", 0) + 10], battle=i, modelTop=opp[0], modelP=None))
+                      f"Detected opponent team, in order of appearance: {', '.join(o['label'] for o in opts)}. The lead "
+                      "is the first Pokémon on the opponent's side when the battle starts.",
+                      opts + [{"value": "other", "label": "Another Pokémon"}],
+                      [b.get("start", 0), b.get("start", 0) + 10], battle=i, modelTop=opts[0]["value"], modelP=None))
     return out
 
 
@@ -211,3 +224,82 @@ def write_inbox(qroot, inbox_path):
                    "generated": dt.datetime.now().isoformat(timespec="seconds"), "questions": docs}, f, ensure_ascii=False)
     os.replace(tmp, inbox_path)
     return len(docs)
+
+
+WITHDRAWN_REASON = "withdrawn: cup is taken from the video text"
+
+
+def is_cup_question(q):
+    """A league/cup question (asked before the cup came from the video text); the Team Rocket flag is not one."""
+    return q.get("kind") == "league" and not str(q.get("qid") or "").endswith(":rocket")
+
+
+def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_run=False):
+    """Takes the open league/cup questions out of the Validate queue (policy: a reviewer cannot verify a cup; the cup
+    comes from the video's text). Each question file is MOVED from validation/<id>/ into backup_dir, which keeps a
+    manifest of {"qid", "reason", "source": "policy"} records: reversible (move the files back, rebuild the inbox), and
+    never a resolution, so no metric counts it as model-resolved. Answered or resolved questions stay, with their
+    labels. feedback.json is only read. The inbox loses exactly the withdrawn questions. Returns a summary."""
+    import shutil
+    qroot = os.path.join(work_dir, "validation")
+    try:
+        with open(os.path.join(work_dir, "feedback.json"), encoding="utf-8") as f:
+            fb = json.load(f)
+    except (OSError, ValueError):
+        fb = {}
+    settled = set(fb.get("answers") or {}) | set(fb.get("resolutions") or {})
+    backup_dir = backup_dir or os.path.join(work_dir, "validation-withdrawn-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    records, kept = [], 0
+    for vid in sorted(os.listdir(qroot)) if os.path.isdir(qroot) else []:
+        d = os.path.join(qroot, vid)
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            if not name.endswith(".json") or name == "manifest.json":
+                continue
+            try:
+                with open(os.path.join(d, name), encoding="utf-8") as f:
+                    q = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(q, dict) or not is_cup_question(q):
+                continue
+            if q.get("qid") in settled:
+                kept += 1
+                continue
+            records.append({"qid": q.get("qid"), "videoId": vid, "file": os.path.join(vid, name), "reason": WITHDRAWN_REASON,
+                            "source": "policy", "withdrawnAt": dt.datetime.now().isoformat(timespec="seconds")})
+            if not dry_run:
+                os.makedirs(os.path.join(backup_dir, vid), exist_ok=True)
+                shutil.move(os.path.join(d, name), os.path.join(backup_dir, vid, name))
+    removed = 0
+    if records and not dry_run:
+        with open(os.path.join(backup_dir, "withdrawn.json"), "w", encoding="utf-8") as f:
+            json.dump({"reason": WITHDRAWN_REASON, "source": "policy", "questions": records}, f, ensure_ascii=False, indent=1)
+        if inbox_path and os.path.exists(inbox_path):
+            with open(inbox_path, encoding="utf-8") as f:
+                inbox = json.load(f)
+            gone = {r["qid"] for r in records}
+            before = len(inbox.get("questions") or [])
+            inbox["questions"] = [q for q in inbox.get("questions") or [] if q.get("qid") not in gone]
+            removed = before - len(inbox["questions"])
+            tmp = inbox_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(inbox, f, ensure_ascii=False)
+            os.replace(tmp, inbox_path)
+    return {"withdrawn": len(records), "keptAnswered": kept, "inboxRemoved": removed,
+            "backup": backup_dir if records and not dry_run else None, "dryRun": dry_run}
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+    ap = argparse.ArgumentParser(prog="validate.py withdraw-league", description=withdraw_league_questions.__doc__)
+    ap.add_argument("command", choices=["withdraw-league"])
+    ap.add_argument("work_dir")
+    ap.add_argument("--inbox", default=os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                                                                     "tests", "meta-benchmark", "results", "validation-inbox.json")))
+    ap.add_argument("--backup-dir", default=None)
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args(sys.argv[1:])
+    print(json.dumps(withdraw_league_questions(a.work_dir, a.inbox, a.backup_dir, a.dry_run), indent=1))

@@ -17,7 +17,10 @@ class ObservedTests(unittest.TestCase):
             'opponent': [{'id': 'umbreon', 'key': 'umbreon', 'inference': {'shadowP': 0}}],
             'hp': {'t0': 10.5, 'step': .5, 'my': {'machamp': [1, .9]}, 'opponent': {'umbreon': [1, .8]}},
             'events': [{'t': 50, 'kind': 'shield', 'side': 'my'}]}]})
-        self.write(self.web / 'tests/meta-benchmark/sources/registry.json', [{'id': 'video123', 'title': 'A match', 'uploadDate': '20261010', 'leagueId': 'willpower'}])
+        self.write(self.web / 'tests/meta-benchmark/sources/registry.json', [{'id': 'video123', 'title': 'A Willpower Cup match', 'uploadDate': '20261010', 'leagueId': 'willpower'}])
+        # league.refine_video's sidecar: the league from the CPs, the cup from the title, checked against the schedule.
+        self.write(self.work / 'results/video123.leagues.json', {'video': {}, 'battles': [{'start': 10.5, 'league': 'great', 'cpCap': 1500,
+                   'cup': 'willpower', 'cupName': 'Willpower Cup', 'cupStatus': 'text-confirmed', 'cupSource': 'title', 'cupConfidence': 1.0}]})
         self.write(self.web / 'scripts/yt-harvest/data/gbl-schedule.json', {'cups': {'willpower': {'cp': 1500, 'name': 'Willpower Cup'}}, 'periods': [
             {'start': '2026-10-01', 'end': '2026-10-07', 'formats': [{'id': 'willpower', 'cp': 1500}], 'source': 'schedule'}]})
         self.catalog = ObservedCatalog(self.work, self.web)
@@ -45,9 +48,35 @@ class ObservedTests(unittest.TestCase):
         self.assertEqual(o['cupRange']['start'], '2026-10-01')
         self.assertEqual(o['cupRange']['source'], 'upload-date')
         self.assertEqual(o['league']['cup'], 'Willpower Cup')
+        self.assertEqual((o['cupRange']['status'], o['league']['cupSource']), ('text-confirmed', 'title'))
+        self.assertEqual(state['summary']['cupStatusByLeague'], {'Great League': {'text-confirmed': 1}})
         self.assertEqual(o['timeline']['events'][0]['t'], 39.5)
         self.assertEqual(o['timeline']['duration'], 89.5)
         self.assertIs(state, self.catalog.state())
+
+    def test_uncaptured_cup_stays_under_its_league_with_a_schedule_hint(self):
+        side = self.work / 'results/video123.leagues.json'
+        self.write(side, {'video': {}, 'battles': [{'start': 10.5, 'league': 'great', 'cpCap': 1500, 'cup': None,
+                                                    'cupStatus': 'uncaptured', 'cupReason': 'no-cup-named'}]})
+        o = self.catalog.state()['occurrences'][0]
+        self.assertEqual((o['league']['name'], o['league']['cp'], o['league']['cup'], o['league']['cupId']), ('Great League', 1500, 'unknown', None))
+        r = o['cupRange']   # the registry's pre-analysis guess ("willpower") never becomes the cup
+        self.assertEqual((r['status'], r['reason'], r['start']), ('uncaptured', 'no-cup-named', None))
+        self.assertEqual([x['id'] for x in r['scheduled']], ['willpower'])   # a hint only
+        # A sidecar written before the text rule (no cupStatus): uncaptured, its schedule-ranked "best" ignored.
+        self.write(side, {'battles': [{'start': 10.5, 'best': 'willpower', 'cpCap': 1500}]})
+        r = self.catalog.state()['occurrences'][0]['cupRange']
+        self.assertEqual((r['status'], r['reason']), ('uncaptured', 'not-refined'))
+        # A text cup the schedule never ran at that CP on those dates: text-only, saying what ran instead.
+        self.write(side, {'battles': [{'start': 10.5, 'league': 'great', 'cpCap': 1500, 'cup': 'great', 'cupStatus': 'text-only', 'cupSource': 'tags'}]})
+        o = self.catalog.state()['occurrences'][0]
+        self.assertEqual((o['league']['cup'], o['cupRange']['status'], o['cupRange']['reason']), ('all', 'text-only', 'disagrees'))
+        self.assertEqual([x['id'] for x in o['cupRange']['scheduled']], ['willpower'])
+        # A reviewer's league answer is the cup.
+        self.write(self.work / 'feedback.json', {'answers': {'l': {'kind': 'league', 'battle': 0, 'recording': 'video123.mp4',
+                                                                   'value': 'willpower', 'source': 'reviewer', 'answeredAt': '1'}}})
+        o = self.catalog.state()['occurrences'][0]
+        self.assertEqual((o['league']['cupSource'], o['cupRange']['status']), ('reviewer', 'text-confirmed'))
 
     def test_feedback_authority_and_cache_invalidates(self):
         before = self.catalog.state()
@@ -71,7 +100,7 @@ class ObservedTests(unittest.TestCase):
         self.write(path, s)
         o = self.catalog.state()['occurrences'][0]
         r = o['cupRange']      # the same cup ran twice in the window: assigned to the cup, both periods listed
-        self.assertEqual((r['status'], r['repeat'], r['start'], r['end']), ('estimated', True, '2026-10-01', '2026-10-14'))
+        self.assertEqual((r['status'], r['repeat'], r['start'], r['end']), ('text-confirmed', True, '2026-10-01', '2026-10-14'))
         self.assertEqual([(p['start'], p['end']) for p in r['periods']], [('2026-10-01', '2026-10-07'), ('2026-10-08', '2026-10-14')])
         self.assertEqual(self.catalog.state()['summary']['periodStatus']['repeat-cup'], 1)
         raw = json.loads(self.result.read_text())
@@ -124,6 +153,18 @@ class ObservedTests(unittest.TestCase):
         first = next(o for o in state['occurrences'] if o['battleIndex'] == 0)
         self.assertTrue(first['battle']['leadConfirmed'])
         self.assertEqual(first['battle']['opponent'][0]['id'], 'lugia')
+        # Lead answers now store the member key (labels show "Shadow Ninetales (Alolan)"); "Not Team Rocket" ("gbl")
+        # clears the automatic flag without naming a cup.
+        self.write(self.work / 'feedback.json', {'answers': {
+            'l': {'kind': 'league', 'battle': 1, 'recording': 'video123.mp4', 'value': 'gbl', 'source': 'reviewer', 'answeredAt': '1'},
+            'lead': {'kind': 'lead', 'battle': 0, 'recording': 'video123.mp4', 'value': 'medicham', 'label': 'Medicham',
+                     'source': 'reviewer', 'answeredAt': '1'}}})
+        state = self.catalog.state()
+        self.assertEqual(len(state['occurrences']), 2)
+        second = next(o for o in state['occurrences'] if o['battleIndex'] == 1)
+        self.assertEqual((second['league']['cupId'], second['cupRange']['status']), (None, 'uncaptured'))
+        first = next(o for o in state['occurrences'] if o['battleIndex'] == 0)
+        self.assertEqual((first['battle']['opponent'][0]['id'], first['battle']['leadConfirmed']), ('medicham', True))
         self.write(self.work / 'labels/video123.json', {'videoType': 'championship', 'verified': {}})
         state = self.catalog.state()
         leagues = {o['league']['name'] for o in state['occurrences']}
@@ -260,29 +301,37 @@ class ScheduleCheckTests(unittest.TestCase):
         return ObservedCatalog._period(cup, cp, anchor, self.SCHEDULE, verified)
 
     def test_statuses(self):
-        self.assertEqual(self.period('retro', '2026-09-24', True)['status'], 'confirmed')
+        conf = self.period('retro', '2026-09-24', True)
+        self.assertEqual((conf['status'], conf['source'], conf['estimated']), ('text-confirmed', 'recording-date', False))
         est = self.period('retro', '2026-10-01')
-        self.assertEqual((est['status'], est['start'], est['season'], est['uploadInPeriod']), ('estimated', '2026-09-22', 28, False))
-        self.assertEqual(self.period('retro', None)['reason'], 'no-date')
-        self.assertEqual(ObservedCatalog._period('retro', 1500, '2026-10-01', self.SCHEDULE, False, 'championship')['reason'], 'championship')
+        self.assertEqual((est['status'], est['start'], est['season'], est['uploadInPeriod'], est['estimated']),
+                         ('text-confirmed', '2026-09-22', 28, False, True))
+        self.assertEqual((self.period('retro', None)['status'], self.period('retro', None)['reason']), ('text-only', 'no-record'))
+        champ = ObservedCatalog._period('retro', 1500, '2026-10-01', self.SCHEDULE, False, 'championship')
+        self.assertEqual((champ['status'], champ['reason']), ('text-only', 'championship'))
         bad = self.period('color', '2026-10-02')
         self.assertTrue(bad['contradiction'])
-        self.assertEqual(bad['reason'], 'contradicted')
+        self.assertEqual((bad['status'], bad['reason']), ('text-only', 'disagrees'))
         self.assertEqual([x['id'] for x in bad['scheduled']], ['retro', 'colormega'])
-        self.assertEqual(self.period('retro', '2027-05-01')['reason'], 'outside-schedule')
+        self.assertEqual((self.period('retro', '2027-05-01')['status'], self.period('retro', '2027-05-01')['reason']), ('text-only', 'no-record'))
+        # No cup in the text: uncaptured, with what the schedule ran at the CP as a hint only.
+        unc = self.period(None, '2026-10-02')
+        self.assertEqual((unc['status'], unc['reason'], unc['start']), ('uncaptured', 'no-cup-named', None))
+        self.assertEqual([x['id'] for x in unc['scheduled']], ['retro', 'colormega'])
+        self.assertEqual(ObservedCatalog._period(None, None, '2026-10-02', self.SCHEDULE, False, 'no-league')['scheduled'], [])
         # The upload-lag window holds two Retro periods: the same cup, so estimated (repeat cup) with both listed.
         self.SCHEDULE['periods'].append({'start': '2026-10-06', 'end': '2026-10-12', 'formats': [{'id': 'retro', 'cp': 1500}]})
         try:
             rep = self.period('retro', '2026-10-08')
             self.assertEqual((rep['status'], rep['repeat'], len(rep['periods']), rep['start'], rep['end'], rep['uploadInPeriod']),
-                             ('estimated', True, 2, '2026-09-22', '2026-10-12', True))
+                             ('text-confirmed', True, 2, '2026-09-22', '2026-10-12', True))
             self.assertNotIn('reason', rep)
             # A repeat of a DIFFERENT cup in the same window does not join it: colormega ran once, retro twice.
             one = self.period('colormega', '2026-10-04')
-            self.assertEqual((one['status'], one.get('repeat')), ('estimated', None))
+            self.assertEqual((one['status'], one.get('repeat')), ('text-confirmed', None))
             # A verified date inside one of the two periods is confirmed to that period alone.
             conf = self.period('retro', '2026-10-08', True)
-            self.assertEqual((conf['status'], conf['start'], conf.get('repeat')), ('confirmed', '2026-10-06', None))
+            self.assertEqual((conf['status'], conf['start'], conf.get('repeat'), conf['source']), ('text-confirmed', '2026-10-06', None, 'recording-date'))
         finally:
             self.SCHEDULE['periods'].pop()
 
