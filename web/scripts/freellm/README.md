@@ -97,8 +97,12 @@ Results, 2026-10-11:
     stay open as spot checks, so **6 resolve**.
   - The run took 6 minutes. The app must be restarted to load the resolve route. Then re-run
     `run --kind footage`: answers are cached, so this makes no new calls.
-- **result not measured yet.** Both providers' daily quotas ran out. Most of these battles cut straight
-  into the next one with no result screen, so expect low coverage.
+- **result failed, 2026-10-12** (not pursued: the free providers are being replaced by Haiku via the Claude API).
+  - Groq alone: 46 owner answers with frames, 14 resolvable answers, 4 right (29%), coverage 30%. It calls most
+    wins "Loss" (10 of its 12 Loss answers were wins) and said "unsure" for 12 of 26. A Groq 429 cooldown stopped
+    the last 20 rows. The two-provider gate, stopped at 25 rows, agreed on 4 (3 right).
+  - Cause: the six-frame strips mostly don't show the outcome (Team Rocket and raid-style fights, or a cut
+    straight to the next screen), so frame choice or prompt changes would not fix it.
 
 ## Rules
 

@@ -15,7 +15,7 @@ function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings,params
  const iconModel=K.iconModel(run.full||[],{...K.FIT.icons,...(fit.icons||{})}.alpha);
  const leagueOf=[];for(const [bi,b] of (run.full||[]).entries()){const cp=[500,1500,2500,10000].includes(Number(b.leagueCP))?Number(b.leagueCP):params.cpLeague===false?league:battleLeague(b,league),r=ranks(cp);leagueOf[bi]=cp;
   // An answer-conditioned posterior is never recycled as evidence for the next prediction.
-  delete b.answers;for(const side of ['my','opponent'])for(const p of b[side]||[]){delete p.answers;delete p.inference;K.narrowByRankings(p,r);}
+  delete b.answers;for(const side of ['my','opponent'])for(const p of b[side]||[]){delete p.answers;delete p.inference;delete p.typeLL;K.narrowByRankings(p,r);}
   const icons={...K.FIT.icons,...(fit.icons||{})};if(icons.w)for(const side of ['my','opponent'])for(const p of b[side]||[])p.typeLL=K.iconLogL(p,iconModel,icons);
   for(const g of b.matchups||[]){const o=(b.opponent||[]).find(p=>p.key===g.opponent),m=(b.my||[]).find(p=>p.key===g.my);if(!o||!m){g.result=null;continue;}
    g.result=K.inferMatchup({opp:{candidates:entries(o),cp:o.cp,typeLL:o.typeLL},my:{candidates:entries(m),cp:m.cp,typeLL:m.typeLL,learnedMoves:myMoves},hitsOnMy:summary(g.hitsOnMy,g.cadenceOnMy,g.hitTimesOnMy),hitsOnOpp:summary(g.hitsOnOpp,g.cadenceOnOpp,g.hitTimesOnOpp),charged:g.charged||{onMy:g.chargedOnMy||[],onOpp:g.chargedOnOpp||[]},effects:g.effects,moves:gm.moves,rankings:r,league:cp,learned,...params});

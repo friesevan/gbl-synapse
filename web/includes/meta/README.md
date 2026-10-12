@@ -672,6 +672,17 @@ The app applies this at its next refit once it runs this code.
 - `learned.channels` holds your side's confirmed moves per channel, since a creator's team repeats. Its
   weight is fitted, and is currently 0: there are too few repeat channels to measure it.
 
+**Refit on the new HP-bar evidence (2026-10-12).** The evidence settings had been fitted on the old hits.
+`movefit-fit.cjs --rounds 2` on the 197 fast-move and 31 form labels (89 + 25 from `feedback.json`, unchanged
+since 2026-10-11) moved five settings: damage noise relSigma 0.08 → 0.15, timing weight 0.5 → 0.25,
+timing q 0.35 → 0.2 and tau 0.12 → 0.2, and learnWeight 1 → 0.5. Held out by video:
+- fast moves 165/197 → 166/197, log-loss 0.385 → 0.339 (nested 4-fold, parameters fitted without the
+  test videos: 0.392 → 0.376 at 165/197). At p ≥ 0.90: 97/99 → 102/103 right;
+- forms 27/31 → 25/31 with log-loss 0.305 → 0.303 (forms use the same settings and don't auto-resolve).
+
+The fit needs `refit.cjs` to drop a saved `typeLL` before recomputing it; otherwise a candidate with
+`icons.w = 0` crashed the form fit (the learning loop's form fit hit it too).
+
 **Remaining failures** (35 fast moves, 6 forms):
 - Fast moves with fewer than two measured hits: 18 of 84 wrong (prior and energy only). The root cause
   is HP-bar detection on YouTube crops (24% frame coverage). Fixed in `hp.js` and all 37 videos

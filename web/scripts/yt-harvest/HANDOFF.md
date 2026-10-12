@@ -347,3 +347,17 @@ harvester start (not restarted).
 - Open: CJK result screens and "Go"/charged-move banners in other languages (the examined CJK videos cut
   their result screens); French and Italian result texts (no sample); the browser has no CJK OCR models;
   `aura-features.cjs` still uses the phone bar windows (Shadow agent's file).
+
+## Status 2026-10-12 (fast-move refit, Shadow default, free-LLM result gate)
+
+- Fast-move evidence settings refitted on the HP-bar evidence (`learning/movefit-params.json`; the old file is
+  `movefit-params.before-refit-2026-10-12.json`). Numbers: `includes/meta/README.md`, *Refit on the new HP-bar
+  evidence*. **POST /api/validation/retrain** applies them (`learned.fit`).
+- The committed Shadow classifier default (256fb9a, 410 rows) was kept: refitting now would use only 361
+  rows, with identical in-sample accuracy (295/361, log-loss 0.415), because 34 labelled videos' results are
+  moved to `.previous` by a requeue (49 Shadow labels, plus `Mt58K0Gckb8` and `S67R41DZFuY` for fast moves).
+  Re-run `shadow-dataset.cjs` and `shadow-cv.cjs --write-default` when those are re-extracted.
+- Free-LLM battle-result gate failed (Groq alone: 4/14 right on its resolvable answers, 30% coverage; it
+  calls most wins "Loss"; the strips often show no result screen). Not pursued: the free providers are being
+  replaced by Haiku via the Claude API. Details: `scripts/freellm/evals.json`, `validate_result`.
+

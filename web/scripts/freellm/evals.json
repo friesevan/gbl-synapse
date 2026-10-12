@@ -48,9 +48,77 @@
   "note": "Resolves only 'none', and only when policy.py's title rule also says 'no'. policy.py was tuned on these same 36 answers, so precision is optimistic; ~1 in 10 agreed answers stays open as a spot check."
  },
  "validate_result": {
-  "date": "2026-10-11",
+  "date": "2026-10-12",
   "passed": false,
-  "status": "not measured",
-  "note": "Groq's daily vision quota (200,000 tokens) and OpenRouter's 50 free requests/day ran out during the footage gate/run. Run `validate_llm.py gate --kind result --first-only`, then without --first-only, on a fresh day. Most of these battles are cut straight into the next one (no result screen), so expect low coverage."
+  "status": "failed, abandoned (free providers are being replaced by Haiku via the Claude API)",
+  "labelled": 51,
+  "evaluated": 46,
+  "noFrames": 5,
+  "groqOnly": {
+   "asked": 46,
+   "resolvable": 14,
+   "right": 4,
+   "precision": 0.286,
+   "coverage": 0.304,
+   "note": "20 rows got no answer: Groq 429 cooldown after 25 successful calls"
+  },
+  "twoProviderPartial": {
+   "rows": 25,
+   "agreed": 4,
+   "agreedRight": 3,
+   "note": "full gate stopped at row 25; OpenRouter-nolog is asked only for Groq-resolvable answers"
+  },
+  "failureModes": [
+   "Groq answers Loss for most wins (10 of 12 Loss answers were wins)",
+   "12 of 26 answered rows were unsure",
+   "the strips rarely show a result screen: many battles are Team Rocket or cut straight to the next screen, so the outcome is not in the frames"
+  ],
+  "note": "Not fixable by frame choice or prompt alone: the outcome is often not visible in the frames."
+ },
+ "validate_result_screen_groq": {
+  "date": "2026-10-12",
+  "labelled": 51,
+  "noFrames": 5,
+  "evaluated": 46,
+  "videos": 13,
+  "providers": {
+   "groq": {
+    "asked": 46,
+    "answered": 14,
+    "right": 4
+   },
+   "openrouter-nolog": {
+    "asked": 0,
+    "answered": 0,
+    "right": 0
+   }
+  },
+  "resolvable": [
+   "Loss",
+   "Loss:you-forfeit",
+   "Tie",
+   "Win",
+   "Win:opponent-forfeit"
+  ],
+  "resolved": 14,
+  "right": 4,
+  "exactRight": 4,
+  "precision": 0.286,
+  "exactPrecision": 0.286,
+  "wilsonLower": 0.117,
+  "coverage": 0.304,
+  "wrong": [
+   "8g40gbvbAE4: said Loss, owner Win",
+   "8g40gbvbAE4: said Loss, owner Win",
+   "fCgv6iz5BWE: said Loss, owner Win:opponent-forfeit",
+   "fCgv6iz5BWE: said Loss, owner Win",
+   "fCgv6iz5BWE: said Loss, owner Win",
+   "fCgv6iz5BWE: said Loss, owner Win:opponent-forfeit",
+   "_LSkr79Bo_c: said Loss, owner Win",
+   "_LSkr79Bo_c: said Loss, owner Win",
+   "_LSkr79Bo_c: said Loss, owner Win:opponent-forfeit",
+   "oqxO3iZePPU: said Loss, owner Win"
+  ],
+  "passed": false
  }
 }
