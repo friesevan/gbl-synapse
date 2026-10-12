@@ -1,0 +1,11 @@
+{
+  "name": "gbl-synapse",
+  "private": true,
+  "description": "Pokémon GO Battle League analysis: PvP IV Pro, PvPoke Pro, Team Rankings and the Meta Extractor.",
+  "scripts": {
+    "test": "node --test web/*.test.cjs web/tests/*.test.cjs && python3 -m unittest discover -s web/scripts/yt-harvest -p 'test_*.py' && python3 -I web/scripts/freellm/test_freellm.py",
+    "test:node": "node --test web/*.test.cjs web/tests/*.test.cjs",
+    "test:python": "python3 -m unittest discover -s web/scripts/yt-harvest -p 'test_*.py'",
+    "build:artifact": "node artifact/build.cjs /tmp/gbl-artifact-preview"
+  }
+}
