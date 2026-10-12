@@ -17,6 +17,9 @@ function mount({host,records=()=>[],shared=()=>[],speciesName=id=>id}){if(!host|
  const persist=()=>{try{root.localStorage?.setItem(STORE,JSON.stringify({side:state.side,league:state.league,cup:state.cup,periods:state.periods,review:state.review,tab:state.tab,order:state.order,sort:state.sort}));}catch{}};
  const name=id=>id?speciesName(id)||id:'Unknown Pokémon';
  const heading=el('div',undefined,'meta-heading');heading.append(el('div'));heading.firstChild.append(el('p','LIVE OBSERVATIONS','meta-eyebrow'),el('h2','Teams seen in battles'));
+ // Per-Pokémon usage counts by CP, cup and season (/api/observed-usage) for PvPoke Pro's builder where there is no local API.
+ const exportUsage=el('button','Export usage weights for PvPoke Pro','secondary');exportUsage.type='button';exportUsage.hidden=true;exportUsage.title='Opponent usage by league, cup and season (counts only: no videos, creators or trainer names). Import it in PvPoke Pro › Create custom rankings › Battle opponents.';heading.append(exportUsage);
+ exportUsage.onclick=async()=>{try{const r=await fetch('/api/observed-usage',{cache:'no-store'});if(!r.ok)throw Error(`HTTP ${r.status}`);const d=await r.json();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d)],{type:'application/json'}));a.download=`observed-usage-${String(d.revision||'export').slice(0,12)}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);}catch(e){status.textContent='Usage export failed: '+e.message;}};
  const status=el('p','Connecting to the local harvester…','hint');status.setAttribute('role','status');
  const filters=el('div',undefined,'meta-fields meta-observed-filters'),periodsBox=el('div',undefined,'meta-observed-periods'),scope=el('p',undefined,'meta-observed-scope'),check=el('details',undefined,'meta-observed-check'),metrics=el('div',undefined,'meta-metrics meta-observed-summary'),tabs=el('div',undefined,'meta-tabs meta-observed-tabs'),groups=el('div',undefined,'meta-observed-groups'),detail=el('section',undefined,'meta-observed-detail');
  detail.hidden=true;tabs.setAttribute('role','toolbar');tabs.setAttribute('aria-label','Analysis view');
@@ -89,6 +92,7 @@ function mount({host,records=()=>[],shared=()=>[],speciesName=id=>id}){if(!host|
   else if(state.tab==='teams')renderTeams(a);else if(state.tab==='usage')renderUsage(a,cupOcc,cup,prior);else if(state.tab==='pairs')renderPairs(a);else renderUnidentified(a);
   syncDetail(a,occSel);
   const badge=document.getElementById('metaCount');if(badge)badge.textContent=occ.length;
+  exportUsage.hidden=!available;
   status.textContent=available?`${num(remote.length)} harvested battle records · live updates every 5 seconds${lastError?' · '+lastError:''}`:lastError||'Local harvester unavailable. Reviewed browser and shared observations are still available.';}
  function renderPeriods(cup){periodsBox.replaceChildren();if(!cup){periodsBox.append(el('p','Choose a cup to select its time periods.','hint'));return;}
   const selected=new Set(cur.periods||cup.periods.map(p=>p.key)),set=keys=>{state.periods=keys;state.league=cur.league;state.cup=cur.cup;selection=null;detail.hidden=true;persist();render();};

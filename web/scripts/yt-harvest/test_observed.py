@@ -381,3 +381,100 @@ class PvPokeTests(unittest.TestCase):
             self.assertGreater(sp['a']['presence'], sp['b']['presence'])
             # a and a_shadow share a Pokedex number, so at most one is in a team; the four dex numbers fill 3 slots.
             self.assertAlmostEqual(sum(v['presence'] for v in sp.values()), 3, places=6)
+
+
+FIXTURES = Path(__file__).resolve().parents[2] / 'tests/fixtures'
+
+
+class ObservedUsageTests(unittest.TestCase):
+    """GET /api/observed-usage: per-Pokemon opponent usage by CP, cup and season for PvPoke Pro's opponent weights."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.work, self.web = root / 'work', root / 'web'
+        mon = lambda i, shadow=0: {'id': i, 'key': i, 'inference': {'shadowP': shadow, 'forms': [{'value': i, 'p': 1}]}}  # noqa: E731
+        self.write(self.work / 'results/video123.json', {'full': [
+            {'start': 5, 'end': 90, 'result': 'Win', 'leadConfirmed': True, 'my': [], 'opponent': [mon('medicham', 1), mon('azumarill'), mon('registeel')]},
+            {'start': 100, 'end': 190, 'result': 'Loss', 'my': [], 'opponent': [mon('medicham', .5), mon('azumarill'), mon('lanturn')]}]})
+        self.write(self.work / 'results/video123.leagues.json', {'video': {}, 'battles': [
+            {'start': s, 'league': 'great', 'cpCap': 1500, 'cup': 'great', 'cupName': 'Great League', 'cupStatus': 'text-confirmed',
+             'cupSource': 'title', 'cupConfidence': 1.0} for s in (5, 100)]})
+        self.write(self.web / 'tests/meta-benchmark/sources/registry.json',
+                   [{'id': 'video123', 'title': 'Great League', 'uploadDate': '20261010', 'channel': 'Creator A'}])
+        self.write(self.web / 'scripts/yt-harvest/data/gbl-schedule.json', {'cups': {'great': {'cp': 1500, 'name': 'Great League'}}, 'periods': [
+            {'start': '2026-10-06', 'end': '2026-10-12', 'season': 28, 'formats': [{'id': 'great', 'name': 'Great League', 'cp': 1500}], 'source': 'schedule'}],
+            'seasons': [{'season': 28, 'name': 'Twilight Trails', 'start': '2026-09-08', 'end': '2026-11-30'}]})
+        self.catalog = ObservedCatalog(self.work, self.web)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, path, value):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(value))
+
+    def get(self, path):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        import io
+        from email.message import Message
+        from types import SimpleNamespace
+        import run_app
+        import observed_usage
+
+        class Handler(run_app.LocalHandler):
+            def _json(self, status, value):
+                self.response = (status, value)
+        if not hasattr(self, 'usage'):
+            self.usage = observed_usage.ObservedUsage(self.catalog, lambda: json.loads((self.web / 'scripts/yt-harvest/data/gbl-schedule.json').read_text()))
+        h = Handler.__new__(Handler)
+        h.path, h.server, h.headers = path, SimpleNamespace(server_port=8000), Message()
+        h.headers['Host'] = 'localhost:8000'
+        h.rfile, h.service, h.observed, h.usage = io.BytesIO(b''), None, self.catalog, self.usage
+        h.do_GET()
+        return h.response
+
+    def test_endpoint_groups_by_season_filters_and_caches_by_revision(self):
+        status, value = self.get('/api/observed-usage')
+        self.assertEqual(status, 200)
+        self.assertEqual((value['format'], value['version'], value['side']), ('gbl-synapse-observed-usage', 1, 'opponent'))
+        self.assertEqual([(g['cp'], g['cup'], g['season']) for g in value['groups']], [(1500, 'great', 28), (1500, 'great', 'all')])
+        g = value['groups'][0]
+        self.assertEqual((g['cupName'], g['seasonName'], g['battles'], g['lineups'], g['leadLineups'], g['creators']),
+                         ('Great League', 'Twilight Trails', 2, 2, 1, 1))
+        # The second lineup's Shadow status is unknown: out of identified teams, but its species/forms are settled, so it counts.
+        self.assertEqual(g['periods'], [{'start': '2026-10-06', 'end': '2026-10-12', 'battles': 2}])
+        self.assertNotIn('Creator A', json.dumps(value), 'counts only: no creator names in the export')
+        self.assertEqual(self.get('/api/observed-usage?cp=1500&cup=great&season=28')[1]['groups'], [g])
+        self.assertEqual(self.get('/api/observed-usage?league=1500&season=27')[1]['groups'], [])
+        self.assertEqual(self.get('/api/observed-usage?since=' + value['revision'])[1], {'revision': value['revision'], 'unchanged': True})
+        self.assertIs(self.usage.state(), self.usage.state(), 'cached while the catalog revision is unchanged')
+
+    def test_usage_counts_settled_lineups_with_shadow_split_inputs(self):
+        g = self.get('/api/observed-usage?season=28')[1]['groups'][0]
+        self.assertEqual(g['lineups'], 2)
+        self.assertEqual(g['species']['medicham'], {'teams': 2, 'leads': 1, 'shadow': {'yes': 1, 'no': 0, 'unknown': 1}})
+        self.assertEqual(g['species']['azumarill']['shadow'], {'yes': 0, 'no': 2, 'unknown': 0})
+
+    def test_shared_fixture_matches_observed_meta_counting(self):
+        # The same fixture is checked against includes/meta/observed-core.js analyze() in pro.observed.test.cjs.
+        import observed_usage
+        fx = json.loads((FIXTURES / 'observed-usage.json').read_text())
+        groups = observed_usage.groups(fx['occurrences'], fx['schedule'])
+        self.assertEqual(groups, fx['expected'])
+        g28 = next(g for g in groups if g['cup'] == 'mega' and g['season'] == 28)
+        self.assertEqual((g28['battles'], g28['lineups'], g28['leadLineups']), (8, 4, 2))   # uncaptured, text-only, championship left out
+        self.assertEqual(g28['species']['medicham']['shadow'], {'yes': 2, 'no': 1, 'unknown': 1})
+        self.assertEqual(len(g28['periods']), 2, 'a repeat-cup battle carries both of its periods')
+        pooled = next(g for g in groups if g['cup'] == 'mega' and g['season'] == 'all')
+        self.assertEqual((pooled['battles'], pooled['seasons']), (9, [22, 28]))
+
+    def test_cup_roster_rules_match_the_shared_fixture(self):
+        # The same fixture is checked against the JS port (includes/pro/observed-weights.js) in pro.observed.test.cjs.
+        import league
+        schedule, gm = league.load_schedule(), league.load_gamemaster()
+        cases = json.loads((FIXTURES / 'cup-rules.json').read_text())['cases']
+        self.assertGreater(len(cases), 1000)
+        for cup_id, cp, sid, expected in cases:
+            mon = gm.get(sid) or gm.get(sid.removesuffix('_shadow'))
+            self.assertEqual(league.roster_allowed(cup_id, dict(schedule['cups'][cup_id], cp=cp), sid, mon, gm), expected, (cup_id, cp, sid))

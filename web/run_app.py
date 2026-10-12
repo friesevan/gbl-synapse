@@ -12,7 +12,8 @@ import webbrowser
 WEB_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(WEB_ROOT / 'scripts/yt-harvest'))
 from service import HarvestService
-from observed import ObservedCatalog
+from observed import ObservedCatalog, read as read_json
+import observed_usage
 
 
 class LocalHandler(SimpleHTTPRequestHandler):
@@ -23,6 +24,12 @@ class LocalHandler(SimpleHTTPRequestHandler):
         self.observed = getattr(service, "observed_catalog", None)
         if service is not None and self.observed is None:
             self.observed = service.observed_catalog = ObservedCatalog(service.work_dir, service.web_root)
+        self.usage = getattr(service, "observed_usage", None)
+        if self.observed is not None and self.usage is None:
+            catalog = self.observed
+            self.usage = observed_usage.ObservedUsage(catalog, lambda: read_json(catalog.schedule, {}))
+            if service is not None:
+                service.observed_usage = self.usage
         super().__init__(*args, **kwargs)
 
     def _json(self, status, value):
@@ -67,6 +74,15 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 state = self.observed.state()
                 since = parse_qs(urlsplit(self.path).query).get('since', [''])[0]
                 self._json(200, {'revision': state['revision'], 'unchanged': True} if since == state['revision'] else state)
+            elif path == '/api/observed-usage':
+                # Per-Pokemon opponent usage by CP, cup and season for PvPoke Pro's opponent weights (counts only).
+                q = parse_qs(urlsplit(self.path).query)
+                arg = lambda k: q.get(k, [''])[0]  # noqa: E731
+                value = self.usage.state()
+                if arg('since') and arg('since') == value['revision']:
+                    self._json(200, {'revision': value['revision'], 'unchanged': True})
+                else:
+                    self._json(200, observed_usage.select(value, arg('cp') or arg('league'), arg('cup'), arg('season')))
             elif path == '/api/validation':
                 self._json(200, self.service.feedback().state())
             elif path == '/api/validation/metrics':

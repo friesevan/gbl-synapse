@@ -100,6 +100,7 @@ includes/pro/neural-portable.js
 includes/pro/neural-report-core.js
 includes/pro/neural.css
 includes/pro/neural.js
+includes/pro/observed-weights.js
 includes/pro/saved.js
 includes/pro/search.js
 includes/pro/team-browser.js
@@ -133,6 +134,7 @@ includes/pro/vendor/training/TrainingAI.js
 includes/pro/vendor/training/aiArchetypes.json
 includes/pro/worker.js
 includes/theme.js
+scripts/yt-harvest/data/gbl-schedule.json
 training/next/NEXT_RUN_AUDIT.md
 training/next/OBSERVATION_CONTROLLER.md
 training/next/README.md

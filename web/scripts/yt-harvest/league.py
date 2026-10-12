@@ -632,7 +632,18 @@ def species_allowed(cup, sid, mon, moves=(), gm=None):
     return ok
 
 
-CP_CEILING = 6500       # no player's Pokémon shows more: a larger read has an extra digit
+MEGA_CUPS = ("mega", "catchmega")
+
+
+def roster_allowed(cup_id, cup, sid, mon, gm=None):
+    """A cup preset's roster (PvPoke Pro, includes/pro/observed-weights.js rosterAllowed, same fixtures): species_allowed
+    without moves, plus GBL's Mega rule (Mega Evolutions only in Mega Edition-style cups)."""
+    if "mega" in (mon.get("tags") or []) and cup_id not in MEGA_CUPS and not cup.get("megaAllowed"):
+        return False
+    return species_allowed(cup, sid, mon, (), gm)
+
+
+CP_CEILING = 6500      # no player's Pokémon shows more: a larger read has an extra digit
 CAP_ORDER = {1500: 0, 2500: 1, 10000: 2, 500: 3}   # when nothing else separates formats, the usual leagues first
 
 

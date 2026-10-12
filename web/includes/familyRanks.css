@@ -544,4 +544,10 @@ button.pro-link-button { display:inline; margin:0; padding:0; background:none; b
   .pro-builder-actions { justify-content:stretch; }
   .pro-builder-actions button { flex:1 1 150px; }
 }
+/* Cup presets and observed usage weights (PvPoke Pro builder) */
+.pro-cup-preset{display:grid;gap:6px;margin:0 0 12px}.pro-cup-preset label{display:grid;gap:4px;font-weight:600;max-width:560px}.pro-cup-preset select{width:100%;max-width:100%;background:var(--panel);color:var(--text)}.pro-cup-preset .hint{margin:0;overflow-wrap:anywhere}
+.pro-observed-controls{margin-bottom:12px}.pro-observed-controls .pro-calculation-toolbar{margin-top:12px}.pro-observed-controls .hint{overflow-wrap:anywhere}.pro-observed-controls .pro-guidance-label input{max-width:140px;background:var(--panel);color:var(--text)}
+.pro-file-button{position:relative;display:inline-flex;align-items:center;padding:8px 14px;border:1px solid var(--control-line);border-radius:9px;background:var(--bg);color:var(--text);font-weight:650;cursor:pointer}.pro-file-button input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.pro-file-button:focus-within{outline:2px solid var(--focus);outline-offset:1px}
+.pro-pokemon-tile:has(.pro-tile-observed){flex-wrap:wrap}.pro-tile-observed{flex-basis:100%;color:var(--muted);font-size:9px;font-variant-numeric:tabular-nums}
+@media(max-width:600px){.pro-cup-preset label{max-width:none}.pro-observed-controls .pro-calculation-toolbar{align-items:stretch}}
 

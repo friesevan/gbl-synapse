@@ -54,7 +54,7 @@ while i < len(lines):
 page = '''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PvPoke Pro — ranking logic README</title><meta name="description" content="Complete guide to PvPoke Pro ranking generation, weights, battle scenarios, score formulas, consistency, editor adjustments, and moveset comparisons.">
-<link rel="stylesheet" href="../familyRanks.css"></head><body><main class="pro-docs">
+<meta name="color-scheme" content="light dark"><script src="../theme.js"></script><link rel="stylesheet" href="../familyRanks.css"></head><body><main class="pro-docs">
 <nav class="pro-doc-links" aria-label="README navigation"><a href="../../familyRanks.html?app=pro">← Back to PvPoke Pro</a><a href="README.md">Plain Markdown / AI source</a></nav>
 '''+parts[0]+'''<p class="hint">Technical reference for the shipped implementation. Source snapshot: f627e89. All content is rendered as ordinary HTML for direct reading by people and AI tools.</p>
 <nav class="pro-doc-toc" aria-label="Contents"><h2>Contents</h2><ol>'''+''.join(toc)+'''</ol></nav><article>'''+''.join(parts[1:])+'''</article></main></body></html>
