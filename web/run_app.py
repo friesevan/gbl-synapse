@@ -4,6 +4,7 @@ import argparse
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import threading
 from pathlib import Path
 import sys
 from urllib.parse import urlsplit, parse_qs
@@ -23,7 +24,9 @@ class LocalHandler(SimpleHTTPRequestHandler):
         self.service = service
         self.observed = getattr(service, "observed_catalog", None)
         if service is not None and self.observed is None:
-            self.observed = service.observed_catalog = ObservedCatalog(service.work_dir, service.web_root)
+            self.observed = service.observed_catalog = ObservedCatalog(service.work_dir, service.web_root, background=True)
+            # Warm the catalog off the request path: the first full build reads every result (~2 min).
+            threading.Thread(target=service.observed_catalog.state, name='observed-warmup', daemon=True).start()
         self.usage = getattr(service, "observed_usage", None)
         if self.observed is not None and self.usage is None:
             catalog = self.observed

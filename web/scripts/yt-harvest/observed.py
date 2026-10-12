@@ -129,7 +129,8 @@ class ObservedCatalog:
     MAX_FILES = 5000
     MAX_OCCURRENCES = 10000
 
-    def __init__(self, work_dir, web_root):
+    def __init__(self, work_dir, web_root, background=False):
+        self.background = background   # web app: serve the previous catalog while rebuilding
         self.work = Path(work_dir)
         self.web = Path(web_root)
         self.registry = self.web / 'tests/meta-benchmark/sources/registry.json'
@@ -139,11 +140,82 @@ class ObservedCatalog:
         self._value = None
         self._questions = {}
         self._pvpoke = (None, None)
+        self._videos = {}          # stem -> (key, rows, rocket count, error) — per-video cache
+        self._building = False     # a background rebuild is running
+        self.build_lock = threading.Lock()
+
+    @staticmethod
+    def _qid_video(qid):
+        """Video id from a question id (<source>:<recording>.mp4:...), or None."""
+        for part in str(qid).split(':'):
+            if part.endswith('.mp4'):
+                return part.removesuffix('.mp4')
+        return None
+
+    def _feedback_views(self, feedback):
+        """Per-video slices of feedback.json (answers + resolutions), so each video's rows only look at its own
+        labels. Records that can't be attributed to a video are shared by every view."""
+        answers, resolutions, shared_a, shared_r = {}, {}, {}, {}
+        for qid, a in (feedback.get('answers') or {}).items():
+            vid = self._video(a) if isinstance(a, dict) else None
+            vid = vid or self._qid_video(qid)
+            (answers.setdefault(vid, {}) if vid else shared_a)[qid] = a
+        for qid, r in (feedback.get('resolutions') or {}).items():
+            vid = self._qid_video(qid)
+            (resolutions.setdefault(vid, {}) if vid else shared_r)[qid] = r
+        base = {k: v for k, v in feedback.items() if k not in ('answers', 'resolutions', 'questions', 'predictions', 'history')}
+
+        def view(stem):
+            a, r = answers.get(stem, {}), resolutions.get(stem, {})
+            if shared_a:
+                a = {**shared_a, **a}
+            if shared_r:
+                r = {**shared_r, **r}
+            return {**base, 'answers': a, 'resolutions': r}
+        return view
 
     def state(self):
+        """Latest catalog. When files changed since the last build and a previous catalog exists, the previous one
+        is returned at once and the rebuild runs in the background (stale-while-revalidate): a busy harvester
+        changes files every minute, and a request must never wait for a full rebuild."""
         with self.lock:
-            result_files = sorted(p for p in (self.work / 'results').glob('*.json')
-                                  if not p.name.endswith(('.leagues.json', '.learned.json')) and p.name != 'batch-summary.json')
+            value = self._value
+            if value is not None and self.background:
+                if not self._building and self._signature != self._current_signature():
+                    self._building = True
+                    threading.Thread(target=self._rebuild_in_background, name='observed-rebuild', daemon=True).start()
+                return value
+        return self._build()
+
+    def _rebuild_in_background(self):
+        try:
+            self._build()
+        except Exception:  # keep serving the previous catalog
+            pass
+        finally:
+            with self.lock:
+                self._building = False
+
+    def _current_signature(self):
+        files = self._result_files()[:self.MAX_FILES]
+        version = (read(self.work / 'feedback.json', {}).get('learning') or {}).get('version', 0)
+        return self._signature_for(files, version)
+
+    def _result_files(self):
+        return sorted(p for p in (self.work / 'results').glob('*.json')
+                      if not p.name.endswith(('.leagues.json', '.learned.json')) and p.name != 'batch-summary.json')
+
+    def _signature_for(self, files, version):
+        refits = self.work / 'learning' / ('refit-' + str(version))
+        watched = [self.registry, self.schedule, self.work / 'feedback.json', *self._pvpoke_files()]
+        for p in files:
+            watched.extend([p, p.with_name(p.stem + '.leagues.json'), self.work / 'labels' / p.name,
+                            refits / p.name, self.work / 'validation' / p.stem])
+        return tuple(stamp(p) for p in watched)
+
+    def _build(self):
+        with self.build_lock:
+            result_files = self._result_files()
             files = result_files[:self.MAX_FILES]
             feedback = read(self.work / 'feedback.json', {})
             version = (feedback.get('learning') or {}).get('version', 0)
@@ -156,46 +228,42 @@ class ObservedCatalog:
             sig = tuple(stamp(p) for p in watched)
             if self._signature == sig and self._value is not None:
                 return self._value
+            view_for = self._feedback_views(feedback)
+            schedule_stamp = stamp(self.schedule)
             registry = read(self.registry, [])
             videos = registry if isinstance(registry, list) else registry.get('videos', [])
             by_id = {v.get('id'): v for v in videos if isinstance(v, dict)}
             schedule = read(self.schedule, {})
             occurrences, errors, videos_with_battles = [], [], set()
             excluded = {'rocket': 0}
+            seen = set()
             for p in files:
-                raw = read(p, None)
-                if not isinstance(raw, dict):
-                    errors.append({'videoId': p.stem, 'error': 'Result file is unavailable or incomplete'})
-                    continue
                 fitted = refits / p.name
-                # A completed refit must not supersede a subsequently re-extracted video.
-                if fitted.exists() and fitted.stat().st_mtime_ns >= p.stat().st_mtime_ns:
-                    updated = read(fitted, {})
-                    if isinstance(updated, dict) and isinstance(updated.get('full'), list):
-                        raw = updated
-                full = raw.get('full') or raw.get('battles') or []
-                if not isinstance(full, list):
+                fb = view_for(p.stem)
+                entry = by_id.get(p.stem, {})
+                key = (stamp(p), stamp(p.with_name(p.stem + '.leagues.json')), stamp(self.work / 'labels' / p.name),
+                       stamp(fitted), stamp(self.work / 'validation' / p.stem), schedule_stamp, version,
+                       hashlib.sha256(json.dumps([entry, fb['answers'], fb['resolutions']], sort_keys=True, default=str)
+                                      .encode()).hexdigest())
+                seen.add(p.stem)
+                cached = self._videos.get(p.stem)
+                if not cached or cached[0] != key:
+                    cached = self._videos[p.stem] = (key, *self._video_rows(p, fitted, fb, entry, schedule))
+                _, rows, rocket, error = cached
+                if error:
+                    errors.append(error)
                     continue
-                labels = read(self.work / 'labels' / p.name, {})
-                questions = self._question_index(p.stem, feedback)
-                leagues = read(p.with_name(p.stem + '.leagues.json'), {})
-                video = {**by_id.get(p.stem, {}), **(raw.get('video') or {})}
-                for a in feedback.get('answers', {}).values():
-                    if self._video(a) == p.stem and isinstance(a.get('video'), dict):
-                        video = {**a['video'], **video}
-                for i, b in enumerate(full):
-                    if not isinstance(b, dict):
-                        continue
-                    row = self._occurrence(p.stem, i, b, raw, video, labels, leagues, feedback, schedule, questions)
-                    if row['battleType'] == 'rocket':
-                        excluded['rocket'] += 1   # Team Rocket battles train the extractor but are never meta
-                        continue
-                    occurrences.append(row)
+                excluded['rocket'] += rocket
+                if rows:
                     videos_with_battles.add(p.stem)
+                for row in rows:
+                    occurrences.append(row)
                     if len(occurrences) >= self.MAX_OCCURRENCES:
                         break
                 if len(occurrences) >= self.MAX_OCCURRENCES:
                     break
+            for stem in [k for k in self._videos if k not in seen]:
+                del self._videos[stem]
             occurrences.sort(key=lambda o: (o['source'].get('uploadDate') or '', o['source']['videoId'], o['battle']['start']), reverse=True)
             revision = hashlib.sha256(repr(sig).encode()).hexdigest()[:20]
             periods, by_league = {}, {}
@@ -224,12 +292,44 @@ class ObservedCatalog:
                 'excluded': excluded,
                 'files': len(files), 'truncated': len(result_files) > self.MAX_FILES or len(occurrences) >= self.MAX_OCCURRENCES,
                 'errors': errors[:20], 'dateNote': 'Upload dates are publication dates. Cup periods inferred from them are estimates, not verified battle dates.'}}
-            self._signature, self._value = sig, value
+            with self.lock:
+                self._signature, self._value = sig, value
             return value
 
     @staticmethod
     def _video(a):
         return (a.get('video') or {}).get('id') or str(a.get('recording') or '').removesuffix('.mp4')
+
+    def _video_rows(self, p, fitted, feedback, entry, schedule):
+        """Rows for one video: (rows, rocket battles excluded, error or None). `feedback` is this video's slice."""
+        raw = read(p, None)
+        if not isinstance(raw, dict):
+            return [], 0, {'videoId': p.stem, 'error': 'Result file is unavailable or incomplete'}
+        # A completed refit must not supersede a subsequently re-extracted video.
+        if fitted.exists() and fitted.stat().st_mtime_ns >= p.stat().st_mtime_ns:
+            updated = read(fitted, {})
+            if isinstance(updated, dict) and isinstance(updated.get('full'), list):
+                raw = updated
+        full = raw.get('full') or raw.get('battles') or []
+        if not isinstance(full, list):
+            return [], 0, None
+        labels = read(self.work / 'labels' / p.name, {})
+        questions = self._question_index(p.stem, feedback)
+        leagues = read(p.with_name(p.stem + '.leagues.json'), {})
+        video = {**entry, **(raw.get('video') or {})}
+        for a in feedback.get('answers', {}).values():
+            if self._video(a) == p.stem and isinstance(a.get('video'), dict):
+                video = {**a['video'], **video}
+        rows, rocket = [], 0
+        for i, b in enumerate(full):
+            if not isinstance(b, dict):
+                continue
+            row = self._occurrence(p.stem, i, b, raw, video, labels, leagues, feedback, schedule, questions)
+            if row['battleType'] == 'rocket':
+                rocket += 1   # Team Rocket battles train the extractor but are never meta
+                continue
+            rows.append(row)
+        return rows, rocket, None
 
     def _question_index(self, stem, feedback):
         directory = self.work / 'validation' / stem
