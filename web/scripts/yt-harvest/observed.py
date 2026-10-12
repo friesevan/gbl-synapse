@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import threading
 
+UPLOAD_LAG_DAYS = 14   # league.UPLOAD_LAG_DAYS: videos are uploaded up to two weeks after recording
+
 
 def read(path, default):
     try:
@@ -55,6 +57,43 @@ def model_answers(feedback):
     return out
 
 
+QUESTION_KINDS = {'shadow': 'shadow', 'form': 'form', 'fast': 'fastMove'}
+PVPOKE_CPS = (500, 1500, 2500, 10000)
+PVPOKE_SPECIES = 300
+
+
+def question_index(directory):
+    """Validate questions about members, parsed from the question file names (the file name is the qid:
+    <source>:<recording>:<battle>:<side>:<key>:<kind>). Creator-side questions are asked once for every
+    battle, so they are indexed under battle 'all'."""
+    out = {}
+    try:
+        names = sorted(f.name for f in Path(directory).iterdir() if f.suffix == '.json')
+    except OSError:
+        return out
+    for name in names:
+        qid = name[:-5]
+        parts = qid.split(':')
+        if len(parts) < 6 or parts[-1] not in QUESTION_KINDS:
+            continue
+        try:
+            battle = int(parts[-4])
+        except ValueError:
+            continue
+        side, key, kind = parts[-3], parts[-2], QUESTION_KINDS[parts[-1]]
+        out.setdefault(('all' if side == 'my' else battle, side, key, kind), []).append(qid)
+    return out
+
+
+def question_status(qid, feedback):
+    if human((feedback.get('answers') or {}).get(qid)):
+        return 'answered'
+    r = (feedback.get('resolutions') or {}).get(qid)
+    if isinstance(r, dict) and r.get('value') is not None:
+        return 'resolved'
+    return 'open'
+
+
 def human(answer):
     return (isinstance(answer, dict) and answer.get('value') is not None
             and answer.get('source') != 'model' and not answer.get('modelResolved'))
@@ -72,6 +111,8 @@ class ObservedCatalog:
         self.lock = threading.RLock()
         self._signature = None
         self._value = None
+        self._questions = {}
+        self._pvpoke = (None, None)
 
     def state(self):
         with self.lock:
@@ -81,10 +122,11 @@ class ObservedCatalog:
             feedback = read(self.work / 'feedback.json', {})
             version = (feedback.get('learning') or {}).get('version', 0)
             refits = self.work / 'learning' / ('refit-' + str(version))
-            watched = [self.registry, self.schedule, self.work / 'feedback.json']
+            pvpoke_files = self._pvpoke_files()
+            watched = [self.registry, self.schedule, self.work / 'feedback.json', *pvpoke_files]
             for p in files:
                 watched.extend([p, p.with_name(p.stem + '.leagues.json'), self.work / 'labels' / p.name,
-                                refits / p.name])
+                                refits / p.name, self.work / 'validation' / p.stem])
             sig = tuple(stamp(p) for p in watched)
             if self._signature == sig and self._value is not None:
                 return self._value
@@ -109,6 +151,7 @@ class ObservedCatalog:
                 if not isinstance(full, list):
                     continue
                 labels = read(self.work / 'labels' / p.name, {})
+                questions = self._question_index(p.stem, feedback)
                 leagues = read(p.with_name(p.stem + '.leagues.json'), {})
                 video = {**by_id.get(p.stem, {}), **(raw.get('video') or {})}
                 for a in feedback.get('answers', {}).values():
@@ -117,7 +160,7 @@ class ObservedCatalog:
                 for i, b in enumerate(full):
                     if not isinstance(b, dict):
                         continue
-                    row = self._occurrence(p.stem, i, b, raw, video, labels, leagues, feedback, schedule)
+                    row = self._occurrence(p.stem, i, b, raw, video, labels, leagues, feedback, schedule, questions)
                     if row['battleType'] == 'rocket':
                         excluded['rocket'] += 1   # Team Rocket battles train the extractor but are never meta
                         continue
@@ -129,7 +172,20 @@ class ObservedCatalog:
                     break
             occurrences.sort(key=lambda o: (o['source'].get('uploadDate') or '', o['source']['videoId'], o['battle']['start']), reverse=True)
             revision = hashlib.sha256(repr(sig).encode()).hexdigest()[:20]
-            value = {'revision': revision, 'occurrences': occurrences, 'summary': {
+            periods = {}
+            for o in occurrences:
+                r = o['cupRange']
+                periods[r['status']] = periods.get(r['status'], 0) + 1
+                if r.get('reason'):
+                    periods[r['reason']] = periods.get(r['reason'], 0) + 1
+            value = {'revision': revision, 'occurrences': occurrences,
+                     'schedule': {'seasons': [{k: s.get(k) for k in ('season', 'name', 'start', 'end', 'source')}
+                                              for s in schedule.get('seasons', []) if isinstance(s, dict)],
+                                  'lagDays': UPLOAD_LAG_DAYS,
+                                  'cups': {k: c.get('name') for k, c in (schedule.get('cups') or {}).items() if isinstance(c, dict)}},
+                     'pvpoke': self.pvpoke(pvpoke_files),
+                     'summary': {
+                'periodStatus': periods,
                 'videos': len(videos_with_battles), 'battles': len(occurrences),
                 'completeCreatorTeams': sum(o['complete']['my'] for o in occurrences),
                 'completeOpponentTeams': sum(o['complete']['opponent'] for o in occurrences),
@@ -145,7 +201,15 @@ class ObservedCatalog:
     def _video(a):
         return (a.get('video') or {}).get('id') or str(a.get('recording') or '').removesuffix('.mp4')
 
-    def _occurrence(self, vid, index, b, raw, video, labels, leagues, feedback, schedule):
+    def _question_index(self, stem, feedback):
+        directory = self.work / 'validation' / stem
+        st = stamp(directory)
+        cached = self._questions.get(stem)
+        if not cached or cached[0] != st:
+            cached = self._questions[stem] = (st, question_index(directory))
+        return {k: [(q, question_status(q, feedback)) for q in v] for k, v in cached[1].items()}
+
+    def _occurrence(self, vid, index, b, raw, video, labels, leagues, feedback, schedule, questions=None):
         b = copy.deepcopy(b)
         source_b = (raw.get('battles') or [{}])[index] if index < len(raw.get('battles') or []) else {}
         merged_answers = {**labels.get('verified', {}), **feedback.get('answers', {})}
@@ -184,12 +248,14 @@ class ObservedCatalog:
         for side in ('my', 'opponent'):
             members = b.get(side) or []
             details = source_b.get(side + 'Detail') or []
-            teams[side] = [self._member(m, details[j] if j < len(details) else {}, side, modelled + answers, b)
+            teams[side] = [self._member(m, details[j] if j < len(details) else {}, side, modelled + answers, b,
+                                        self._member_questions(questions or {}, index, side, m))
                            for j, m in enumerate(members)]
         upload = date(video.get('uploadDate'))
         battle_date = date(b.get('battleDate') or raw.get('battleDate') or video.get('recordedDate'))
         date_verified = bool(battle_date and (b.get('dateVerified') or raw.get('dateVerified') or video.get('recordedDateVerified')))
-        period = self._period(cup_id, cp, battle_date if date_verified else upload, schedule, date_verified)
+        period = self._period(cup_id, cp, battle_date if date_verified else upload, schedule, date_verified,
+                              'championship' if champion else None if league_id else 'no-league')
         start, end = b.get('start', 0), b.get('end')
         url = 'https://www.youtube.com/watch?v=' + vid + '&t=' + str(max(0, int(start or 0))) + 's'
         events = b.get('events') or source_b.get('moves') or []
@@ -238,7 +304,19 @@ class ObservedCatalog:
         return 'gbl'
 
     @staticmethod
-    def _member(member, detail, side, answers, battle):
+    def _member_questions(questions, index, side, member):
+        m = member if isinstance(member, dict) else {'name': member}
+        key = m.get('key') or str(m.get('label') or m.get('name') or '').lower().replace(' ', '')
+        out = {}
+        for kind in ('shadow', 'form', 'fastMove'):
+            found = questions.get(('all' if side == 'my' else index, side, key, kind)) or []
+            if found:
+                # An open question is the useful link; otherwise the settled one, for its status.
+                out[kind] = dict(zip(('qid', 'status'), next((q for q in found if q[1] == 'open'), found[-1])))
+        return out
+
+    @staticmethod
+    def _member(member, detail, side, answers, battle, questions=None):
         m = member if isinstance(member, dict) else {'name': member}
         inference = m.get('inference') or {}
         forms = inference.get('forms') or []
@@ -273,12 +351,25 @@ class ObservedCatalog:
                 reviewed.append(kind)
         form_p = form.get('p', 1 if m.get('id') else None)
         uncertain = not identity or shadow is None or (form_p is not None and form_p < .98)
+        # Why a member keeps its lineup out of the identified teams (the same three tests as `uncertain`).
+        questions = questions or {}
+        why = []
+        if not identity:
+            why.append({'kind': 'species', 'candidates': [c.get('id') for c in (m.get('candidates') or [])[:3] if isinstance(c, dict)],
+                        'question': questions.get('form')})
+        elif form_p is not None and form_p < .98:
+            alternatives = [{'id': f.get('id') or f.get('value'), 'p': f.get('p')} for f in forms[:3] if isinstance(f, dict)]
+            why.append({'kind': 'form', 'p': form_p, 'alternatives': alternatives, 'question': questions.get('form')})
+        if shadow is None:
+            why.append({'kind': 'shadow', 'p': shadow_p if isinstance(shadow_p, (int, float)) else None,
+                        'question': questions.get('shadow')})
         charged = ((battle.get('evidence') or {}).get(side) or {}).get(key, {}).get('charged', [])
         return {'id': identity, 'name': m.get('label') or m.get('name') or detail.get('name') or identity or 'Unknown',
                 'key': key, 'cp': m.get('cp') or detail.get('cp'), 'shadow': shadow, 'shadowP': shadow_p,
                 'formConfidence': form_p, 'fastMove': fast.get('id') or fast.get('value'),
                 'fastMoveConfidence': fast.get('p'), 'chargedMoves': charged, 'uncertain': uncertain,
-                'reviewed': reviewed, 'first': m.get('first')}
+                'reviewed': reviewed, 'first': m.get('first'), 'why': why,
+                'fastQuestion': questions.get('fastMove')}
 
     @staticmethod
     def _timeline(vid, index, start, end, result, ending, teams, hp, events, effects):
@@ -309,18 +400,95 @@ class ObservedCatalog:
                 'available': bool(hp or events), 'coverage': 'measured HP and observed events' if hp else 'events only' if events else 'not saved'}
 
     @staticmethod
-    def _period(cup, cp, anchor, schedule, verified):
-        candidates = []
-        if anchor:
-            day = dt.date.fromisoformat(anchor)
-            low = day if verified else day - dt.timedelta(days=14)
-            for p in schedule.get('periods', []):
-                if p.get('start', '9999') > day.isoformat() or p.get('end', '') < low.isoformat():
+    def _period(cup, cp, anchor, schedule, verified, unscheduled=None):
+        """Checks the battle's observed cup against the GBL schedule for its date.
+        status: confirmed (verified recording date inside a period of this cup), estimated (one period of
+        this cup in the upload-date lag window), unassigned (reason: ambiguous, no-date, no-league,
+        championship, contradicted, outside-schedule). contradicted = the schedule ran other formats at this
+        CP on those dates but never this cup: the observed cup or the date is wrong."""
+        base = {'start': None, 'end': None, 'source': 'unassigned', 'estimated': True, 'status': 'unassigned'}
+        if unscheduled or not cup:
+            reason = unscheduled or 'no-league'
+            return {**base, 'reason': reason, 'candidates': [],
+                    'dateBasis': 'championship battles are not on the GBL schedule' if reason == 'championship'
+                    else 'no league or cup was identified'}
+        if not anchor:
+            return {**base, 'reason': 'no-date', 'candidates': [], 'dateBasis': 'no verified recording date or upload date'}
+        day = dt.date.fromisoformat(anchor)
+        low = day if verified else day - dt.timedelta(days=UPLOAD_LAG_DAYS)
+        candidates, active = [], []
+        for p in schedule.get('periods', []):
+            if p.get('start', '9999') > day.isoformat() or p.get('end', '') < low.isoformat():
+                continue
+            for f in p.get('formats', []):
+                if cp and f.get('cp') != cp:
                     continue
-                if any(f.get('id') == cup and (not cp or f.get('cp') == cp) for f in p.get('formats', [])):
-                    candidates.append({'start': p['start'], 'end': p['end'], 'source': p.get('source'), 'season': p.get('season')})
+                active.append({'id': f.get('id'), 'name': f.get('name') or ((schedule.get('cups') or {}).get(f.get('id')) or {}).get('name'),
+                               'start': p.get('start'), 'end': p.get('end')})
+                if f.get('id') == cup:
+                    candidates.append({'start': p['start'], 'end': p['end'], 'source': p.get('source'), 'season': p.get('season'),
+                                       'confidence': p.get('confidence')})
+        window = {'from': low.isoformat(), 'to': day.isoformat()}
         if len(candidates) == 1:
-            return {**candidates[0], 'scheduleSource': candidates[0].get('source'), 'source': 'recording-date' if verified else 'upload-date', 'estimated': not verified, 'dateBasis': 'verified recording date' if verified else 'upload date with 14-day recording lag window'}
-        return {'start': None, 'end': None, 'source': 'unassigned', 'estimated': True,
-                'dateBasis': 'ambiguous upload-based recording period' if candidates else 'no verified recording date or matching schedule period',
-                'candidates': candidates}
+            c = candidates[0]
+            return {**c, 'scheduleSource': c.get('source'), 'source': 'recording-date' if verified else 'upload-date',
+                    'estimated': not verified, 'status': 'confirmed' if verified else 'estimated', 'window': window,
+                    'uploadInPeriod': None if verified else c['start'] <= anchor <= c['end'],
+                    'dateBasis': 'verified recording date' if verified else 'upload date with %d-day recording lag window' % UPLOAD_LAG_DAYS}
+        if candidates:
+            return {**base, 'reason': 'ambiguous', 'window': window, 'candidates': candidates,
+                    'dateBasis': 'ambiguous upload-based recording period'}
+        if active:
+            seen = {}
+            for a in active:
+                seen.setdefault(a['id'], a)
+            return {**base, 'reason': 'contradicted', 'contradiction': True, 'window': window, 'candidates': [],
+                    'scheduled': list(seen.values())[:6],
+                    'dateBasis': 'the schedule ran other formats at this CP on these dates, never this cup'}
+        return {**base, 'reason': 'outside-schedule', 'window': window, 'candidates': [],
+                'dateBasis': 'no schedule period at this CP covers these dates'}
+
+    @staticmethod
+    def _pvpoke_paths(web):
+        data = web / 'includes/pro/data'
+        return {cp: (data / ('league-%d.json' % cp), data / ('overrides-%d.json' % cp)) for cp in PVPOKE_CPS}
+
+    def _pvpoke_files(self):
+        return [f for pair in self._pvpoke_paths(self.web).values() for f in pair] + [self.web / 'includes/pro/data/gamemaster.json']
+
+    def pvpoke(self, files=None):
+        """PvPoke's open-league per-Pokemon weights and the share of teams expected to contain each species when
+        teams are drawn independently by weight ** 1.25 (usage_export.prior_presence, the trainer's prior), over the
+        same 300-species population as training/team-search/common.cjs. Cached on the data files' stamps."""
+        sig = tuple(stamp(f) for f in (files or self._pvpoke_files()))
+        if self._pvpoke[0] == sig:
+            return self._pvpoke[1]
+        import usage_export   # lazy: usage_export imports this module
+        gm = read(self.web / 'includes/pro/data/gamemaster.json', {})
+        dex = {p.get('speciesId'): p.get('dex') for p in ((gm.get('pokemon') if isinstance(gm, dict) else None) or []) if isinstance(p, dict)}
+        out = {}
+        for cp, (league_path, override_path) in self._pvpoke_paths(self.web).items():
+            published = read(league_path, {})
+            published = published.get('overall') if isinstance(published, dict) else None
+            overrides = read(override_path, [])
+            if not isinstance(published, list) or not isinstance(overrides, list):
+                continue
+            weights = {r.get('speciesId'): r.get('weight') for r in overrides if isinstance(r, dict)}
+            rows = []
+            for rank, r in enumerate(published, 1):
+                if not isinstance(r, dict):
+                    continue
+                w = weights.get(r.get('speciesId'))
+                w = w if isinstance(w, (int, float)) else 1
+                if w > 0 and r.get('speciesId') in dex:
+                    rows.append((r['speciesId'], w, rank))
+            rows.sort(key=lambda r: (-r[1], r[2]))
+            pool = {i: {'weight': w, 'dex': dex[i], 'rank': rank} for i, w, rank in rows[:PVPOKE_SPECIES]}
+            if len({p['dex'] for p in pool.values()}) < 3:
+                continue
+            presence = usage_export.prior_presence(pool, samples=20000)
+            out[str(cp)] = {'source': 'PvPoke open-league rankings (%s) with per-Pokemon weights (%s)' % (league_path.name, override_path.name),
+                            'species': {i: {'weight': p['weight'], 'rank': p['rank'], 'presence': round(presence.get(i, 0), 5)}
+                                        for i, p in pool.items()}}
+        self._pvpoke = (sig, out)
+        return out

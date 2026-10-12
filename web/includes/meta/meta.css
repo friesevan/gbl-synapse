@@ -64,3 +64,73 @@
 .meta-perf th,.meta-perf thead th{background:transparent;color:var(--pf-ink)}.meta-perf thead th{color:var(--pf-ink2)}.meta-perf tbody th{font-weight:600}.meta-perf th,.meta-perf td{white-space:nowrap}.meta-perf td.wrap,.meta-perf th.wrap{white-space:normal;min-width:160px;max-width:320px}.meta-perf table{width:auto;min-width:100%}.meta-perf-gates li{grid-template-columns:78px 96px minmax(0,1fr)}.meta-perf-gates .meta-pill{justify-self:start}
 @media(max-width:600px){.meta-perf-gates li{grid-template-columns:78px minmax(0,1fr)}.meta-perf-gates li>span:last-child{grid-column:1/-1}}
 .meta-perf>*,.meta-perf-multi>*,.meta-perf-tiles>*,.meta-perf-section{min-width:0;max-width:100%}
+/* Observed meta: League › Cup › Period, schedule check and analysis views (tokens only; both themes). */
+.meta-observed-summary{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.meta-observed-periods{display:grid;gap:10px;margin:0 0 12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--sunken)}
+.meta-observed-period-head,.meta-observed-order{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.meta-observed-period-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:auto}
+.meta-observed-order .meta-observed-period-title{margin-right:4px}.meta-observed-order{margin:0 0 14px}
+.meta-observed-season{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:8px;align-items:start}
+.meta-observed-season-name{font-size:13px;font-weight:600;color:var(--text-2);padding-top:6px}
+.meta-observed-chips{display:flex;flex-wrap:wrap;gap:6px}
+.meta-chip{margin:0;font-size:12px;padding:6px 10px;border-radius:999px;background:var(--panel);color:var(--text);border:1px solid var(--control-line);font-variant-numeric:tabular-nums}
+.meta-chip[aria-pressed=true]{background:var(--accent-tint-strong);border-color:var(--accent);color:var(--text)}
+.meta-chip[aria-pressed=true]::before{content:'✓ ';color:var(--text)}
+.meta-observed-repeats{font-size:12px;padding:6px 10px;border-radius:999px}
+.meta-observed-period-head button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-tint)}
+.meta-observed-scope{font-size:13px;color:var(--text-2);margin:0 0 10px}
+.meta-observed-check{margin:0 0 14px;padding:10px 14px;border:1px solid var(--line);border-radius:12px}
+.meta-observed-check>summary{font-size:13px;cursor:pointer;color:var(--text)}
+.meta-observed-flag{color:var(--warn-text);font-weight:600}
+.meta-observed-tabs{margin:16px 0 14px}
+.meta-observed-groups section>h3{margin:4px 0 6px}
+.meta-observed-table{width:100%}
+.meta-observed-groups .meta-observed-table td:first-child{width:auto}
+.meta-observed-table td.num,.meta-observed-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+.meta-observed-table th.num .meta-sort{text-align:right}
+.meta-observed-table td small{display:block;color:var(--muted);font-size:11px;line-height:1.45;margin-top:2px}
+.meta-observed-table td .meta-observed-team{margin:0}
+.meta-sort{all:unset;cursor:pointer;font:inherit;font-size:12px;color:var(--muted);display:inline-block;width:100%;box-sizing:border-box}
+.meta-sort:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+.meta-sort-mark{color:var(--text-2)}
+.meta-observed-more{margin:8px 0 0}
+.meta-observed-provisional{border-left:3px solid var(--warn-text);padding-left:10px}
+.meta-usage-chart{margin:8px 0 16px;padding:12px 14px;background:var(--viz-surface);border:1px solid var(--line);border-radius:12px}
+.meta-usage-chart figcaption{font-size:13px;color:var(--text-2);margin-bottom:8px}
+.meta-usage-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--text-2);margin-bottom:8px}
+.meta-usage-legend>span{display:inline-flex;align-items:center;gap:6px}
+.meta-usage-key{display:inline-block;width:12px;height:12px;border-radius:3px}
+.meta-usage-key.observed{background:var(--viz-1)}
+.meta-usage-key.expected{width:9px;height:9px;border-radius:1px;transform:rotate(45deg);background:var(--viz-2)}
+.meta-usage-rows{display:grid;gap:4px}
+.meta-usage-row{display:grid;grid-template-columns:minmax(90px,180px) minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:12px;min-height:24px}
+.meta-usage-label{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta-usage-value{color:var(--text-2);text-align:right;font-variant-numeric:tabular-nums}
+.meta-usage-track{position:relative;height:16px;border-left:1px solid var(--viz-axis)}
+.meta-usage-bar{height:100%;background:var(--viz-1);border-radius:0 4px 4px 0;min-width:2px}
+.meta-usage-marker{position:absolute;top:50%;width:9px;height:9px;margin:-5px 0 0 -5px;background:var(--viz-2);transform:rotate(45deg);box-shadow:0 0 0 2px var(--viz-surface);border-radius:1px}
+.meta-usage-row:hover .meta-usage-label{text-decoration:underline}
+.meta-spark{display:block;overflow:visible}.meta-spark-line{fill:none;stroke:var(--viz-1);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}.meta-spark-dot{fill:var(--viz-1);stroke:var(--viz-surface);stroke-width:2}
+.meta-lift{display:grid;grid-template-columns:auto 64px;gap:8px;align-items:center;justify-content:end}
+.meta-lift-track{position:relative;display:block;height:8px;background:var(--sunken);border-radius:4px}
+.meta-lift-bar{display:block;height:100%;background:var(--viz-1);border-radius:0 4px 4px 0}
+.meta-lift-one{position:absolute;left:25%;top:-3px;bottom:-3px;width:1px;background:var(--viz-axis)}
+.meta-observed-lineups{display:grid;gap:10px}
+.meta-observed-lineup{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--panel)}
+.meta-observed-lineup-head{display:grid;gap:2px;margin-bottom:8px}.meta-observed-lineup-head strong{font-size:13px;overflow-wrap:anywhere}.meta-observed-lineup-head small{color:var(--muted);font-size:12px}
+.meta-observed-members{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:6px}
+.meta-observed-members li{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:13px}
+.meta-observed-why{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;padding:3px 8px;border-radius:8px;background:var(--sunken);border:1px solid var(--line);color:var(--text-2);font-size:12px}
+.meta-observed-ask{font-size:11px;padding:3px 8px;margin:0}
+.meta-observed-q{color:var(--muted);font-size:11px}
+.meta-observed-lineup .meta-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
+.meta-observed-partial{margin-top:14px}.meta-observed-partial>summary{font-size:13px;cursor:pointer;margin-bottom:10px}
+@media(max-width:600px){.meta-observed-season{grid-template-columns:1fr}.meta-observed-season-name{padding-top:0}.meta-usage-row{grid-template-columns:minmax(70px,104px) minmax(0,1fr) 38px;gap:6px}.meta-observed-periods,.meta-observed-check{padding:10px}.meta-observed-groups .meta-data-table.meta-observed-table{min-width:520px}}
+.meta-observed-table td{font-size:13px}.meta-observed-table td.nowrap{white-space:nowrap}
+.meta-observed-table .meta-observed-team{width:auto;max-width:100%;padding:5px 10px;font-size:13px;font-weight:600;text-align:left;border-radius:8px;line-height:1.35}
+.meta-observed-period-head>button{font-size:12px;padding:5px 12px;border-radius:999px}
+.meta-observed-lineup .meta-actions button,.meta-observed-detail>button{font-size:12px;padding:5px 12px;margin:0}
+.meta-observed-order>button{font-size:12px;padding:5px 12px;border-radius:999px;margin:0}.meta-observed-summary{align-items:stretch}
+.meta-observed-table td small,.meta-observed-table td.num{white-space:nowrap}.meta-observed-table th{white-space:nowrap;vertical-align:bottom}
+@media(max-width:600px){.meta-observed-groups .meta-data-table.meta-observed-table{min-width:640px}.meta-observed-table td,.meta-observed-table th{padding:8px 6px}.meta-observed-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.meta-observed-summary>div{padding:10px}.meta-observed-summary strong{font-size:18px}}
+@media(max-width:600px){.meta-observed-tabs{flex-wrap:nowrap;gap:6px}.meta-observed-tabs>button{flex:1 1 0;min-width:0;padding:8px 4px;font-size:12px}}

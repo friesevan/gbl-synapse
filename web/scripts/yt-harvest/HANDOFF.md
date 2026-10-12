@@ -155,6 +155,38 @@ Team-card OCR, lower-resolution decode trials, and uncertain schedule gaps remai
 
 The new **Observed meta** dashboard reads `/api/observed-meta` automatically, alongside reviewed browser/shared observations. League/cup/time-range grouping, selected team occurrences, team-perspective outcomes, source timestamps and saved battle graphs are documented in the root `HANDOFF-2026-10-11-OBSERVED-META.md`. Detected lineups are provisional; incomplete teams stay separate.
 
+**League › Cup › Period (2026-10-12).** Controls are a tree: league select → cup select ("Open league" is the
+`all` cup; "All cups" also exists) → period chips grouped by GBL season from `gbl-schedule.json`
+("Season 28 · Twilight Trails"). Chips multi-select and aggregate; "All N repeats in Season N" picks every
+period of the cup in that season; "Unassigned" holds battles without a period. The choice is saved in
+`localStorage` (`pvp-observed-view-v2`) and survives polls.
+
+**Schedule check** (`observed.py _period`, per battle `cupRange.status` / `reason` / `contradiction`):
+- `confirmed`: a verified recording date inside a period of the observed cup;
+- `estimated`: the upload date with the 14-day recording lag overlaps exactly one period of the cup;
+- `unassigned`: `ambiguous` (several periods in the window), `no-date`, `no-league`, `championship`,
+  `outside-schedule`, or `contradicted` (the schedule ran other formats at that CP on those dates and never
+  this cup; `scheduled` lists what ran). Totals are in `summary.periodStatus`.
+- On 2026-10-12 (1,496 battles): 0 confirmed (no verified recording dates), 1,070 estimated, 426 unassigned
+  (192 ambiguous, 142 contradicted, 43 no date, 30 no league, 19 outside the schedule). 134 of the
+  contradictions are Great League "Color Cup" battles uploaded while the schedule ran Mega Color Cup.
+
+**Why a lineup is unidentified.** Each member carries `why` (the `_member` tests: `species` unread,
+`form` p < .98 with the top alternatives, `shadow` unknown with its p) and the Validate question that settles
+it (`question: {qid, status: open|answered|resolved}`, from `WORK/validation/<video>/<qid>.json` file names;
+creator-side questions apply to every battle). "Answer in Validate" calls `MetaValidation.focus(qid)`.
+A human answer or a refit resolution (`feedback.json` resolutions via `model_answers`) changes the catalog
+revision, so the lineup moves into the identified teams on the next poll (`test_observed.py`
+`UnidentifiedLineupTests`, `meta-observed-ui.test.cjs` end-to-end test). Fast moves never block identification.
+
+**Analysis per selection** (`observed-core.js analyze/trend`): identified teams (order ignored, or by
+confirmed lead), provisional teams (species + form settled, Shadow unknown; never merged with identified),
+creator-perspective win rates, distinct creators and dates; Pokémon usage over lineups whose three species
+and forms are settled (team share, confirmed-lead share, Shadow yes/no/unknown, fast moves read at ≥ 90%,
+creator win %, sparklines per period with ≥ 10 lineups); pairings with lift; PvPoke expected share for open
+leagues and (approximately) Mega Edition: `ObservedCatalog.pvpoke()` draws teams by PvPoke weight ^ 1.25
+with `usage_export.prior_presence` over the trainer's 300-species population, Shadow and base combined.
+
 **Trainer meta export:** `python3 -I web/scripts/yt-harvest/usage_export.py` turns the same catalog into the Team Rankings neural network's opponent usage file, written to `WORK/usage/`. It is read-only on the harvest data. Its rules and the overnight command are in `web/training/team-search/README.md` ("Observed opponent meta"); its tests are in `test_usage_export.py`.
 
 ## Status 2026-10-11 03:40 (model-improvement round)

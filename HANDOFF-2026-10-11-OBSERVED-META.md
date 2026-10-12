@@ -122,3 +122,7 @@ node training/team-search/launch-next.cjs --hours 8 --out training/runs/team-sea
   --usage-file "$HOME/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json" \
   --usage-half-life-days 30 --usage-as-of 2026-10-11 --usage-prior-strength 43
 ```
+
+## Observed meta hierarchy, schedule check and unidentified lineups (2026-10-12)
+
+Observed meta is now League › Cup › Period with multi-select period chips grouped by GBL season, a per-battle schedule check (confirmed / estimated / unassigned, contradictions flagged), per-member reasons and Validate links for unidentified lineups, provisional (Shadow-unknown) teams, Pokémon usage with PvPoke comparison, pairings and per-period sparklines. Details and the real-data counts are in `web/scripts/yt-harvest/HANDOFF.md` ("Observed meta browser"). `/api/observed-meta` gained `schedule`, `pvpoke` and `summary.periodStatus`; the `since` short-circuit is unchanged. The backend change needs a restart of `run_app.py` to take effect; the browser files apply on reload.
