@@ -37,6 +37,9 @@ What they need that phone recordings don’t:
 - **Game data.** Each video is fitted with PvPoke’s game data as of its upload date (`GAMEMASTER=`).
 
 ## Overnight harvest (`web/scripts/yt-harvest/`)
+
+**Tiered retention (2026-10-12).** Refits from saved evidence never need video; only a changed extractor does, and only for labelled videos (held-out evaluation) or pending `reprocess` rows. So the download dir (`src/youtube`, the one place; `relabel-cache` is merged into it) keeps: **tier A**, always: videos with human labels (reviewer answers of kind shadow/fastMove/form/result/lead in `feedback.json`, `labels/<id>.json`, labelled benchmark sources) and videos with a pending reprocess row, uncounted in any budget; **tier B**, analysed videos with at least one battle, newest first up to `--retain-budget-gb` (default 100), the oldest evicted beyond it (result JSON, questions and registry/sha stay, so a re-download is possible); **tier C**, deleted after analysis: 0 battles, "no footage"/obscured answers, duplicates, failed downloads, partial files. Videos waiting for analysis, or unknown to the state DB, are kept. Eviction runs at startup and after each extraction, only inside the download dir, logs every deletion with its reason, and also frees tier B (oldest first) to hold `--min-free-gb`. `--discard-videos` still deletes everything after analysis. `summary.json` has a `retention` block (tierA, tierB, evicted, evictedThisRun).
+`python3 -I web/scripts/yt-harvest/harvest.py retention --dry-run` prints the plan; without `--dry-run` it applies it. `harvest.py merge-cache [--dry-run]` moves `src/relabel-cache` into the download dir (identical duplicates dropped, differing same-name files left and reported, empty folder removed). Stop the harvester before applying either.
 ```bash
 bash web/scripts/yt-harvest/overnight.sh --hours 9          # one command, unattended
 python3 -I web/scripts/yt-harvest/test_yt_harvest.py       # unit tests

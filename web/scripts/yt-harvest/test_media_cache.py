@@ -122,4 +122,124 @@ class RetainedMediaTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):M.main(args)
 
 
+class TieredRetentionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.dl = self.root / 'dl'; self.dl.mkdir()
+        self.work = self.root / 'work'; (self.work / 'results').mkdir(parents=True)
+        self.conn = sqlite3.connect(self.work / 'state.sqlite')
+        self.conn.execute('CREATE TABLE videos(id TEXT,dl_status TEXT,x_status TEXT,upload_date TEXT,league TEXT,dl_path TEXT,sha256 TEXT,deleted_date TEXT,title TEXT,duration REAL)')
+        self.conn.execute('CREATE TABLE reprocess(id TEXT PRIMARY KEY, requested REAL)')
+        self.n = 0
+
+    def video(self, date='20260101', battles=1, size=1000, dl='done', x='done', name=None):
+        self.n += 1
+        vid = 'vid%08d' % self.n
+        self.conn.execute('INSERT INTO videos(id,dl_status,x_status,upload_date) VALUES (?,?,?,?)', (vid, dl, x, date))
+        self.conn.commit()
+        (self.dl / (name or vid + '.mp4')).write_bytes(b'x' * size)
+        if battles is not None:
+            (self.work / 'results' / (vid + '.json')).write_text(json.dumps({'battles': [{}] * battles}))
+        return vid
+
+    def answers(self, *items):
+        data = {'answers': {'q%d' % i: {'kind': k, 'source': src, 'video': {'id': v}} for i, (v, k, src) in enumerate(items)}}
+        (self.work / 'feedback.json').write_text(json.dumps(data))
+
+    def plan(self, **kw):
+        kw.setdefault('free_bytes', 10**12)
+        plan = M.plan_retention(self.dl, self.work, **kw)
+        return {i['id']: i for i in plan['items']}, plan
+
+    def test_tiers(self):
+        a1, a2, b, zero, nof = (self.video() for _ in range(5))
+        zero = self.video(battles=0)
+        self.answers((a1, 'shadow', 'reviewer'), (nof, 'footage', 'reviewer'), (b, 'footage', 'llm'))
+        (self.work / 'feedback.json').write_text(json.dumps({'answers': {
+            'a': {'kind': 'shadow', 'source': 'reviewer', 'video': {'id': a1}},
+            'f': {'kind': 'footage', 'value': 'none', 'source': 'reviewer', 'video': {'id': nof}},
+            'm': {'kind': 'shadow', 'source': 'local-llm', 'video': {'id': b}}}}))
+        self.conn.execute('INSERT INTO reprocess VALUES (?,0)', (a2,)); self.conn.commit()
+        failed = self.video(dl='error', x=None)
+        part = self.video(name='zzzzzzzzzzz.mp4.part')
+        pend = self.video(x=None)
+        items, plan = self.plan()
+        self.assertEqual((items[a1]['tier'], items[a2]['tier']), ('A', 'A'))
+        self.assertEqual(items[b]['tier'], 'B')   # a model answer is not a human label
+        self.assertEqual((items[zero]['tier'], items[zero]['action']), ('C', 'evict'))
+        self.assertEqual((items[nof]['tier'], items[nof]['action']), ('C', 'evict'))
+        self.assertEqual(items[failed]['action'], 'evict')
+        self.assertEqual(items[pend]['action'], 'keep')
+        self.assertTrue(any(i['name'].endswith('.part') and i['action'] == 'evict' for i in plan['items']))
+        self.assertEqual(plan['totals']['tierA']['count'], 2)
+
+    def test_label_wins_over_zero_battles_and_no_footage(self):
+        v = self.video(battles=0)
+        self.answers((v, 'footage', 'reviewer'), (v, 'result', 'reviewer'))
+        self.assertEqual(self.plan()[0][v]['tier'], 'A')
+        (self.work / 'labels').mkdir(); (self.work / 'labels' / 'abcdefghijk.json').write_text('{}')
+        self.assertIn('abcdefghijk', M.labelled_ids(self.work)[0])
+
+    def test_budget_evicts_oldest_tier_b_and_never_tier_a(self):
+        old = self.video(date='20250101', size=600)
+        mid = self.video(date='20260101', size=600)
+        new = self.video(date='20261001', size=600)
+        lab = self.video(date='20240101', size=5000)
+        self.answers((lab, 'lead', 'reviewer'))
+        items, plan = self.plan(budget_gb=1500e-9)   # 1500 bytes: two newest fit
+        self.assertEqual([items[v]['action'] for v in (new, mid, old)], ['keep', 'keep', 'evict'])
+        self.assertEqual(items[lab]['action'], 'keep')
+        self.assertEqual(plan['totals']['tierB']['count'], 2)
+
+    def test_min_free_evicts_more_oldest(self):
+        old = self.video(date='20250101', size=600); new = self.video(date='20261001', size=600)
+        items, _ = self.plan(budget_gb=1, min_free_gb=1000e-9, free_bytes=500)
+        self.assertEqual((items[old]['action'], items[new]['action']), ('evict', 'keep'))
+
+    def test_apply_deletes_only_planned_evictions_in_download_dir(self):
+        old = self.video(date='20250101', size=600); new = self.video(date='20261001', size=600)
+        lab = self.video(battles=0); self.answers((lab, 'form', 'reviewer'))
+        outside = self.root / 'outside.mp4'; outside.write_bytes(b'x')
+        (self.dl / 'link12345678.mp4').symlink_to(outside)
+        _, plan = self.plan(budget_gb=700e-9)
+        seen = []
+        n = M.apply_plan(plan, self.dl, on_evict=seen.append)
+        self.assertEqual(n, 1)
+        self.assertFalse((self.dl / (old + '.mp4')).exists())
+        self.assertTrue((self.dl / (new + '.mp4')).exists() and (self.dl / (lab + '.mp4')).exists() and outside.exists())
+        self.assertEqual([i['id'] for i in seen], [old])
+
+    def test_dry_run_cli_changes_nothing(self):
+        import harvest as H
+        v = self.video(battles=0)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            H.main(['retention', '--dry-run', '--download-dir', str(self.dl), '--work-dir', str(self.work)])
+        self.assertIn('EVICT', buf.getvalue()); self.assertIn(v + '.mp4', buf.getvalue())
+        self.assertTrue((self.dl / (v + '.mp4')).exists())
+
+    def test_discard_mode_deletes_analysed_but_not_tier_a_or_pending(self):
+        done = self.video(); pend = self.video(x=None); lab = self.video(); self.answers((lab, 'result', 'reviewer'))
+        items, _ = self.plan(discard=True)
+        self.assertEqual((items[done]['action'], items[pend]['action'], items[lab]['action']), ('evict', 'keep', 'keep'))
+
+    def test_merge_moves_skips_duplicates_keeps_conflicts_and_removes_empty_src(self):
+        src, dst = self.root / 'relabel', self.root / 'dl2'; src.mkdir(); dst.mkdir()
+        (src / 'aaaaaaaaaaa.mp4').write_bytes(b'one'); (src / 'bbbbbbbbbbb.mp4').write_bytes(b'same'); (dst / 'bbbbbbbbbbb.mp4').write_bytes(b'same')
+        (src / 'ccccccccccc.mp4').write_bytes(b'AAA'); (dst / 'ccccccccccc.mp4').write_bytes(b'BBB')
+        quiet = lambda *_: None
+        dry = M.merge_dirs(src, dst, apply=False, log=quiet)
+        self.assertEqual((dry['moved'], dry['duplicates'], dry['conflicts']), (1, 1, ['ccccccccccc.mp4']))
+        self.assertTrue((src / 'aaaaaaaaaaa.mp4').exists())
+        M.merge_dirs(src, dst, apply=True, log=quiet)
+        self.assertEqual((dst / 'aaaaaaaaaaa.mp4').read_bytes(), b'one')
+        self.assertEqual((dst / 'ccccccccccc.mp4').read_bytes(), b'BBB')
+        self.assertEqual([p.name for p in src.iterdir()], ['ccccccccccc.mp4'])   # conflict stays, folder kept
+        (src / 'ccccccccccc.mp4').unlink()
+        M.merge_dirs(src, dst, apply=True, log=quiet)
+        self.assertFalse(src.exists())
+
+
 if __name__=='__main__':unittest.main()

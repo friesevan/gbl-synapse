@@ -4,12 +4,12 @@
 //   node parity.cjs [--base REF] [--only id,id] [--env K=V ...] [--base-env K=V ...]
 // REF (default HEAD) is unpacked with git archive into a temporary directory; game data is shared.
 // Each job reuses the saved result's crop, league and game data (WORK_DIR/results/<id>.json, as
-// reextract-labelled.cjs does). Videos: VIDEO_DIR (default ~/Desktop/Projects/PoGo Recorder/src/relabel-cache);
+// reextract-labelled.cjs does). Videos: VIDEO_DIR (default ~/Desktop/Projects/PoGo Recorder/src/youtube);
 // a job whose id contains "." is a file under ~/Desktop/Projects/PoGo Recorder/src (no crop).
 // Prints one line per job with both timings; exit code 1 if any output differs.
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawnSync,execFileSync}=require('node:child_process');
 const args=process.argv.slice(2),opt=k=>{const i=args.indexOf(k);return i>=0?args[i+1]:null;},multi=k=>args.flatMap((a,i)=>a===k?[args[i+1]]:[]);
-const SRC=path.join(os.homedir(),'Desktop/Projects/PoGo Recorder/src'),VIDEOS=process.env.VIDEO_DIR||path.join(SRC,'relabel-cache'),WORK=process.env.WORK_DIR||path.join(SRC,'yt-harvest');
+const SRC=path.join(os.homedir(),'Desktop/Projects/PoGo Recorder/src'),VIDEOS=process.env.VIDEO_DIR||path.join(SRC,'youtube'),WORK=process.env.WORK_DIR||path.join(SRC,'yt-harvest');
 // Different layouts and resolutions: 1080p / 720p / 1440-wide YouTube crops, small 296- and 340-wide
 // phone crops, a short screen, and an owner recording (HEVC 886×1920, no crop). 4 minutes each.
 const JOBS=[['bB0ZrWjwdZw',0,240],['2NuWI-UdR7w',0,240],['2ZYYPbouhUc',40,280],['Re8jxiPGHxo',240,480],['ptxHuMJ5XuE',4170,4410],['PbzVRPgmBQY',30,270],['10min.mp4',0,240]];

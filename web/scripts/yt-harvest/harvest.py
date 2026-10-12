@@ -41,6 +41,7 @@ import policy as P  # noqa: E402
 import validate as V  # noqa: E402
 import ytapi  # noqa: E402
 import probe_cache as PC  # noqa: E402
+import media_cache as MC  # noqa: E402
 from media_cache import retained_file  # noqa: E402
 from service import Lifecycle, atomic_json, read_json, file_lock  # noqa: E402
 
@@ -50,6 +51,7 @@ RUN_NODE = os.path.join(WEB, "tests", "meta-benchmark", "run-node.cjs")
 PROBE = os.path.join(WEB, "tests", "meta-benchmark", "probe.cjs")
 EXPORT_Q = os.path.join(WEB, "tests", "meta-benchmark", "export-questions.cjs")
 LEARNED = os.path.join(WEB, "tests", "meta-benchmark", "learned.json")
+BENCH_LABELS = os.path.join(WEB, "tests", "meta-benchmark", "labels", "youtube")
 # The Validate tab (familyRanks.html, served by run_app.py) loads this file when it exists. Git ignores
 # **/results/, so harvested questions never reach the repo.
 INBOX = os.path.join(WEB, "tests", "meta-benchmark", "results", "validation-inbox.json")
@@ -316,6 +318,8 @@ class Harvester:
         self._feedback_stamp = None
         self._relevance_feedback = {}
         self.summary_lock = threading.RLock()
+        self.retention_lock = threading.Lock()
+        self.retention = {}
         self.validation_lock = threading.RLock()
         self.validation_count = len((read_json(a.inbox, {}) or {}).get("questions", [])) if a.inbox else 0
 
@@ -707,6 +711,26 @@ class Harvester:
             log.info("cleanup: %d stale file(s) removed from %s", removed, self.a.download_dir)
         return removed
 
+    def apply_retention(self, phase):
+        """Tiered retention (see media_cache.plan_retention): evicts tier C and the oldest tier B beyond
+        --retain-budget-gb, never tier A. --discard-videos keeps its own delete-after-analysis path."""
+        if not self.a.keep:
+            return
+        try:
+            with self.retention_lock:
+                plan = MC.plan_retention(self.a.download_dir, self.a.work_dir, self.a.retain_budget_gb, self.a.min_free_gb,
+                                         BENCH_LABELS)
+                def evicted(i):
+                    if MC.MEDIA_NAME.fullmatch(i["name"]):
+                        self.state.x("UPDATE videos SET deleted_date=? WHERE id=? AND deleted_date IS NULL",
+                                     (dt.date.today().isoformat(), i["id"]))
+                n = MC.apply_plan(plan, self.a.download_dir, log.info, evicted)
+                self.retention = {**plan["totals"], "evictedThisRun": getattr(self, "retention", {}).get("evictedThisRun", 0) + n,
+                                  "budgetGB": plan["budgetGb"], "phase": phase}
+                self.inc("deleted", n)
+        except Exception as ex:   # retention never blocks harvesting
+            log.warning("retention (%s) failed: %s", phase, ex)
+
     def download_worker(self):
         while self.alive():
             with self.clock:   # reserve a slot so parallel workers can't overshoot --max-downloads
@@ -1003,6 +1027,8 @@ class Harvester:
             self.remove_video_files(vid, "processed" if ok else "analysis failed")
             self.state.x("UPDATE videos SET deleted_date=? WHERE id=?", (dt.date.today().isoformat(), vid))
             self.inc("deleted")
+        else:
+            self.apply_retention("after extraction")
 
     # ---- validation questions (site: Meta Extractor > Validate)
     def export_validation(self, vid, res, path, gm, meta, video_league, refined, learned_snapshot=None):
@@ -1077,6 +1103,7 @@ class Harvester:
                       "queriesDone": tot("SELECT COUNT(*) FROM queries"), "queriesPlanned": 2 * len(self.queries),
                       "metaErrors": tot("SELECT COUNT(*) FROM videos WHERE err IS NOT NULL AND meta_status<>'done'"),
                       "downloadErrors": tot("SELECT COUNT(*) FROM videos WHERE dl_status='error'")},
+            "retention": self.retention,
             "relevantByLeagueGuess": dict(sorted(by_league.items(), key=lambda kv: -kv[1])),
             "relevantByYear": dict(sorted(by_year.items())),
             "relevantLicense": cc,
@@ -1187,6 +1214,7 @@ class Harvester:
     # ---- main
     def run(self):
         self.cleanup_download_dir()
+        self.apply_retention("startup")
         log.info("metadata: %s", "YouTube Data API (key found)" if self.api_key else "web player (no YOUTUBE_API_KEY; see HANDOFF.md)")
         log.info("start: deadline %s, %d queries, download dir %s, work dir %s, policy=%s, keep=%s",
                  dt.datetime.fromtimestamp(self.deadline).strftime("%H:%M"), len(self.queries), self.a.download_dir,
@@ -1486,13 +1514,19 @@ def write_league_refinement(result_path, video_league, schedule, upload_date, me
 
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", nargs="?", default="overnight", choices=["overnight", "status", "export-registry", "queries"])
+    ap.add_argument("command", nargs="?", default="overnight", choices=["overnight", "status", "export-registry", "queries", "retention", "merge-cache"])
     ap.add_argument("--hours", type=float, default=9.0)
     ap.add_argument("--download-dir", default=os.environ.get("YT_HARVEST_DL", DEFAULT_DL))
     ap.add_argument("--work-dir", default=os.environ.get("YT_HARVEST_WORK", DEFAULT_WORK))
     ap.add_argument("--registry", default=REGISTRY, help="registry.json to update ('' = don't)")
     ap.add_argument("--disk-budget-gb", type=float, default=150)
     ap.add_argument("--min-free-gb", type=float, default=30)
+    ap.add_argument("--retain-budget-gb", type=float, default=100,
+                    help="tier B (analysed videos with battles) kept newest-first up to this many GB; tier A (human labels, "
+                         "pending reprocess) is always kept and uncounted")
+    ap.add_argument("--dry-run", action="store_true", help="retention / merge-cache: print the plan, change nothing")
+    ap.add_argument("--from", dest="merge_from", default=os.path.join(os.path.dirname(DEFAULT_DL), "relabel-cache"),
+                    help="merge-cache: folder whose media moves into --download-dir")
     ap.add_argument("--max-downloads", type=int, default=None, help="stop downloading after N (0 = metadata only)")
     ap.add_argument("--stop-after-downloads", action="store_true", help="end the run once --max-downloads are done (smoke tests)")
     ap.add_argument("--max-duration-min", type=float, default=180)
@@ -1550,6 +1584,19 @@ def main(argv=None):
         p = os.path.join(a.work_dir, "summary.json")
         print(open(p).read() if os.path.exists(p) else "no summary yet: " + p)
         return 0
+    if a.command == "retention":
+        plan = MC.plan_retention(a.download_dir, a.work_dir, a.retain_budget_gb, a.min_free_gb, BENCH_LABELS, discard=not a.keep)
+        print(MC.format_plan(plan))
+        if not a.dry_run:
+            setup_logging(a.work_dir)
+            h = Harvester(a)
+            h.apply_retention("manual")
+            print("deleted:", h.retention.get("evictedThisRun"))
+        return 0
+    if a.command == "merge-cache":
+        out = MC.merge_dirs(a.merge_from, a.download_dir, apply=not a.dry_run)
+        print({k: (v if not isinstance(v, list) else v) for k, v in out.items()})
+        return 1 if out["conflicts"] else 0
     if a.command == "export-registry":
         setup_logging(a.work_dir)
         h = Harvester(a)

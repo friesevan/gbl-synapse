@@ -33,7 +33,7 @@ function attach(run,id,work=WORK){if(!run?.full||run.full.some(b=>b.focus))retur
  run.full.forEach((b,i)=>{b.focus=s.battles[i];});return run;}
 module.exports={measureRun,attach,findVideo,decode,VERSION};
 if(require.main===module)(async()=>{const args=process.argv.slice(2),force=args.includes('--force'),dirs=[];for(let i=0;i<args.length;i++)if(args[i]==='--video-dir')dirs.push(args[++i]);
- dirs.push(path.join(SRC,'relabel-cache'),path.join(SRC,'youtube-cc'),path.join(SRC,'youtube'),SRC);
+ dirs.push(path.join(SRC,'youtube'),path.join(SRC,'youtube-cc'),SRC);
  let ids=args.filter((a,i)=>!a.startsWith('--')&&!['--video-dir','--shard'].includes(args[i-1]));const shard=args.includes('--shard')?args[args.indexOf('--shard')+1].split('/').map(Number):null;
  if(!ids.length){const {humanAnswers,video}=require('./shadow-dataset.cjs');ids=[...new Set(humanAnswers(WORK).filter(a=>a.kind==='shadow').map(video))];}
  if(shard)ids=ids.filter((_,i)=>i%shard[1]===shard[0]);
