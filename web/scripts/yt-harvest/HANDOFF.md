@@ -381,3 +381,15 @@ harvester start (not restarted).
   calls most wins "Loss"; the strips often show no result screen). Not pursued: the free providers are being
   replaced by Haiku via the Claude API. Details: `scripts/freellm/evals.json`, `validate_result`.
 
+
+## Status 2026-10-12 ~03:30 (local vision model, nameplate reader, chain)
+- Local model: `qwen2.5vl:7b` passed only the nameplate-reading gate (108/108) and failed battle type,
+  result, lead and title gates (068adfe). It was deleted. `qwen3-vl:32b` is the new default
+  (providers.json) and is pulled + re-gated by `<work>/after-harvest.sh` once the 12-worker harvest ends.
+- Nameplate reader NOT wired into the extractor, by the owner's rule "only if Tesseract typically fails":
+  0 of 10,730 observed team members lack a species identity, the labelled benchmark reads 194/194, and the
+  foreign-language gap is covered by Tesseract language packs (9657478). Revisit only if "Species unread"
+  reasons appear in Observed meta › Unidentified.
+- `<work>/after-harvest.sh <harvester pid>`: refit every 2 h during the harvest; on exit commit the
+  registry, re-export the observed meta, launch the 8 h trainer, then pull the 32B model and run all gates.
+- Ollama runs locally (`ollama serve`, port 11434); an unexpected `qwen3.6:35b-a3b` is also present.

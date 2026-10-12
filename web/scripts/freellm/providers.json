@@ -11,15 +11,19 @@
    "model_env": "FREELLM_OLLAMA_MODEL",
    "key_env": null,
    "trains": false,
-   "text": "qwen2.5vl:7b",
-   "vision": "qwen2.5vl:7b",
-   "fallback": ["qwen3-vl:8b", "llama3.2-vision:11b"],
+   "text": "qwen3-vl:32b",
+   "vision": "qwen3-vl:32b",
+   "fallback": [
+    "qwen3-vl:8b",
+    "llama3.2-vision:11b"
+   ],
    "repeatable": true,
    "seeded": true,
    "structured": true,
    "temperature": 0.2,
    "timeout": 600,
-   "limits": "Local Ollama server on this Mac: no quota, no cost, nothing leaves the machine. One request at a time on the GPU."
+   "limits": "Local Ollama server on this Mac: no quota, no cost, nothing leaves the machine. One request at a time on the GPU.",
+   "note": "2026-10-12: qwen2.5vl:7b failed every Validate gate except nameplate reading (not needed) and was deleted; qwen3-vl:32b is pulled and gated by after-harvest.sh."
   },
   {
    "name": "anthropic",
@@ -35,7 +39,12 @@
    "max_tokens": 4096,
    "max_retries": 4,
    "timeout": 90,
-   "price_per_mtok": {"in": 0.10, "out": 0.50, "cache_write": 0.125, "cache_read": 0.01},
+   "price_per_mtok": {
+    "in": 0.1,
+    "out": 0.5,
+    "cache_write": 0.125,
+    "cache_read": 0.01
+   },
    "limits": "Disabled: kept for if API access is ever available (the owner has a Claude subscription, not API billing). Needs `pip install anthropic`. Anthropic doesn't train on API inputs by default. Prices: Claude Haiku 5.5 for prompts up to 100K tokens ($0.50/$2.50 per MTok beyond)."
   },
   {
