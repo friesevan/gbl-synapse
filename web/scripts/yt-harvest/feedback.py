@@ -34,8 +34,11 @@ EXTERNAL_SOURCES = {"freellm", "local-llm", "haiku"}
 # are one model whose two independent calls agreed above the gate's confidence threshold.
 MULTI_PROVIDER_SOURCES = {"freellm"}
 # Result questions settled by the battle timeline (learning-loop.cjs resultResolution, re-derived on every refit):
-# "timeline" carries the inferred result (Poké Ball counter / HP bar / surrender dialog); "policy" closes a result
-# question the footage can't answer (no result screen: the video cuts to the next battle or ends; value None).
+# "timeline" carries a confident inferred result (Poké Ball counter / HP bar / surrender dialog, or an uncertain rule
+# the owner's answers promoted at >= 95% on >= 30 answers from >= 5 videos); "policy" closes a result question the
+# footage can't answer (a hard cut to the next battle or the end, no fade; value None). Uncertain inferences stay open
+# with the guess (prediction modelTop/modelP/detail). Each refit re-derives all three: a policy closure the new
+# rules say to ask drops out of the resolutions and is reopened (history record).
 # Both are reversible (Reopen, or a human answer replaces them), never labels, and policy records are not counted
 # as model resolutions (learning.resolved, metrics_history "policy" bucket).
 TIMELINE_SOURCE, POLICY_SOURCE = "timeline", "policy"

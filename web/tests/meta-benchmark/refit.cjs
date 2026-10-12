@@ -6,10 +6,10 @@ function loadGameMaster(file){const g=file?JSON.parse(fs.readFileSync(file,'utf8
 // (a CP above the cap means a higher league; three or more CPs, all at most 500, mean Little Cup).
 function battleLeague(b,league){const cps=[...(b.my||[]),...(b.opponent||[])].map(p=>Number(p.cp)).filter(c=>c>=10&&c<9000);if(!cps.length)return league;const top=Math.max(...cps);
  if(top>league)return top<=1500?1500:top<=2500?2500:10000;if(top<=500&&cps.length>=3&&league>500)return 500;return league;}
-function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings,params={},channel,shadowModel,speciesPurple}={}){
+function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings,params={},channel,shadowModel,speciesPurple,promotedRules}={}){
  const run=structuredClone(input),byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),cache=new Map();
  // Results without a result screen are re-derived from the saved timeline with the current rules (core.js inferResult).
- C.applyInferredResults(run.full||[],{videoEnd:C.runEnd(run)});
+ C.applyInferredResults(run.full||[],{videoEnd:C.runEnd(run),promoted:promotedRules?new Set(promotedRules):null});
  const ranks=cp=>{if(rankings)return rankings;if(!cache.has(cp)){const f=require(`../../includes/pro/data/league-${cp}.json`);cache.set(cp,new Map(f.overall.map(r=>[r.speciesId,r])));}return cache.get(cp);};
  const entries=p=>(p.candidates||[]).filter(c=>/mega|primal/i.test(p.label||'')||!/_(mega|primal)/.test(c.id)).map(c=>byId.get(c.id)).filter(Boolean);
  const summary=(sizes,turns,times)=>sizes?.length>=2?{sizes,times:times?.length===sizes.length?times:undefined,turns:turns??null,repeats:Math.max(0,sizes.length-2)}:null;

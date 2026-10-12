@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Offline active-learning pass: human labels only; evaluate held-out videos before auto-resolution.
 const fs=require('node:fs'),path=require('node:path'),Q=require('../../includes/meta/questions.js'),{refitRun,loadGameMaster}=require('./refit.cjs'),D=require('./movefit-data.cjs'),T=require('./movefit-threshold.cjs');
-const Shadow=require('../../includes/meta/shadow-model.js'),Focus=require('./focus-backfill.cjs'),{trainShadow}=require('./shadow-cv.cjs');
+const C=require('../../includes/meta/core.js'),Shadow=require('../../includes/meta/shadow-model.js'),Focus=require('./focus-backfill.cjs'),{trainShadow}=require('./shadow-cv.cjs');
 // Fast moves and forms resolve at a confidence threshold chosen from video-grouped held-out predictions:
 // the lowest posterior at which held-out answers are ≥ target correct (also at every higher threshold),
 // with enough answers, videos and a Wilson 95% lower bound ≥ minLower. Shadow keeps its own gates below.
@@ -58,23 +58,47 @@ function canResolve(q,p,ctx){const {answers,calibration,version,shadowModel}=ctx
  return {value:p.value,confidence:p.p,margin:p.margin,modelVersion:version,resolvedAt:new Date().toISOString(),reason:`Re-scored saved damage/cadence evidence; ${support.length} independent species labels; held-out ${q.kind} accuracy ${c.right}/${c.total} (95% lower bound ${(c.lowerBound*100).toFixed(1)}%).`,source:'model'};
 }
 // Result questions are settled from the refitted run's timeline (core.js inferResult, re-derived on every refit):
-// - the timeline decides (resultSource faints / surrender): a "timeline" resolution with that value, reversible;
-// - the footage can't show a result screen and nothing decides ('unresolvable'): a "policy" record (value null) that
-//   closes the question without a value. Neither is a label, and policy records aren't model resolutions in metrics.
-// The question must still point at the same battle (its clip starts 2 s before the battle's end).
-const RESULT_SOURCES={faints:'faints',surrender:'surrender'};
-function resultValue(b){return b.resultSource==='surrender'&&b.result==='Loss'?'Loss:you-forfeit':b.result;}
+// - the timeline is confident (resultSource faints / surrender, or a promoted rule): a "timeline" resolution with that
+//   value, reversible;
+// - the footage can't show a result screen and nothing decides ('unresolvable', a hard cut): a "policy" record (value
+//   null) that closes the question without a value;
+// - uncertain (resultGuess): the question stays open and carries the guess and its measured precision (resultPrediction).
+// None of these is a label, and policy records aren't model resolutions in metrics. The question must still point at
+// the same battle (its clip starts 2 s before the battle's end).
+// Rule gate (same style as the other kinds): every rule's precision is recomputed from the human answers on each refit
+// (the rules are fixed, so every answer is held out); an uncertain rule is promoted to confident (auto-resolve,
+// reversible) at ≥ 95% right on ≥ 30 answers from ≥ 5 videos, and demoted when it falls below.
+const RESULT_GATE={precision:.95,answers:30,videos:5,minForP:10};
+const RESULT_SOURCES={faints:'faints',surrender:'surrender',...Object.fromEntries([...C.PROMOTABLE].map(r=>[r,r]))};
+function resultValue(b){return b.ending?`${b.result}:${b.ending}`:b.result;}
 function sameBattle(q,b){return !!b&&(!Array.isArray(q.clip)||!Number.isFinite(q.clip[0])||Math.abs(q.clip[0]-(b.end-2))<=.6);}
+// Each rule's right/total/videos over the human result answers, from the saved runs' timelines re-run as if no result
+// screen had been read (a guess counts only when its full value, e.g. Win:opponent-forfeit, matches the answer).
+function ruleStats(answers,rawFor){const stats={},human=answers.filter(a=>eligible(a)&&a.kind==='result');
+ for(const a of human){const raw=rawFor(video(a)),full=raw?.full,b=full?.[a.battle];if(!b||b.resultSource==='result screen'||b.resultSource==='reviewer')continue;
+  const r=C.inferResult({...b,result:'Unknown',resultSource:'',resultGuess:undefined},{next:full[a.battle+1]?.start??null,videoEnd:C.runEnd(raw)});if(!r||r.source==='unresolvable')continue;
+  const rule=r.source==='guess'?r.rule:r.source,value=r.source==='guess'?r.value:(r.ending?`${r.result}:${r.ending}`:r.result),t=stats[rule]=stats[rule]||{right:0,total:0,videos:new Set()};
+  t.total++;if(String(a.value)===value)t.right++;t.videos.add(video(a));}
+ for(const t of Object.values(stats)){t.videos=t.videos.size;t.precision=t.total?t.right/t.total:null;}
+ return stats;}
+function promotedRules(stats){return Object.keys(C.RESULT_GUESS_P).filter(r=>{const t=stats?.[r];return t&&t.total>=RESULT_GATE.answers&&t.videos>=RESULT_GATE.videos&&t.right/t.total>=RESULT_GATE.precision;});}
+// The measured precision once there are enough answers, else the rule's default.
+function ruleP(rule,stats){const t=stats?.[rule];return t&&t.total>=RESULT_GATE.minForP?t.right/t.total:C.RESULT_GUESS_P[rule];}
 function resultResolution(q,run,version){if(q?.kind!=='result'||q.audit)return null;const b=run?.full?.[q.battle];if(!sameBattle(q,b))return null;const at=new Date().toISOString();
  if(RESULT_SOURCES[b.resultSource]){const value=resultValue(b),option=(q.options||[]).find(o=>o.value===value);if(!option)return null;
   return {value,label:option.label,confidence:1,margin:1,modelVersion:version,resolvedAt:at,rule:b.resultSource,reason:b.resultReason||'Battle timeline',source:'timeline'};}
  if(b.resultSource==='unresolvable')return {value:null,label:'Unresolvable: no result screen',modelVersion:version,resolvedAt:at,policy:'no-result-screen',reason:`No result screen; timeline inconclusive. ${b.resultReason||''}`.trim(),source:'policy'};
  return null;}
+// The model's guess for an uncertain result question: shown with the question (modelTop/modelP/detail) and kept open.
+function resultPrediction(q,run,stats){const b=run?.full?.[q.battle],g=b?.resultGuess;if(q?.kind!=='result'||q.audit||!g||!sameBattle(q,b)||!(q.options||[]).some(o=>o.value===g.value))return null;
+ const p=ruleP(g.rule,stats);return {modelTop:g.value,modelP:p,resultRule:g.rule,detail:C.guessDetail({...g,p},stats?.[g.rule])};}
 // Inferred results against reviewer answers (result accuracy) and every battle's result source, over the refitted runs.
-function resultMetrics(answers,fitted){const human=new Map(answers.filter(a=>eligible(a)&&a.kind==='result').map(a=>[video(a)+':'+a.battle,a]));const acc={heldOut:0,heldOutRight:0,byRule:{}},sources={read:0,inferred:0,human:0,unresolvable:0,open:0};
+function resultMetrics(answers,fitted,stats){const human=new Map(answers.filter(a=>eligible(a)&&a.kind==='result').map(a=>[video(a)+':'+a.battle,a]));const acc={heldOut:0,heldOutRight:0,byRule:{}},sources={read:0,inferred:0,human:0,unresolvable:0,open:0};
  for(const [vid,run] of fitted)(run.full||[]).forEach((b,i)=>{const a=human.get(vid+':'+i),src=b.resultSource||'';
-  if(a)sources.human++;else if(src==='result screen')sources.read++;else if(RESULT_SOURCES[src])sources.inferred++;else if(src==='unresolvable')sources.unresolvable++;else sources.open++;
-  if(a&&RESULT_SOURCES[src]){const r=acc.byRule[src]=acc.byRule[src]||{right:0,total:0},ok=String(a.value)===String(resultValue(b));acc.heldOut++;r.total++;if(ok){acc.heldOutRight++;r.right++;}}});
+  if(a)sources.human++;else if(src==='result screen')sources.read++;else if(RESULT_SOURCES[src])sources.inferred++;else if(src==='unresolvable')sources.unresolvable++;else sources.open++;});
+ // Per rule precision on the owner's answers (all rules, including the uncertain ones asked with a guess).
+ const promoted=new Set(promotedRules(stats));
+ for(const [rule,t] of Object.entries(stats||{})){acc.byRule[rule]={right:t.right,total:t.total,videos:t.videos,uncertain:C.PROMOTABLE.has(rule),promoted:promoted.has(rule)};acc.heldOut+=t.total;acc.heldOutRight+=t.right;}
  return {calibration:acc,sources};}
 // Archived human labels (labels/*.json `verified`) that feedback.json lacks: used only to train the
 // Shadow classifier (their aggregates are already in baseline-learned.json, so never as priors).
@@ -114,12 +138,13 @@ function execute(input){
  for(const r of input.runs||[]){try{const raw=Focus.attach(JSON.parse(fs.readFileSync(r.path,'utf8')),r.videoId,path.dirname(path.dirname(r.path)));if(!Array.isArray(raw.full))continue;runs.set(r.videoId,{r,raw,live:true});}catch(e){errors.push({videoId:r.videoId,error:e.message});}}
  const archived=archivedLabels(input,answers),resultsDir=input.runs?.[0]?.path?path.dirname(input.runs[0].path):null;
  for(const vid of new Set(archived.map(video)))if(!runs.has(vid)&&resultsDir){const f=path.join(resultsDir,vid+'.json');try{const raw=Focus.attach(JSON.parse(fs.readFileSync(f,'utf8')),vid,path.dirname(resultsDir));if(Array.isArray(raw.full))runs.set(vid,{r:{videoId:vid,path:f,league:raw.learningContext?.league||1500,gamemaster:raw.learningContext?.gamemaster},raw});}catch{}}
+ const resultStats=ruleStats(answers,vid=>runs.get(vid)?.raw),promoted=promotedRules(resultStats);
  // One refit per labelled video with every label from that video omitted (and its footage left out of
  // the species purple baseline). No conditioning on labels; the Shadow classifier is not applied here.
  const heldout=new Map(),heldoutFor=vid=>{const entry=runs.get(vid);if(!entry)return null;if(!heldout.has(vid)){try{heldout.set(vid,refitRun(entry.raw,{learned:learnedFor(answers,vid),league:entry.r.league||1500,gm:gmFor(entry.r),shadowModel:false,speciesPurple:Shadow.speciesPurple([...runs].filter(([k])=>k!==vid).map(([,e])=>e.raw))}));}catch(e){heldout.set(vid,null);}}return heldout.get(vid);};
  const shadowModel=trainShadow(shadowRows([...answers,...archived],heldoutFor));
  if(shadowModel){shadowModel.version=input.version;shadowModel.speciesPurple=Shadow.speciesPurple([...runs.values()].map(e=>e.raw));learned.shadowModel=shadowModel;}
- for(const [vid,{r,raw,live}] of runs){if(!live)continue;try{fitted.set(vid,refitRun(applyLeagueLabels(raw,answers,vid,input.cupCP),{learned,league:r.league||1500,gm:gmFor(r),channel:r.channel}));}catch(e){errors.push({videoId:vid,error:e.message});}}
+ for(const [vid,{r,raw,live}] of runs){if(!live)continue;try{fitted.set(vid,refitRun(applyLeagueLabels(raw,answers,vid,input.cupCP),{learned,league:r.league||1500,gm:gmFor(r),channel:r.channel,promotedRules:promoted}));}catch(e){errors.push({videoId:vid,error:e.message});}}
  const calibrationSeen=new Set();for(const a of [...answers].sort((a,b)=>a.qid.localeCompare(b.qid))){const vid=video(a);if(!runs.get(vid)?.live||!['form','fastMove'].includes(a.kind))continue;
   const p=prediction(heldoutFor(vid)||{},a);if(!p||p.p<.98||p.hits<4||p.margin<.9)continue;
   const unit=vid+':'+a.kind;if(calibrationSeen.has(unit))continue;calibrationSeen.add(unit);
@@ -129,15 +154,15 @@ function execute(input){
  Object.assign(calibration,moveCalibration(input,answers,runs,gmFor,errors));
  const st=shadowModel?.thresholds?.regular;calibration.shadow=st?{right:st.right,total:st.n,lowerBound:st.lowerBound,videoCount:st.videos,confidence:st.confidence,direction:'not Shadow',model:'classifier'}:{right:0,total:0,lowerBound:0,videoCount:0,model:shadowModel?'classifier':'default'};
  const answered=new Set(answers.map(a=>a.qid));for(const q of input.questions||[]){const run=fitted.get(video(q));if(!run)continue;
- if(q.kind==='result'){if(!answered.has(q.qid)&&!input.manualReview?.[q.qid]){const r=resultResolution(q,run,input.version);if(r){resolutions[q.qid]=r;if(r.value!==null)predictions[q.qid]={modelTop:r.value,modelP:1};}}continue;}
+ if(q.kind==='result'){if(!answered.has(q.qid)&&!input.manualReview?.[q.qid]){const r=resultResolution(q,run,input.version);if(r){resolutions[q.qid]=r;if(r.value!==null)predictions[q.qid]={modelTop:r.value,modelP:1};}else{const g=resultPrediction(q,run,resultStats);if(g)predictions[q.qid]=g;}}continue;}
  if(q.kind==='shadow'&&!answered.has(q.qid)&&!input.manualReview?.[q.qid]){const g=noShadowForm(q,run,{gm:gmFor(runs.get(video(q)).r),answers,version:input.version});if(g){predictions[q.qid]={modelTop:false,modelP:1};resolutions[q.qid]=g;continue;}}
  const p=prediction(run,q);if(!p)continue;predictions[q.qid]={modelTop:p.value,modelP:p.p};if(answered.has(q.qid)||input.manualReview?.[q.qid])continue;if(!canResolve(q,p,{answers,calibration,version:input.version,shadowModel:learned.shadowModel}))continue;
  const entry=runs.get(video(q));if(!independentFits.has(video(q)))independentFits.set(video(q),refitRun(applyLeagueLabels(entry.raw,answers,video(q),input.cupCP),{learned:{...newOnly,shadowModel:learned.shadowModel,fit:input.fit},league:entry.r.league||1500,gm:gmFor(entry.r),channel:entry.r.channel}));
  const independent=prediction(independentFits.get(video(q)),q);if(!independent||independent.value!==p.value||(!['shadow','fastMove','form'].includes(q.kind)&&p.p<.98))continue;
  const resolution=canResolve(q,independent,{answers,calibration,version:input.version,shadowModel:learned.shadowModel});if(resolution){resolution.liveConfidence=p.p;resolutions[q.qid]=resolution;}}
- const rm=resultMetrics(answers,fitted);calibration.result=rm.calibration;
+ const rm=resultMetrics(answers,fitted,resultStats);calibration.result=rm.calibration;
  if(input.outputDir){fs.mkdirSync(input.outputDir,{recursive:true});for(const [vid,run]of fitted)fs.writeFileSync(path.join(input.outputDir,vid+'.json'),JSON.stringify(run));}
  return {learned,predictions,resolutions,calibration,errors,runsRefit:fitted.size,resultSources:rm.sources,shadowModel:shadowModel&&{cv:shadowModel.cv,thresholds:shadowModel.thresholds,n:shadowModel.n,videos:shadowModel.videos,passes:{regular:!!shadowGate(shadowModel,false),shadow:!!shadowGate(shadowModel,true)}}};
 }
-module.exports={execute,prediction,canResolve,resultResolution,resultMetrics,noShadowForm,canResolveShadow,shadowGate,shadowRows,archivedLabels,SHADOW_GATE,learnedFor,mergeLearned,applyLeagueLabels,wilson};
+module.exports={ruleStats,promotedRules,resultPrediction,RESULT_GATE,execute,prediction,canResolve,resultResolution,resultMetrics,noShadowForm,canResolveShadow,shadowGate,shadowRows,archivedLabels,SHADOW_GATE,learnedFor,mergeLearned,applyLeagueLabels,wilson};
 if(require.main===module){const [src,dst]=process.argv.slice(2);fs.writeFileSync(dst,JSON.stringify(execute(JSON.parse(fs.readFileSync(src,'utf8')))));}

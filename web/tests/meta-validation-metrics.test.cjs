@@ -78,4 +78,8 @@ test('result questions closed by policy are their own band, not model resolved; 
  const tiles=M.tiles({records:[r]},{resolved:70,resolvedModel:10,resolvedFree:0,resolvedTimeline:60,unresolvable:780,open:700,questions:2000});
  const res=tiles.find(t=>t.key==='result');assert.equal(res.label,'Battle outcomes · timeline vs your answers');assert.equal(res.value,'100%');
  const by=tiles.find(t=>t.key==='results');assert.equal(by.value,'3,071');assert.match(by.detail,/1,400 read · 120 inferred · 51 human · 800 unresolvable · 700 open/);assert.match(by.delta.text,/780 questions closed as unresolvable/);
- assert.match(tiles.find(t=>t.key==='resolved').detail,/60 results from the timeline/);});
+ assert.match(tiles.find(t=>t.key==='resolved').detail,/60 results from the timeline/);
+ // Per-rule precision with the promotion gate.
+ const r2={...r,heldOut:{result:{right:55,total:70,rules:{fade:{right:10,total:14,videos:4,uncertain:true,promoted:false},tie:{right:41,total:49,videos:7,uncertain:true,promoted:false},faints:{right:3,total:3,videos:2}}}}};
+ const d=M.tiles({records:[r2]},{}).find(t=>t.key==='result').detail;assert.match(d,/fade 10\/14 \(71%, asks; gate 14\/30 answers, 4\/5 videos\)/);assert.match(d,/tie 41\/49 \(84%/);assert.match(d,/faints 3\/3 \(100%\)/);
+ const r3={...r,heldOut:{result:{right:30,total:30,rules:{fade:{right:30,total:30,videos:6,uncertain:true,promoted:true}}}}};assert.match(M.tiles({records:[r3]},{}).find(t=>t.key==='result').detail,/fade 30\/30 \(100%, confident\)/);});

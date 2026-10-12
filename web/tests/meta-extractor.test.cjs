@@ -131,36 +131,46 @@ const fill=(n,v)=>Array(n).fill(v);
 test('timeline results: all three fainted on the counter decides, unless the recording started mid-battle',()=>{
  let r=C.inferResult(tl({fo:3,fm:1}));assert.equal(r.result,'Win');assert.equal(r.source,'faints');
  assert.equal(C.inferResult(tl({fm:3,fo:2})).result,'Loss');
- assert.equal(C.inferResult(tl({fo:3,flags:['Recording starts mid-battle: lead may be missing']})),null);
+ let g=C.inferResult(tl({fo:3,flags:['Recording starts mid-battle: lead may be missing']}));assert.deepEqual([g.source,g.rule,g.value,g.p],['guess','mid-start','Win',.47]);
  // Mid-battle start: the HP bar has to agree (the opponent's last bar empty, yours alive).
  r=C.inferResult(tl({fo:3,flags:['Recording starts mid-battle: lead may be missing'],my:fill(30,.6),opp:fill(30,0)}));assert.equal(r.result,'Win');
  assert.equal(C.inferResult(tl({fo:3,fm:3})),null);});
 test('timeline results: two fainted on the counter and the last HP bar emptied at the end is the third faint',()=>{
- let r=C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:[...fill(10,.3),...fill(20,0)]}));assert.equal(r.result,'Win');assert.equal(r.source,'faints');
+ let r,g;r=C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:[...fill(10,.3),...fill(20,0)]}));assert.equal(r.result,'Win');assert.equal(r.source,'faints');
  r=C.inferResult(tl({fm:2,fo:0,my:fill(30,.01),opp:fill(30,.7)}));assert.equal(r.result,'Loss');
  // Not when both sides have two fainted (41/49 right in the measurement), the other bar is nearly empty too, or the
  // empty reading is more than 3 s before the end.
- assert.equal(C.inferResult(tl({fo:2,fm:2,my:fill(30,.5),opp:fill(30,0)})),null);
+ g=C.inferResult(tl({fo:2,fm:2,my:fill(30,.5),opp:fill(30,0)}));assert.deepEqual([g.source,g.rule,g.value,g.p],['guess','tie','Win',.84]);
  assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.05),opp:fill(30,0)})),null);
  assert.equal(C.inferResult(tl({fo:2,fm:1,end:100,my:fill(30,.5),opp:fill(30,0),extra:{end:105}})),null);});
 test('timeline results: surrender dialog, then the battle ends: you forfeited',()=>{
  const r=C.inferResult(tl({end:50,events:[{t:48,kind:'surrender'}]}));assert.deepEqual([r.result,r.ending,r.source],['Loss','you-forfeit','surrender']);
  assert.equal(C.inferResult(tl({end:50,events:[{t:30,kind:'surrender'}]})),null);});
-test('timeline results: unresolvable when the footage cuts to the next battle or ends; a result-like screen keeps the question',()=>{
+test('timeline results: unresolvable when the footage cuts to the next battle or ends; a result-like screen or a fade keeps the question with a guess',()=>{
  let r=C.inferResult(tl({end:100}),{next:107});assert.equal(r.source,'unresolvable');assert.match(r.reason,/next battle/);
  assert.equal(C.inferResult(tl({end:100}),{next:100.5}).source,'unresolvable');
  assert.equal(C.inferResult(tl({end:100}),{next:125}),null);
  r=C.inferResult(tl({end:100}),{videoEnd:104});assert.equal(r.source,'unresolvable');assert.match(r.reason,/recording ends/);
  assert.equal(C.inferResult(tl({end:100}),{videoEnd:300}),null);
- assert.equal(C.inferResult(tl({end:100,extra:{resultUnread:1}}),{next:107}),null);
+ let u=C.inferResult(tl({end:100,extra:{resultUnread:1}}),{next:107});assert.deepEqual([u.source,u.rule],['guess','unread']);
+ // Tracked extraction (fadeAt present): a fade with both bars alive asks (guess: opponent forfeit); no fade on a hard cut closes.
+ u=C.inferResult(tl({end:100,extra:{fadeAt:102,resultUnread:0}}),{next:107});assert.deepEqual([u.source,u.rule,u.value,u.p],['guess','fade','Win:opponent-forfeit',.71]);
+ assert.equal(C.inferResult(tl({end:100,extra:{fadeAt:null,resultUnread:0}}),{next:107}).source,'unresolvable');
+ assert.equal(C.inferResult(tl({end:100,extra:{fadeAt:130,resultUnread:0}}),{next:107}).source,'unresolvable');
+ assert.equal(C.inferResult(tl({end:100,fm:1,fo:1,my:fill(30,.5),opp:fill(30,0),extra:{fadeAt:101,resultUnread:0}}),{next:107}).source,'unresolvable');
+ // Older saved results (no fadeAt): both bars alive at the end is the forfeit-looking case and is asked; no HP evidence closes.
+ u=C.inferResult(tl({end:100,my:fill(30,.5),opp:fill(30,.4)}),{next:107});assert.deepEqual([u.source,u.rule],['guess','both-alive']);
  // The timeline still decides when it can, cut or not.
  assert.equal(C.inferResult(tl({end:100,fo:3}),{next:107}).result,'Win');});
 test('applyInferredResults re-derives inferred and legacy sources but never a read result screen or a reviewer answer',()=>{
  const bs=[tl({end:100,extra:{result:'Win',resultSource:'Poké Ball count',flags:['Recording starts mid-battle: lead may be missing'],fainted:{my:0,opponent:3}}}),
   tl({start:105,end:200,extra:{result:'Loss',resultSource:'result screen'}}),tl({start:205,end:300,extra:{result:'Win',resultSource:'reviewer'}}),tl({start:306,end:400,fo:3})];
  C.applyInferredResults(bs,{videoEnd:402});
- assert.deepEqual(bs.map(b=>[b.result,b.resultSource]),[['Unknown','unresolvable'],['Loss','result screen'],['Win','reviewer'],['Win','faints']]);
- assert.ok(bs[0].resultReason);assert.equal(C.applyInferredResults(bs,{videoEnd:402}),bs);assert.equal(bs[3].resultSource,'faints');
+ assert.deepEqual(bs.map(b=>[b.result,b.resultSource]),[['Unknown',''],['Loss','result screen'],['Win','reviewer'],['Win','faints']]);
+ assert.equal(bs[0].resultGuess.rule,'mid-start');assert.equal(bs[0].resultReason,undefined);
+ C.applyInferredResults(bs,{videoEnd:402,promoted:new Set(['mid-start'])});assert.deepEqual([bs[0].result,bs[0].resultSource,bs[0].resultGuess],['Win','mid-start',undefined]);
+ C.applyInferredResults(bs,{videoEnd:402});assert.deepEqual([bs[0].result,bs[0].resultSource],['Unknown','']);// demoted again
+ assert.equal(C.applyInferredResults(bs,{videoEnd:402}),bs);assert.equal(bs[3].resultSource,'faints');
  assert.equal(C.runEnd({end:null,ranges:[[0,10],[20,90]],videoSeconds:80}),90);assert.equal(C.runEnd({start:5,videoSeconds:100}),105);});
 test('HUD tracker: a fade to black is kept as fadeAt, an unread result-like screen as resultUnread, and finish infers results',()=>{
  const t=new C.HudTracker();t.observe(0,hud(side('Melmetal'),side('Clodsire')));t.observe(10,hud(side('Melmetal'),side('Clodsire')));t.blackout(12);t.blackout(12.5);t.unreadResult(14);

@@ -364,7 +364,9 @@ class FeedbackTests(unittest.TestCase):
         q2 = {**q, "qid": "r2", "battle": 1}
         res = self.fit_result({"r1": {"source": "timeline", "value": "Win", "rule": "faints", "label": "You won"},
                                "r2": {"source": "policy", "value": None, "policy": "no-result-screen", "reason": "No result screen; timeline inconclusive."}})
-        res["calibration"]["result"] = {"heldOut": 3, "heldOutRight": 3}
+        res["calibration"]["result"] = {"heldOut": 3, "heldOutRight": 3, "byRule": {
+            "fade": {"right": 10, "total": 14, "videos": 4, "uncertain": True, "promoted": False},
+            "faints": {"right": 3, "total": 3, "videos": 2, "uncertain": False, "promoted": False}}}
         res["resultSources"] = {"read": 10, "inferred": 1, "human": 3, "unresolvable": 1, "open": 2}
         self.service._fit = lambda qs, a, v: res
         self.service.data["questions"].update(r1=q, r2=q2)
@@ -378,11 +380,25 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(rec["resolved"]["timeline"], {"result": 1})
         self.assertEqual(rec["resolved"]["policy"], {"result": 1})
         self.assertNotIn("result", rec["resolved"].get("model", {}))
-        self.assertEqual(rec["heldOut"]["result"], {"right": 3, "total": 3})
+        self.assertEqual(rec["heldOut"]["result"]["rules"]["fade"], {"right": 10, "total": 14, "videos": 4, "uncertain": True, "promoted": False})
+        self.assertEqual(rec["heldOut"]["result"]["rules"]["faints"]["total"], 3)
         self.assertEqual(rec["results"]["unresolvable"], 1)
         # Reopen (or a human answer) replaces a policy record, and the next refit leaves it open.
         self.service.reopen("r2")
         self.assertNotIn("r2", self.service.state()["resolutions"])
+
+    def test_refit_reopens_a_policy_closure_the_new_rules_ask_and_carries_the_guess(self):
+        q = {"qid": "r3", "kind": "result", "battle": 0, "recording": "v.mp4", "options": [{"value": "Win:opponent-forfeit", "label": "Opponent forfeited"}]}
+        self.service.data["questions"].update(r3=q)
+        self.service.data["resolutions"]["r3"] = {"source": "policy", "value": None, "policy": "no-result-screen", "reason": "old"}
+        res = self.fit_result({})
+        res["predictions"] = {"r3": {"modelTop": "Win:opponent-forfeit", "modelP": 0.71, "resultRule": "fade", "detail": "The timeline suggests..."}}
+        self.service._fit = lambda qs, a, v: res
+        self.service.retrain()
+        self.service.thread.join(10)
+        st = self.service.state()
+        self.assertNotIn("r3", st["resolutions"])
+        self.assertTrue(any(h.get("qid") == "r3" for h in self.service.data["history"]))
 
 if __name__ == "__main__":
     unittest.main()

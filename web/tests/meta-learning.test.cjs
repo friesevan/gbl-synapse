@@ -48,6 +48,23 @@ test('result questions: the timeline settles or closes them by policy, re-derive
  r=L.resultResolution(q(1),run,7);assert.deepEqual([r.value,r.source,r.policy],[null,'policy','no-result-screen']);assert.match(r.reason,/No result screen; timeline inconclusive/);
  assert.equal(L.resultResolution(q(2),run,7).value,'Loss:you-forfeit');assert.equal(L.resultResolution(q(3),run,7),null);
  assert.equal(L.resultResolution({...q(0),clip:[50,66]},run,7),null);// the battle moved since the question was exported
- const m=L.resultMetrics([{qid:q(0).qid,kind:'result',battle:0,video:{id:'v'},value:'Win'},{qid:q(2).qid,kind:'result',battle:2,video:{id:'v'},value:'Loss'}],new Map([['v',run]]));
- assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:1,byRule:{faints:{right:1,total:1},surrender:{right:0,total:1}}});assert.deepEqual(m.sources,{read:0,inferred:0,human:2,unresolvable:1,open:1});
+ const ans=[{qid:q(0).qid,kind:'result',battle:0,video:{id:'v'},value:'Win'},{qid:q(2).qid,kind:'result',battle:2,video:{id:'v'},value:'Loss'}],stats=L.ruleStats(ans,()=>raw);
+ const m=L.resultMetrics(ans,new Map([['v',run]]),stats);
+ assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:1,byRule:{faints:{right:1,total:1,videos:1,uncertain:false,promoted:false},surrender:{right:0,total:1,videos:1,uncertain:false,promoted:false}}});assert.deepEqual(m.sources,{read:0,inferred:0,human:2,unresolvable:1,open:1});
  assert.equal(Cc.inferResult(run.full[3],{next:null,videoEnd:500}),null);});
+
+test('result rules: uncertain inferences are asked with the measured guess, and a rule is promoted at 95% on 30 answers from 5 videos',()=>{
+ const opts=require('../includes/meta/questions.js').RESULT_OPTIONS,Cc=require('../includes/meta/core.js');
+ // 40 battles each in 8 videos: fade after both alive (tracked extraction), answers 'Win:opponent-forfeit' 38 times.
+ const b=(i)=>({start:i*100,end:i*100+90,result:'Unknown',resultSource:'',fadeAt:i*100+92,resultUnread:0,fainted:{my:1,opponent:1},flags:[],events:[],my:[],opponent:[],matchups:[]});
+ const raws={},answers=[];for(let v=0;v<8;v++){raws['v'+v]={end:9999,full:[0,1,2,3,4].map(b)};for(let i=0;i<5;i++)answers.push({qid:`q${v}:${i}`,kind:'result',battle:i,video:{id:'v'+v},value:v*5+i<38?'Win:opponent-forfeit':'Loss'});}
+ let stats=L.ruleStats(answers,vid=>raws[vid]);assert.deepEqual([stats.fade.right,stats.fade.total,stats.fade.videos],[38,40,8]);assert.deepEqual(L.promotedRules(stats),['fade']);
+ // 36/40 (90%) is not enough; 38/29 answers is too few.
+ stats=L.ruleStats(answers.map((a,i)=>i<4?{...a,value:'Loss'}:a),vid=>raws[vid]);assert.deepEqual(L.promotedRules(stats),[]);
+ assert.deepEqual(L.promotedRules(L.ruleStats(answers.slice(0,25),vid=>raws[vid])),[]);
+ // Not promoted: the question stays open with the guess and the measured precision; promoted: a reversible timeline resolution.
+ const run=refitRun(raws.v0,{gm}),q={qid:'x',kind:'result',battle:0,video:{id:'v0'},clip:[raws.v0.full[0].end-2,raws.v0.full[0].end+14],options:opts};
+ assert.equal(run.full[0].resultGuess.rule,'fade');assert.equal(L.resultResolution(q,run,1),null);
+ const pr=L.resultPrediction(q,run,L.ruleStats(answers.slice(0,25),vid=>raws[vid]));assert.deepEqual([pr.modelTop,pr.resultRule],['Win:opponent-forfeit','fade']);assert.equal(pr.modelP,1);assert.match(pr.detail,/25 of 25|agreed/);
+ const run2=refitRun(raws.v0,{gm,promotedRules:['fade']});assert.deepEqual([run2.full[0].result,run2.full[0].ending,run2.full[0].resultSource],['Win','opponent-forfeit','fade']);
+ const r=L.resultResolution(q,run2,1);assert.deepEqual([r.value,r.source,r.rule],['Win:opponent-forfeit','timeline','fade']);});

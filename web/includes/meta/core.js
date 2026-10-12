@@ -201,7 +201,7 @@ class HudTracker{
  constructor(){this.battles=[];this.current=null;this.lastHud=-Infinity;this.lastClosed=null;}
  static fresh(s){return s.fainted===0&&s.balls.every(b=>b==='alive')&&s.shields===2;}
  static used(s){return s.fainted+(2-s.shields);}
- open(t,midBattle){this.current={id:globalThis.crypto?.randomUUID?.()||String(Math.random()),start:t,end:t,my:[],opponent:[],events:[],result:'Unknown',resultSource:'',flags:midBattle?['Recording starts mid-battle: lead may be missing']:[],reviewed:false,leadConfirmed:false,used:0,fainted:{my:0,opponent:0},shieldsUsed:{my:0,opponent:0},active:{my:'',opponent:''},segments:[]};}
+ open(t,midBattle){this.current={id:globalThis.crypto?.randomUUID?.()||String(Math.random()),start:t,end:t,my:[],opponent:[],events:[],result:'Unknown',resultSource:'',fadeAt:null,resultUnread:0,flags:midBattle?['Recording starts mid-battle: lead may be missing']:[],reviewed:false,leadConfirmed:false,used:0,fainted:{my:0,opponent:0},shieldsUsed:{my:0,opponent:0},active:{my:'',opponent:''},segments:[]};}
  static ballVerdict(b){const lost=['my','opponent'].filter(s=>b.fainted[s]===3);return lost.length===1?(lost[0]==='opponent'?'Win':'Loss'):null;}
  close(dropLone=false){const b=this.current;if(!b)return;this.current=null;
   // A battle seen on a single HUD frame that opened mid-battle, closed by a later HUD, is noise: usually the
@@ -273,46 +273,73 @@ class HudTracker{
   return applyInferredResults(this.battles,{videoEnd});}
 }
 // ---- Results from the battle timeline (README "Results without a result screen") ----
-// A result screen read (or a reviewer's answer) always wins. Otherwise, measured on 1,422 battles whose result
-// screen was read and 51 reviewer answers (2026-10-12):
-// - faints: the Poké Ball counter shows all three of one side fainted (41/41 right when the battle was seen
-//   from its start; 7/15 when the recording started mid-battle, so those need the HP bar to agree);
-// - faints: the counter shows two fainted on one side and at most one on the other, and that side's last
-//   Pokémon's HP bar reads empty within 3 s of the end while the other bar is clearly alive (67/67 right; with
-//   two fainted on both sides only 41/49, so not used);
-// - surrender: the "Surrender and exit?" dialog, then the HUD gone within 3 s: you forfeited.
-// A fade to black is not used: the game fades out at every battle end, and "fade with both bars alive →
-// the opponent forfeited" was right 10 of 14 times on reviewer answers and called 5 of 12 read losses wins.
-// Timer endings (both sides alive at 0:00) would go by remaining HP, but the clock isn't read: they stay open.
-// When nothing decides and the footage can't show a result screen (the next battle's HUD within 10 s, or the
-// recording ends within 10 s), the result is 'unresolvable' and no question is asked. A result-like screen that
-// OCR couldn't read (resultUnread) keeps the question: a person can tell from it.
-const RESULT_RULES={zero:.03,alive:.1,lag:3,cut:10};
+// A read result screen (or a reviewer's answer) always wins. Without one, three outcomes (owner's rule: only ask
+// when the answer isn't confident and feedback is needed):
+// - CONFIDENT, no question (measured on 1,422 read results and the owner's answers, 2026-10-12):
+//   faints: the Poké Ball counter shows all three of one side fainted, battle seen from its start (41/41), or two
+//   fainted on one side (≤1 on the other) and that side's last HP bar empty within 3 s of the end (67/67);
+//   surrender: the "Surrender and exit?" dialog, then the HUD gone within 3 s (118/118).
+// - UNCERTAIN, ask with the guess shown (resultGuess {rule, value, p, reason}; result stays Unknown). Rules and
+//   default p (the owner's answers; learning-loop.cjs recomputes them on every refit and promotes a rule to
+//   confident once it is ≥95% on ≥30 answers from ≥5 videos, applyInferredResults' `promoted`):
+//   fade (a fade to black after the last HUD with both sides alive: opponent forfeit, 10/14), tie (counter 2/2, the
+//   last bar empty on one side: that side lost, 41/49), mid-start (counter 3 but the recording began mid-battle and
+//   the bars don't agree: 7/15), unread (a result-like screen OCR couldn't read), both-alive (older saved results
+//   without fade data and both bars alive at the end: the forfeit-looking case; re-extraction adds the fields).
+//   Timer endings (both alive at 0:00) can't be told apart: the clock isn't read.
+// - UNRESOLVABLE, closed (policy) when no rule applies, there is no fade and no result-like screen, and the next
+//   battle's HUD follows within 10 s or the recording ends (a hard cut).
+const RESULT_RULES={zero:.03,alive:.1,lag:3,cut:10,fade:6};
+const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46};
+const PROMOTABLE=new Set(Object.keys(RESULT_GUESS_P));
 // Sources that inference may set and re-derive; legacy names from saved results are replaced too.
-const INFERRED_SOURCES=new Set(['','faints','surrender','unresolvable','Poké Ball count','surrender dialog']);
+const INFERRED_SOURCES=new Set(['','faints','surrender','unresolvable','Poké Ball count','surrender dialog',...PROMOTABLE]);
 function median(a){const s=a.filter(Number.isFinite).sort((p,q)=>p-q),n=s.length;return n?(n%2?s[n>>1]:(s[n/2-1]+s[n/2])/2):null;}
 // Each side's last HP reading in the battle's latest matchup with an HP series: {v: median fill over the last 2 s
 // of readings, t: time of the last reading}.
 function lastHp(b){let g=null;for(const m of b.matchups||[])if(m.series&&(!g||m.end>g.end))g=m;if(!g)return {};const s=g.series,out={};
  for(const side of ['my','opponent']){const pts=[];(s[side]||[]).forEach((v,i)=>{if(v!=null&&Number.isFinite(v))pts.push([s.ts?s.ts[i]:s.t0+i/s.fps,v]);});if(!pts.length)continue;const tl=pts.at(-1)[0];out[side]={t:tl,v:median(pts.filter(p=>p[0]>=tl-2).map(p=>p[1]))};}
  return out;}
-// The result of one finished battle from its timeline: {result, ending?, source, reason}, {source:'unresolvable',
-// reason} or null (undecided; ask). ctx: next = start of the next battle (null if none), videoEnd = last second read.
+const GUESS_WHY={fade:'The screen faded to black with both sides still standing, which usually means the opponent left or forfeited, but the game fades at every ending',
+ tie:'Both sides had two Pokémon down and one last HP bar read empty at the end; the empty side probably lost, but the final knockout is often hidden by the attack animation',
+ 'mid-start':'All three of one side’s Pokémon show as fainted, but the recording began mid-battle so the counter may be stale and the HP bars don’t confirm it',
+ unread:'A result-like screen appeared but could not be read, and nothing on the timeline decides',
+ 'both-alive':'Both HP bars were still above empty at the end, so the opponent probably left or forfeited (this saved result has no fade data)'};
+const GUESS_VALUE={'Win:opponent-forfeit':'the opponent forfeited','Win':'you won','Loss':'you lost','Loss:you-forfeit':'you forfeited','Tie':'a tie'};
+// The question text for a guess; p is the measured precision when known ({right,total}) else the default.
+function guessDetail(g,stat){const n=stat&&stat.total>=10?`${stat.right} of ${stat.total} of your earlier answers agreed`:`about ${Math.round(g.p*100)}% right in earlier checks`;
+ return `The timeline suggests ${GUESS_VALUE[g.value]||g.value} (${n}). ${GUESS_WHY[g.rule]||g.reason}. Check the frames after the battle.`;}
+// The result of one finished battle from its timeline: {result, ending?, source, reason}, {source:'guess', rule,
+// value, p, reason} (uncertain: ask with this guess), {source:'unresolvable', reason} or null (undecided; ask).
+// ctx: next = start of the next battle (null if none), videoEnd = last second read.
 function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.events||[],f=b.fainted||{my:0,opponent:0},name={my:'your',opponent:'the opponent’s'};
+ const guess=(rule,value,reason)=>({source:'guess',rule,value,p:RESULT_GUESS_P[rule],reason});
  if(ev.some(e=>e.kind==='surrender'&&b.end<=e.t+3))return {result:'Loss',ending:'you-forfeit',source:'surrender',reason:'Surrender dialog, then the battle ended'};
  const mid=(b.flags||[]).some(x=>x.startsWith('Recording starts mid-battle')),three=['my','opponent'].filter(s=>f[s]>=3);
  if(three.length===1&&!mid)return {result:three[0]==='opponent'?'Win':'Loss',source:'faints',reason:`Poké Ball counter: all three of ${name[three[0]]} Pokémon fainted`};
- const hp=lastHp(b),zeroed=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my',hx=hp[x],hy=hp[y];return f[x]>=2&&f[y]<2&&hx&&hy&&hx.v<=R.zero&&b.end-hx.t<=R.lag&&hy.v>=R.alive;});
+ const hp=lastHp(b),empty=x=>{const h=hp[x];return !!h&&h.v<=R.zero&&b.end-h.t<=R.lag;},standing=x=>{const h=hp[x];return !!h&&h.v>=R.alive;};
+ const zeroed=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my';return f[x]>=2&&f[y]<2&&empty(x)&&standing(y);});
  if(zeroed.length===1){const x=zeroed[0];return {result:x==='opponent'?'Win':'Loss',source:'faints',reason:`Two of ${name[x]} Pokémon fainted on the Poké Ball counter and the last one's HP bar emptied at the end`};}
- if(b.resultUnread)return null;
+ const lose=x=>x==='opponent'?'Win':'Loss';
+ if(three.length===1)return guess('mid-start',lose(three[0]),`Poké Ball counter shows all three of ${name[three[0]]} Pokémon fainted, but the recording started mid-battle`);
+ if(f.my===2&&f.opponent===2){const e=['my','opponent'].filter(empty);if(e.length===1&&standing(e[0]==='my'?'opponent':'my'))return guess('tie',lose(e[0]==='my'?'my':'opponent'),`Counter at 2 on both sides; ${name[e[0]]} last HP bar is empty`);}
+ if(b.resultUnread)return guess('unread',three[0]?lose(three[0]):'Win:opponent-forfeit','A result-like screen could not be read');
+ // Both sides alive at the end: neither last bar is empty (a missing reading counts as alive for new extractions).
+ const alive=x=>!empty(x)&&f[x]<3,bothAlive=alive('my')&&alive('opponent'),tracked=b.fadeAt!==undefined;
+ if(tracked&&b.fadeAt!==null&&b.fadeAt-b.end<=R.fade&&bothAlive)return guess('fade','Win:opponent-forfeit','Fade to black after the last HUD with both sides alive');
+ if(!tracked&&standing('my')&&standing('opponent')&&f.my<3&&f.opponent<3)return guess('both-alive','Win:opponent-forfeit','Both HP bars alive at the end (no fade data in this saved result)');
  const gap=next!=null?next-b.end:null,left=next==null&&videoEnd!=null?videoEnd-b.end:null;
- if(gap!==null&&gap<R.cut)return {source:'unresolvable',reason:gap<3?'The next battle’s HUD follows at once (a cut or a split battle): no result screen':`No result screen: the video cuts to the next battle ${gap.toFixed(1)} s later, and the timeline doesn’t decide`};
+ if(gap!==null&&gap<R.cut)return {source:'unresolvable',reason:gap<3?'The next battle’s HUD follows at once (a cut or a split battle): no result screen':`No result screen: the video cuts to the next battle ${gap.toFixed(1)} s later, no fade, and the timeline doesn’t decide`};
  if(left!==null&&left<R.cut)return {source:'unresolvable',reason:'The recording ends before a result screen, and the timeline doesn’t decide'};
  return null;}
 // Re-derives every battle result that didn't come from a result screen or a reviewer (idempotent; saved runs
-// get the current rules on every refit). Returns the battles.
-function applyInferredResults(battles,{videoEnd=null}={}){(battles||[]).forEach((b,i)=>{if(!INFERRED_SOURCES.has(b.resultSource||''))return;
-  const r=inferResult(b,{next:battles[i+1]?.start??null,videoEnd});b.result=r?.result||'Unknown';b.resultSource=r?r.source:'';
+// get the current rules on every refit). promoted: rules the learning loop found ≥95% right on the owner's answers;
+// they are confident (resultSource = the rule). Returns the battles.
+function applyInferredResults(battles,{videoEnd=null,promoted=null}={}){(battles||[]).forEach((b,i)=>{if(!INFERRED_SOURCES.has(b.resultSource||''))return;
+  let r=inferResult(b,{next:battles[i+1]?.start??null,videoEnd});delete b.resultGuess;
+  if(r?.source==='guess'){if(promoted&&(promoted.has?promoted.has(r.rule):promoted.includes(r.rule))){const [res,ending]=r.value.split(':');r={result:res,ending,source:r.rule,reason:r.reason};}
+   else{b.resultGuess={rule:r.rule,value:r.value,p:r.p,reason:r.reason};r=null;}}
+  b.result=r?.result||'Unknown';b.resultSource=r?r.source:'';
   if(r?.ending)b.ending=r.ending;else delete b.ending;if(r?.reason)b.resultReason=r.reason;else delete b.resultReason;});
  return battles;}
 // The last second a saved run analysed (its END, the end of its last decoded range, or START + decoded seconds).
@@ -414,5 +441,5 @@ HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null){const b=
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,INFERRED_SOURCES};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

@@ -156,7 +156,10 @@ def model_metrics(learning):
     # Results inferred from the timeline against reviewer answers (learning-loop.cjs resultMetrics).
     r = cal.get("result") or {}
     if r.get("heldOut"):
-        held["result"] = _clean({"right": r.get("heldOutRight"), "total": r.get("heldOut")})
+        rules = {name: _clean({"right": v.get("right"), "total": v.get("total"), "videos": v.get("videos"),
+                               "uncertain": bool(v.get("uncertain")), "promoted": bool(v.get("promoted"))})
+                 for name, v in (r.get("byRule") or {}).items() if isinstance(v, dict) and v.get("total")}
+        held["result"] = _clean({"right": r.get("heldOutRight"), "total": r.get("heldOut"), "rules": rules or None})
     cv = sm.get("cv") or {}
     new, old = cv.get("new") or {}, cv.get("old") or {}
     if new.get("n"):

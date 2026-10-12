@@ -499,45 +499,39 @@ found, 0 extra, every opponent species, the same results).
 
 ### Results without a result screen (2026-10-12)
 
-Most of the result questions came from videos that cut from the end of a battle straight to the next one. `core.js`
-`inferResult` now settles a result from the battle timeline when no result screen was read, and stops asking when the
-footage can't show one. A read result screen and a reviewer's answer always win. Measured on the saved harvest results
-(1,422 battles with a read result screen, the rules run as if none had been read) and the owner's 51 result answers
-(`tests/meta-benchmark/result-policy.cjs` repeats it):
+Owner's rule: **only ask the result questions when the answer isn't confident and feedback is needed.** `core.js`
+`inferResult` puts every battle without a read result screen (a read screen and a reviewer's answer always win) in one of
+three outcomes. Measurements: 1,422 read results, the owner's 51 answers (`tests/meta-benchmark/result-policy.cjs`).
 
-| Rule (`resultSource`) | Right vs read results | Right vs answers | Shipped |
-|---|---|---|---|
-| `faints`: Poké Ball counter at 3 for one side, battle seen from its start | 41/41 | – | yes |
-| same, recording started mid-battle | 7/15 | – | only if the HP bar agrees |
-| `faints`: counter at 2 on one side and ≤ 1 on the other, that side's last HP bar empty (≤ 3%) within 3 s of the end, the other ≥ 10% | 67/67 (105/105 with the above) | 3/3 | yes |
-| same with two fainted on both sides | 41/49 | – | no |
-| `surrender`: the dialog, then the HUD gone within 3 s → you forfeited | 118/118 | – | yes (was already used) |
-| fade to black with both bars alive → the opponent forfeited | 7/12 wins | 10/14 forfeits | no |
+| Outcome | Condition | Guess | p | Question? |
+|---|---|---|---|---|
+| confident `faints` | counter at 3 for one side, battle seen from its start | that side lost | 41/41 | no |
+| confident `faints` | counter 2 vs ≤ 1, that side's last bar empty ≤ 3 s before the end, other ≥ 10% | that side lost | 67/67 | no |
+| confident `surrender` | "Surrender and exit?" dialog, HUD gone within 3 s | you forfeited | 118/118 | no |
+| uncertain `fade` | fade to black after the last HUD, both sides alive (new extractions: `fadeAt`) | opponent forfeit | .71 (10/14 answers) | yes, guess shown |
+| uncertain `tie` | counter 2 vs 2, one last bar empty | the empty side lost | .84 (41/49) | yes |
+| uncertain `mid-start` | counter 3 but the recording began mid-battle, bars don't agree | counter's loser | .47 (7/15) | yes |
+| uncertain `unread` | result-like screen OCR couldn't read (`resultUnread`) | by the counter, else opponent forfeit | .5 | yes |
+| uncertain `both-alive` | older saved result (no `fadeAt`), both bars alive at the end | opponent forfeit | .46 (11/24 answers; 20/24 were a win of either kind) | yes |
+| unresolvable | none of the above, no fade, no result-like screen, next battle's HUD within 10 s or the recording ends | – | – | no (policy closure, reversible) |
 
-The game fades to black at every battle end (knockouts, forfeits and surrenders alike: 34 of 62 undecided battles in 14
-cached videos faded within 4 s of the last HUD, as did the read ones), so a fade doesn't identify a forfeit; the final
-knockout usually happens during a charged-attack cutscene, without HP bars. The first fade after the last HUD is kept as
-`fadeAt` for later work. Timer endings (both sides alive at 0:00, decided by remaining HP) would need the clock, which
-isn't read: they stay questions.
+Timer endings (both alive at 0:00) can't be told from a fade: the clock isn't read. Uncertain inferences keep `result`
+Unknown and set `resultGuess {rule, value, p, reason}`; `questions.js` turns it into `modelTop`/`modelP` and a `detail`
+saying what the timeline suggests and why it's uncertain (the refit replaces both with the measured precision once a
+rule has 10 answers). Older saved results lack `fadeAt`/`resultUnread` (`HudTracker.open` now sets `fadeAt:null`,
+`resultUnread:0`, so a new extraction can tell "no fade" from "not recorded"): for those a battle with both bars alive
+asks (`both-alive`) and one without HP evidence on a hard cut closes; re-extraction adds the fields.
 
-When nothing decides, the result is `unresolvable` (no question) if the next battle's HUD appears within 10 s of the last
-one (a cut, or under 3 s a split battle) or the recording ends within 10 s; otherwise the question stays. A result-sized
-white text band that OCR couldn't read (`resultUnread`, recorded from now on) keeps the question: a person can read it.
-Caveats from the same data: 126 battles whose result screen *was* read would also have met the cut rule (a result screen
-shown for a second before the cut), and 34 of the owner's 51 answers were in battles this rule now calls unresolvable
-(14 wins, 13 opponent forfeits, 6 losses, 1 tie): a person watching the last frames can often tell. Closures are
-reversible policy records, so Reopen brings any of them back.
+**The rules learn from the answers.** `learning-loop.cjs` `ruleStats` re-runs the rules on every human result answer
+(video-grouped; the rules are fixed, so every answer is held out) on each refit, and `promotedRules` promotes an
+uncertain rule to confident (`applyInferredResults` `promoted`, `resultSource` = the rule, a reversible `timeline`
+resolution, `refitRun` `promotedRules`) at ≥ 95% right on ≥ 30 answers from ≥ 5 videos; below that it is demoted again.
+Refits re-derive every battle: a result question closed by a `policy` record that the rules now ask is reopened
+(history record "Model no longer passes confidence gates"), newly confident ones are settled. Validate › Model
+performance shows the per-rule precision with n and the gate in the "timeline vs your answers" tile
+(`heldOut.result.rules`). Observed meta and the usage export treat confident inferred results like read ones.
 
-Where it runs: `HudTracker.finish({videoEnd})`, then `applyInferredResults` again in `run-node.cjs` and `ui.js` once the
-matchups' HP series exist, and in `refit.cjs` on every refit, so saved results get the current rules without decoding
-(older saved results lack `fadeAt`/`resultUnread`; the next re-extraction adds them). In Validate, `learning-loop.cjs`
-settles open result questions with a `timeline` resolution (the inferred value) or closes them with a `policy` record
-(value none, reason "No result screen; timeline inconclusive"); both are re-derived each refit, neither is a label, and
-policy closures are counted apart from model resolutions. The metrics record each refit's results by source (read /
-inferred / human / unresolvable / open) and the inferred results' agreement with reviewer answers ("Battle outcomes ·
-timeline vs your answers"). Observed meta and the usage export apply timeline results like read ones, human answers
-still win, and team win rates show how many results were read, inferred or answered. Dry run on 2026-10-12: of the open
-result questions, 64 are settled by the timeline (58 faints, 6 surrender), 775 closed as unresolvable, 717 still asked.
+Dry run (read-only, 2026-10-12; `result-policy.cjs --before=<older core.js>`): see the commit message for the counts.
 
 ### Effectiveness text (`hp.js` effectBox/effectSig/effectKind, `combat.js` effectLogL)
 When a fast attack lands, the game flashes **SUPER EFFECTIVE!** or **NOT VERY EFFECTIVE…** in white just above the target's HP bar. Every sampled frame checks that strip (from 6 px left of the bar to 320 px right, 3–50 px above it, at the 886 px reference width) with a 96×12 fingerprint of near-white pixels. The strip is read only when it looks like text:

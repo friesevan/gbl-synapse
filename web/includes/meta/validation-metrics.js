@@ -39,10 +39,14 @@ function statusSeries(history){return records(history).filter(r=>r.open&&r.resol
 function shadowSeries(history){return records(history).filter(r=>num(r.heldOut?.shadow?.auc)||num(r.heldOut?.shadow?.logLoss)).map(r=>({refit:r.refit,at:r.at,backfilled:!!r.backfilled,s:r.heldOut.shadow,base:r.heldOut.shadow.baseline||{}}));}
 // Headline tiles: held-out accuracy per kind with the change since the previous refit that measured it,
 // then live queue counts (answers, model resolved, open) with the change since the last refit.
+// Result rules on the owner's answers: right/total per rule, with the promotion gate (>= 95% on >= 30 answers from >= 5 videos).
+const RULE_ORDER=['fade','tie','mid-start','both-alive','unread','faints','surrender'];
+function ruleDetail(h){const rules=h.rules||{},names=[...RULE_ORDER.filter(n=>rules[n]),...Object.keys(rules).filter(n=>!RULE_ORDER.includes(n))];
+ return names.map(n=>{const r=rules[n],p=r.total?Math.round(r.right/r.total*100):0;return `${n} ${fmtInt(r.right)}/${fmtInt(r.total)} (${p}%${r.promoted?', confident':r.uncertain?`, asks; gate ${fmtInt(r.total)}/30 answers${num(r.videos)?`, ${fmtInt(r.videos)}/5 videos`:''}`:''})`;}).join(' · ');}
 function tiles(history,live={}){const recs=records(history),out=[],last=recs.at(-1);
  for(const k of KINDS){let cur=null,prev=null;for(let i=recs.length-1;i>=0;i--){if(ratio(recs[i].heldOut?.[k.key])===null)continue;if(!cur)cur=recs[i];else{prev=recs[i];break;}}
   if(!cur)continue;const h=cur.heldOut[k.key],v=ratio(h),d=prev?v-ratio(prev.heldOut[k.key]):null;
-  out.push({key:k.key,label:k.key==='result'?'Battle outcomes · timeline vs your answers':`${k.plural} · held out`,value:fmtPct(v),detail:`${fmtInt(h.right)} of ${fmtInt(h.total)} right${num(h.auc)?` · AUC ${h.auc.toFixed(2)}`:''}`,
+  out.push({key:k.key,label:k.key==='result'?'Battle outcomes · timeline vs your answers':`${k.plural} · held out`,value:fmtPct(v),detail:k.key==='result'&&h.rules?ruleDetail(h):`${fmtInt(h.right)} of ${fmtInt(h.total)} right${num(h.auc)?` · AUC ${h.auc.toFixed(2)}`:''}`,
    delta:d===null?{text:`First measured at refit ${cur.refit}`,dir:0}:Math.abs(d)<5e-4?{text:`Unchanged since refit ${prev.refit}`,dir:0}:{text:`${d>0?'▲':'▼'} ${Math.abs(d*100).toFixed(1)} pts vs refit ${prev.refit}`,dir:Math.sign(d)}});}
  const since=(now,then)=>num(now)&&num(then)&&last?{text:now===then?`Unchanged since refit ${last.refit}`:`${now>then?'+':'−'}${fmtInt(Math.abs(now-then))} since refit ${last.refit}`,dir:0}:null;
  if(num(live.answers))out.push({key:'answers',label:'Answers given',value:fmtInt(live.answers),detail:live.notSure?`${fmtInt(live.answers-live.notSure)} confirmed · ${fmtInt(live.notSure)} not sure`:'Your confirmed answers train the model',delta:since(live.answers,last?.answers?sum(last.answers):null)});
