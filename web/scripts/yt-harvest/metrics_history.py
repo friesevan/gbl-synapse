@@ -24,7 +24,7 @@ import uuid
 FORMAT = "gbl-validation-metrics"
 FILE = "metrics-history.json"
 MAX_RECORDS = 2000
-OTHER_SOURCES = {"freellm"}
+OTHER_SOURCES = {"freellm", "local-llm", "haiku"}   # external (LLM) resolvers, counted apart from the model
 # Mirrors SHADOW_GATE in tests/meta-benchmark/learning-loop.cjs; used only when a refit's output lacks
 # its own ``passes`` flags (outputs written before the history existed).
 SHADOW_GATE = {"accuracy": .95, "calls": 25, "lowerBound": .8, "videos": 5}

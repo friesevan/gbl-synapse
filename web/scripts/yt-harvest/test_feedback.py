@@ -184,6 +184,22 @@ class FeedbackTests(unittest.TestCase):
         self.service.answer_many([{"qid": "q1", "value": False}])   # a human answer replaces it
         self.assertEqual(set(self.service.state()["resolutions"]), set())
 
+    def test_local_llm_resolutions_need_two_confident_calls(self):
+        r = lambda qid, value=True, **k: {"qid": qid, "value": value, "source": "local-llm", "model": "qwen2.5vl:7b",
+                                          "agreement": 2, "confidence": 0.9, "threshold": 0.8, "task": "llm_footage", **k}
+        for bad in (r("q1", agreement=1), r("q1", confidence=0.7), r("q1", model=""), r("q1", threshold=None), {**r("q1"), "source": "gpt"}):
+            with self.assertRaises(ValueError):
+                self.service.resolve_external([bad])
+        out = self.service.resolve_external([r("q1"), r("q2", "maybe")])
+        self.assertEqual(out["saved"], 1)
+        rec = out["resolutions"]["q1"]
+        self.assertEqual((rec["source"], rec["providers"], rec["model"], rec["confidence"], rec["threshold"], rec["modelResolved"]),
+                         ("local-llm", ["qwen2.5vl:7b"], "qwen2.5vl:7b", 0.9, 0.8, True))
+        self.assertNotIn("q1", out["answers"])   # never a label
+        self.assertEqual(self.service.resolve_external([r("q1")])["saved"], 0)
+        self.service.answer_many([{"qid": "q1", "value": False}])   # a human answer replaces it
+        self.assertNotIn("q1", self.service.state()["resolutions"])
+
     def test_eight_useful_answers_refit_and_reopen_lock_preserves_human_labels(self):
         def fit(questions, answers, version):
             return {"learned": {"moves": {}, "shadow": {"claydol": {"yes": 8, "no": 0}}}, "predictions": {}, "resolutions": {"q0": {"value": False}, "new": {"value": True}}, "calibration": {}, "runsRefit": 1, "errors": []}

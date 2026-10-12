@@ -23,7 +23,7 @@ test('tiles compare each kind with the previous refit that measured it, never in
  assert.equal(by.shadow.value,'75%');assert.match(by.shadow.delta.text,/First measured at refit 2/,'refit 3 has no Shadow value; the tile keeps refit 2 instead of a zero');
  assert.equal(by.form.value,'67%');assert.match(by.form.delta.text,/First measured at refit 3/);assert.equal(by.result,undefined,'Battle outcome has no held-out metric, so no tile');
  assert.match(by.answers.delta.text,/\+367 since refit 3/);assert.match(by.answers.detail,/397 confirmed · 3 not sure/);
- assert.match(by.open.delta.text,/−10 since refit 3/);assert.match(by.resolved.detail,/125 model · 5 free LLM/);assert.match(by.resolved.delta.text,/\+5 since refit 3/);});
+ assert.match(by.open.delta.text,/−10 since refit 3/);assert.match(by.resolved.detail,/125 model · 5 LLM/);assert.match(by.resolved.delta.text,/\+5 since refit 3/);});
 test('series keep gaps: refits without a metric or without complete queue counts are left out',()=>{
  assert.deepEqual(M.accuracySeries(history).map(r=>r.refit),[2,3]);assert.equal(M.accuracySeries(history)[1].values.shadow,null);
  assert.deepEqual(M.statusSeries(history).map(r=>[r.refit,r.answered,r.resolved,r.open]),[[2,200,100,700],[3,225,125,650]]);

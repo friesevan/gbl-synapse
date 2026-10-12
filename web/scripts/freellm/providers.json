@@ -1,14 +1,53 @@
 {
- "_about": "Free-tier chat endpoints (OpenAI-compatible), from github.com/mnfst/awesome-free-llm-apis (data.json, 2026-10-05). Order = preference. trains: whether the provider may train on / log free-tier prompts (true, false, unknown). Only providers with trains=false receive data marked private. Keys come from the named env var (or ~/.config/freellm/env); keyless providers have key_env null. Model ids drift: run `freellm.py models` after adding keys and fix them here. Optional body / body_text / body_vision: extra request fields (e.g. OpenRouter's provider.data_collection=deny, a training-free route on the same account).",
+ "_about": "Providers in order of preference; enabled=false ones are skipped (the free tiers are phased out since 2026-10-12; anthropic is kept for if API access is ever available). trains: whether the provider may train on / log prompts (true, false, unknown); only trains=false providers receive data marked private. local: a server on this machine (nothing leaves it). source: the resolution source recorded for answers from this provider (local-llm, haiku, freellm). Keys come from the named env var (or ~/.config/gbl-synapse/env, ~/.config/freellm/env); keyless providers have key_env null. base_env/model_env: env vars overriding the endpoint/model. fallback: models tried when the configured one isn't installed. repeatable: may give several independent answers (--agree). seeded: a different seed per answer. structured: supports response_format json_schema. price_per_mtok: USD per million tokens, for the usage log. Optional body / body_text / body_vision: extra request fields.",
  "providers": [
   {
+   "name": "ollama",
+   "enabled": true,
+   "local": true,
+   "source": "local-llm",
+   "base": "http://localhost:11434/v1",
+   "base_env": "FREELLM_OLLAMA_BASE",
+   "model_env": "FREELLM_OLLAMA_MODEL",
+   "key_env": null,
+   "trains": false,
+   "text": "qwen2.5vl:7b",
+   "vision": "qwen2.5vl:7b",
+   "fallback": ["qwen3-vl:8b", "llama3.2-vision:11b"],
+   "repeatable": true,
+   "seeded": true,
+   "structured": true,
+   "temperature": 0.2,
+   "timeout": 600,
+   "limits": "Local Ollama server on this Mac: no quota, no cost, nothing leaves the machine. One request at a time on the GPU."
+  },
+  {
+   "name": "anthropic",
+   "enabled": false,
+   "api": "anthropic",
+   "source": "haiku",
+   "key_env": "ANTHROPIC_API_KEY",
+   "trains": false,
+   "text": "claude-haiku-5-5",
+   "vision": "claude-haiku-5-5",
+   "repeatable": true,
+   "effort": "low",
+   "max_tokens": 4096,
+   "max_retries": 4,
+   "timeout": 90,
+   "price_per_mtok": {"in": 0.10, "out": 0.50, "cache_write": 0.125, "cache_read": 0.01},
+   "limits": "Disabled: kept for if API access is ever available (the owner has a Claude subscription, not API billing). Needs `pip install anthropic`. Anthropic doesn't train on API inputs by default. Prices: Claude Haiku 5.5 for prompts up to 100K tokens ($0.50/$2.50 per MTok beyond)."
+  },
+  {
    "name": "groq",
+   "enabled": false,
+   "source": "freellm",
    "base": "https://api.groq.com/openai/v1",
    "key_env": "GROQ_API_KEY",
    "trains": false,
    "text": "openai/gpt-oss-120b",
    "vision": "qwen/qwen3.8-27b",
-   "limits": "30 RPM, 1,000 RPD; qwen vision: 8,000 tokens/min and 200,000 tokens/day (~125 footage strips or ~200 result strips a day)",
+   "limits": "Phased out 2026-10-12. 30 RPM, 1,000 RPD; qwen vision: 8,000 tokens/min and 200,000 tokens/day",
    "body_vision": {
     "reasoning_effort": "none",
     "max_tokens": 200
@@ -16,24 +55,30 @@
   },
   {
    "name": "gemini",
+   "enabled": false,
+   "source": "freellm",
    "base": "https://generativelanguage.googleapis.com/v1beta/openai",
    "key_env": "GEMINI_API_KEY",
    "trains": true,
    "text": "gemini-3.5-flash",
    "vision": "gemini-3.5-flash",
-   "limits": "15 RPM, 1,500 RPD (free-tier prompts may be used by Google outside the EEA/UK/CH)"
+   "limits": "Phased out 2026-10-12. 15 RPM, 1,500 RPD (free-tier prompts may be used by Google outside the EEA/UK/CH)"
   },
   {
    "name": "mistral",
+   "enabled": false,
+   "source": "freellm",
    "base": "https://api.mistral.ai/v1",
    "key_env": "MISTRAL_API_KEY",
    "trains": true,
    "text": "mistral-small-latest",
    "vision": "mistral-small-latest",
-   "limits": "~1 RPS; trains unless you opt out in the console (then set trains=false)"
+   "limits": "Phased out 2026-10-12. ~1 RPS; trains unless you opt out in the console"
   },
   {
    "name": "openrouter-nolog",
+   "enabled": false,
+   "source": "freellm",
    "base": "https://openrouter.ai/api/v1",
    "key_env": "OPENROUTER_API_KEY",
    "trains": false,
@@ -44,25 +89,29 @@
      "data_collection": "deny"
     }
    },
-   "limits": "20 RPM, 50 RPD on free models (1,000 with credits). body.provider.data_collection=deny routes only to endpoints that neither retain nor train on prompts (2026-10-11: Gemma :free runs only on Google AI Studio and is excluded; dots-3 runs on AtlasCloud)."
+   "limits": "Phased out 2026-10-12. 20 RPM, 50 RPD on free models. body.provider.data_collection=deny routes only to endpoints that neither retain nor train on prompts."
   },
   {
    "name": "openrouter",
+   "enabled": false,
+   "source": "freellm",
    "base": "https://openrouter.ai/api/v1",
    "key_env": "OPENROUTER_API_KEY",
    "trains": true,
    "text": "nvidia/nemotron-3-super-120b-a12b:free",
    "vision": "google/gemma-4-31b-it:free",
-   "limits": "20 RPM, 50 RPD per model"
+   "limits": "Phased out 2026-10-12. 20 RPM, 50 RPD per model"
   },
   {
    "name": "ovh",
+   "enabled": false,
+   "source": "freellm",
    "base": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
    "key_env": null,
    "trains": "unknown",
    "text": "gpt-oss-120b",
    "vision": "Qwen3.5-397B-A17B",
-   "limits": "2 RPM per IP per model, anonymous"
+   "limits": "Phased out 2026-10-12. 2 RPM per IP per model, anonymous"
   }
  ]
 }

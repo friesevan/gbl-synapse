@@ -42,7 +42,7 @@ function tiles(history,live={}){const recs=records(history),out=[],last=recs.at(
    delta:d===null?{text:`First measured at refit ${cur.refit}`,dir:0}:Math.abs(d)<5e-4?{text:`Unchanged since refit ${prev.refit}`,dir:0}:{text:`${d>0?'▲':'▼'} ${Math.abs(d*100).toFixed(1)} pts vs refit ${prev.refit}`,dir:Math.sign(d)}});}
  const since=(now,then)=>num(now)&&num(then)&&last?{text:now===then?`Unchanged since refit ${last.refit}`:`${now>then?'+':'−'}${fmtInt(Math.abs(now-then))} since refit ${last.refit}`,dir:0}:null;
  if(num(live.answers))out.push({key:'answers',label:'Answers given',value:fmtInt(live.answers),detail:live.notSure?`${fmtInt(live.answers-live.notSure)} confirmed · ${fmtInt(live.notSure)} not sure`:'Your confirmed answers train the model',delta:since(live.answers,last?.answers?sum(last.answers):null)});
- if(num(live.resolved))out.push({key:'resolved',label:'Model resolved',value:fmtInt(live.resolved),detail:`${fmtInt(live.resolvedModel)} model · ${fmtInt(live.resolvedFree)} free LLM`,delta:since(live.resolved,last?.resolved?statusSeries({records:[last]})[0]?.resolved:null)});
+ if(num(live.resolved))out.push({key:'resolved',label:'Model resolved',value:fmtInt(live.resolved),detail:`${fmtInt(live.resolvedModel)} model · ${fmtInt(live.resolvedFree)} LLM`,delta:since(live.resolved,last?.resolved?statusSeries({records:[last]})[0]?.resolved:null)});
  if(num(live.open))out.push({key:'open',label:'Open questions',value:fmtInt(live.open),detail:num(live.questions)?`of ${fmtInt(live.questions)} questions`:'',delta:since(live.open,last?.open?sum(last.open):null)});
  return out;}
 

@@ -38,11 +38,11 @@ MODEL_KINDS = {'shadow': 'shadow', 'fast': 'fastMove', 'form': 'form'}
 def model_answers(feedback):
     """Model-resolved Shadow / fast-move / form answers (they passed the held-out resolution gate in
     learning-loop.cjs). Question ids encode where they apply: <source>:<recording>:<battle>:<side>:
-    <key>:<kind>; questions about the creator's own Pokemon are asked once for every battle. Free-LLM
+    <key>:<kind>; questions about the creator's own Pokemon are asked once for every battle. LLM (external)
     resolutions are excluded. Human answers are applied after these, so they always win."""
     out = []
     for qid, r in (feedback.get('resolutions') or {}).items():
-        if not isinstance(r, dict) or r.get('source') == 'freellm' or r.get('value') is None:
+        if not isinstance(r, dict) or r.get('source') in ('freellm', 'local-llm', 'haiku') or r.get('value') is None:
             continue
         parts = str(qid).split(':')
         if len(parts) < 6 or parts[-1] not in MODEL_KINDS:

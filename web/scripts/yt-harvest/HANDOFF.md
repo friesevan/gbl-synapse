@@ -309,6 +309,26 @@ private. Details are in `scripts/freellm/README.md`.
   - **The app must be restarted to load the route.** Then run
     `python3 -I web/scripts/freellm/validate_llm.py run --kind footage`; it uses the cached answers.
 
+## Local-LLM Validate answers (2026-10-12)
+
+The free tiers are phased out (disabled in `scripts/freellm/providers.json`). The router's only enabled
+provider is a local Ollama model (`qwen2.5vl:7b`, `http://localhost:11434`): nothing leaves the Mac, no
+quota, no cost. Claude Haiku through the API is wired in but disabled (no API billing). Details and
+commands: `scripts/freellm/README.md`.
+
+- `validate_llm.py` has gates and runners for `footage`, `result`, `lead` (nameplate second reader),
+  `title_footage`, `title_league` and `footage_title`. Agreement rule: two independent calls (different
+  option order and seed, or another frame) must agree with confidence ≥ the gate's threshold; ~1 in 10
+  agreed answers stays open as a spot check. Gates are held out by video (two folds) and need ≥ 95% exactly
+  right with ≥ 10 resolved.
+- **No kind passed with qwen2.5vl:7b, so nothing was resolved.** Best: `footage_title` 11/12 (91.7%), 33%
+  coverage. `result` fails outright (the model says "Win" for almost everything). Numbers are in `evals.json`.
+- Nameplate reading passed (`llm_hud_names`: 108/108 names on 92 benchmark strips) and is available as a
+  question-free second reader: `eval_hud.py read VIDEO x0,y0,x1,y1 T...`. Not wired into the extractor.
+- The resolve route now accepts source `local-llm` (and `haiku`): one model, ≥ 2 agreeing calls, confidence
+  ≥ threshold, model recorded. Old `freellm` records stay readable. The Validate tab shows them as
+  "Local LLM · <model> <confidence>". **Restart the app to load the updated route** before any `run`.
+
 ## Model performance tracking (2026-10-11)
 
 - **Validate › Model performance** shows held-out accuracy per kind, Shadow AUC and log-loss, queue status

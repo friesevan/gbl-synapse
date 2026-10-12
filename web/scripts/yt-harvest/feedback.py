@@ -29,7 +29,10 @@ REPROCESS_VALUES = ("battles", "partial", "rocket", "championship")
 TRAINABLE = {"shadow", "form", "fastMove"}
 MINIMUM, TARGET = 8, 24
 # External resolvers (scripts/freellm/validate_llm.py): closed like model resolutions, never labels.
-EXTERNAL_SOURCES = {"freellm"}
+EXTERNAL_SOURCES = {"freellm", "local-llm", "haiku"}
+# "freellm" (free-tier APIs, phased out 2026-10-12) needs two different providers to agree; the others
+# are one model whose two independent calls agreed above the gate's confidence threshold.
+MULTI_PROVIDER_SOURCES = {"freellm"}
 # Fast-move/form evidence settings are refitted (movefit-fit.cjs) once this many new labels have arrived.
 PARAM_REFIT_EVERY = 24
 
@@ -269,10 +272,11 @@ class FeedbackService:
     submit_answers = answer_many
 
     def resolve_external(self, items):
-        """Close open questions with answers from a gated external resolver (free-tier LLMs).
+        """Close open questions with answers from a gated external resolver (scripts/freellm/validate_llm.py).
 
-        Stored in resolutions (reversible audit records, source "freellm"), never in answers: they
-        don't train, don't trigger pipeline side effects, and a human answer or Reopen replaces them.
+        Stored in resolutions (reversible audit records with the resolver's source: "local-llm",
+        "haiku", or the older "freellm"), never in answers: they don't train, don't trigger pipeline
+        side effects, and a human answer or Reopen replaces them.
         Audit spot checks, answered and reopened questions are refused (skipped).
         """
         if not isinstance(items, list) or len(items) > 5000:
@@ -288,9 +292,16 @@ class FeedbackService:
                 if it.get("source") not in EXTERNAL_SOURCES:
                     raise ValueError("Unknown resolution source")
                 providers = it.get("providers")
-                if (not isinstance(providers, list) or len({str(p) for p in providers}) < 2 or len(providers) > 4
-                        or int(it.get("agreement") or 0) < 2):
-                    raise ValueError("External resolutions need agreement between at least two providers")
+                if it["source"] in MULTI_PROVIDER_SOURCES:
+                    if (not isinstance(providers, list) or len({str(p) for p in providers}) < 2 or len(providers) > 4
+                            or int(it.get("agreement") or 0) < 2):
+                        raise ValueError("External resolutions need agreement between at least two providers")
+                else:
+                    conf, threshold = it.get("confidence"), it.get("threshold")
+                    if (not isinstance(it.get("model"), str) or not it["model"] or int(it.get("agreement") or 0) < 2
+                            or not isinstance(conf, (int, float)) or not isinstance(threshold, (int, float)) or conf < threshold):
+                        raise ValueError("Model resolutions need two agreeing calls with confidence at or above the gate's threshold")
+                    providers = [it["model"]]
                 q = questions.get(qid)
                 options = (q or {}).get("options") or []
                 option = next((o for o in options if type(o.get("value")) is type(value) and o.get("value") == value), None)
@@ -305,6 +316,8 @@ class FeedbackService:
                        "providers": [str(p)[:40] for p in providers], "agreement": int(it["agreement"]),
                        "task": str(it.get("task") or "")[:60], "reason": str(it.get("reason") or "")[:300],
                        "gate": it.get("gate") if isinstance(it.get("gate"), dict) and len(json.dumps(it["gate"])) < 500 else None}
+                if it["source"] not in MULTI_PROVIDER_SOURCES:
+                    rec.update(model=it["model"][:80], confidence=round(float(it["confidence"]), 3), threshold=float(it["threshold"]))
                 old = self.data["resolutions"].get(qid)
                 if old and all(old.get(k) == rec[k] for k in ("value", "source", "providers", "task")):
                     continue

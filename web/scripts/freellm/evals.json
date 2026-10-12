@@ -1,4 +1,5 @@
 {
+ "_about": "Quality gates. llm_* (2026-10-12 on): the routed model, by default the local Ollama qwen2.5vl:7b; validate_llm.py writes llm_<kind>, eval_hud.py writes llm_hud_names. hud_names, validate_footage, validate_result, validate_result_screen_groq: the phased-out free-tier providers (2026-10-10/11), kept for history; validate_llm.py run uses only llm_<kind>.",
  "hud_names": {
   "strips": 69,
   "shown": 38,
@@ -120,5 +121,292 @@
    "oqxO3iZePPU: said Loss, owner Win"
   ],
   "passed": false
+ },
+ "llm_footage": {
+  "date": "2026-10-12",
+  "kind": "footage",
+  "model": "qwen2.5vl:7b",
+  "source": "local-llm",
+  "labelled": 36,
+  "humanAnswers": 36,
+  "benchmarkItems": 0,
+  "noFrames": 0,
+  "evaluated": 36,
+  "videos": 36,
+  "foldThresholds": {
+   "0": 0.99,
+   "1": null
+  },
+  "threshold": null,
+  "resolved": 0,
+  "right": 0,
+  "precision": 0,
+  "wilsonLower": 0.0,
+  "coverage": 0.0,
+  "byValue": {},
+  "firstCallRight": 28,
+  "wrong": [],
+  "latency": {
+   "calls": 72,
+   "meanS": 8.19,
+   "p90S": 9.18,
+   "imagesPerCall": 1.0
+  },
+  "wallS": 590,
+  "costUSD": 0.0,
+  "method": "two-fold by video; held-out exact precision; threshold = strictest of fold and whole-set choices",
+  "passed": false,
+  "status": "held-out precision 0 on 0 resolved (needs >= 0.95 on >= 10)"
+ },
+ "llm_result": {
+  "date": "2026-10-12",
+  "kind": "result",
+  "model": "qwen2.5vl:7b",
+  "source": "local-llm",
+  "labelled": 51,
+  "humanAnswers": 51,
+  "benchmarkItems": 0,
+  "noFrames": 5,
+  "evaluated": 46,
+  "videos": 13,
+  "foldThresholds": {
+   "0": null,
+   "1": null
+  },
+  "threshold": null,
+  "resolved": 0,
+  "right": 0,
+  "precision": 0,
+  "wilsonLower": 0.0,
+  "coverage": 0.0,
+  "byValue": {},
+  "firstCallRight": 21,
+  "wrong": [],
+  "latency": {
+   "calls": 92,
+   "meanS": 6.96,
+   "p90S": 8.19,
+   "imagesPerCall": 1.0
+  },
+  "wallS": 641,
+  "costUSD": 0.0,
+  "method": "two-fold by video; held-out exact precision; threshold = strictest of fold and whole-set choices",
+  "passed": false,
+  "status": "held-out precision 0 on 0 resolved (needs >= 0.95 on >= 10)"
+ },
+ "llm_lead": {
+  "date": "2026-10-12",
+  "kind": "lead",
+  "model": "qwen2.5vl:7b",
+  "source": "local-llm",
+  "labelled": 22,
+  "humanAnswers": 0,
+  "benchmarkItems": 22,
+  "noFrames": 0,
+  "evaluated": 22,
+  "videos": 4,
+  "foldThresholds": {
+   "0": 0.0,
+   "1": null
+  },
+  "threshold": null,
+  "resolved": 7,
+  "right": 5,
+  "precision": 0.714,
+  "wilsonLower": 0.359,
+  "coverage": 0.318,
+  "byValue": {
+   "Primal Kyogre": {
+    "resolved": 1,
+    "right": 1
+   },
+   "Yveltal": {
+    "resolved": 1,
+    "right": 1
+   },
+   "Mega Mewtwo X": {
+    "resolved": 1,
+    "right": 1
+   },
+   "Wigglytuff": {
+    "resolved": 1,
+    "right": 1
+   },
+   "Weezing": {
+    "resolved": 1,
+    "right": 0
+   },
+   "Zygarde": {
+    "resolved": 1,
+    "right": 1
+   },
+   "Blastoise": {
+    "resolved": 1,
+    "right": 0
+   }
+  },
+  "firstCallRight": 18,
+  "wrong": [
+   "cyu1yFuGtZA: said Weezing, owner Virizion",
+   "cyu1yFuGtZA: said Blastoise, owner Gengar"
+  ],
+  "latency": {
+   "calls": 44,
+   "meanS": 6.36,
+   "p90S": 6.7,
+   "imagesPerCall": 1.0
+  },
+  "wallS": 288,
+  "costUSD": 0.0,
+  "method": "two-fold by video; held-out exact precision; threshold = strictest of fold and whole-set choices",
+  "passed": false,
+  "status": "held-out precision 0.714 on 7 resolved (needs >= 0.95 on >= 10)"
+ },
+ "llm_title_footage": {
+  "date": "2026-10-12",
+  "kind": "title_footage",
+  "model": "qwen2.5vl:7b",
+  "source": "local-llm",
+  "labelled": 36,
+  "humanAnswers": 36,
+  "benchmarkItems": 0,
+  "noFrames": 0,
+  "evaluated": 36,
+  "videos": 36,
+  "foldThresholds": {
+   "0": null,
+   "1": 0.95
+  },
+  "threshold": null,
+  "resolved": 5,
+  "right": 4,
+  "precision": 0.8,
+  "wilsonLower": 0.376,
+  "coverage": 0.139,
+  "byValue": {
+   "none": {
+    "resolved": 4,
+    "right": 4
+   },
+   "battles": {
+    "resolved": 1,
+    "right": 0
+   }
+  },
+  "firstCallRight": 21,
+  "wrong": [
+   "jXXqG-P46og: said battles, owner none"
+  ],
+  "latency": {
+   "calls": 71,
+   "meanS": 1.44,
+   "p90S": 2.04,
+   "imagesPerCall": 0.0
+  },
+  "wallS": 102,
+  "costUSD": 0.0,
+  "method": "two-fold by video; held-out exact precision; threshold = strictest of fold and whole-set choices",
+  "passed": false,
+  "status": "held-out precision 0.8 on 5 resolved (needs >= 0.95 on >= 10)"
+ },
+ "llm_title_league": {
+  "date": "2026-10-12",
+  "kind": "title_league",
+  "model": "qwen2.5vl:7b",
+  "source": "local-llm",
+  "labelled": 2,
+  "humanAnswers": 2,
+  "benchmarkItems": 0,
+  "noFrames": 0,
+  "evaluated": 2,
+  "videos": 2,
+  "foldThresholds": {
+   "0": null,
+   "1": null
+  },
+  "threshold": null,
+  "resolved": 0,
+  "right": 0,
+  "precision": 0,
+  "wilsonLower": 0.0,
+  "coverage": 0.0,
+  "byValue": {},
+  "firstCallRight": 0,
+  "wrong": [],
+  "latency": {
+   "calls": 4,
+   "meanS": 1.26,
+   "p90S": 1.45,
+   "imagesPerCall": 0.0
+  },
+  "wallS": 5,
+  "costUSD": 0.0,
+  "method": "two-fold by video; held-out exact precision; threshold = strictest of fold and whole-set choices",
+  "passed": false,
+  "status": "not enough labelled answers"
+ },
+ "llm_footage_title": {
+  "date": "2026-10-12",
+  "kind": "footage_title",
+  "model": "qwen2.5vl:7b",
+  "source": "local-llm",
+  "labelled": 36,
+  "humanAnswers": 36,
+  "benchmarkItems": 0,
+  "noFrames": 0,
+  "evaluated": 36,
+  "videos": 36,
+  "foldThresholds": {
+   "0": 0.95,
+   "1": 0.0
+  },
+  "threshold": 0.95,
+  "resolved": 12,
+  "right": 11,
+  "precision": 0.917,
+  "wilsonLower": 0.646,
+  "coverage": 0.333,
+  "byValue": {
+   "none": {
+    "resolved": 10,
+    "right": 10
+   },
+   "battles": {
+    "resolved": 2,
+    "right": 1
+   }
+  },
+  "firstCallRight": 28,
+  "wrong": [
+   "jXXqG-P46og: said battles, owner none"
+  ],
+  "latency": null,
+  "wallS": 9,
+  "costUSD": 0.0,
+  "method": "two-fold by video; held-out exact precision; threshold = strictest of fold and whole-set choices",
+  "passed": false,
+  "status": "held-out precision 0.917 on 12 resolved (needs >= 0.95 on >= 10)"
+ },
+ "llm_hud_names": {
+  "strips": 92,
+  "shown": 53,
+  "namedShown": 106,
+  "named": 108,
+  "right": 108,
+  "wrong": [],
+  "failed": 0,
+  "providers": {
+   "ollama": 92
+  },
+  "precision": 1.0,
+  "coverage": 1.0,
+  "passed": true,
+  "date": "2026-10-12",
+  "models": [
+   "qwen2.5vl:7b"
+  ],
+  "wallS": 626,
+  "meanCallS": 5.94,
+  "costUSD": 0.0
  }
 }
