@@ -40,9 +40,47 @@ test('questions: an in-between Shadow estimate is asked, a confident one is not;
  assert.equal(Q.questions(battles,{pokemon:gm.pokemon,moves:gm.moves}).filter(q=>q.kind==='shadow').length,0);});
 test('questions: regional forms the icons could not settle are asked; unknown results are asked; your Pokémon are asked once',()=>{
  const mine=()=>member('corsola',['corsola','corsola_galarian']);
- const battles=[{start:0,end:100,result:'Unknown',my:[mine()],opponent:[member('weezing',['weezing','weezing_galarian'],null,{observedTypes:null})]},{start:200,end:300,result:'Win',my:[mine()],opponent:[]}];
+ const battles=[{start:0,end:100,result:'Unknown',my:[mine()],opponent:[member('weezing',['weezing','weezing_galarian'],null,{observedTypes:null,answers:{shadow:false}})]},{start:200,end:300,result:'Win',my:[mine()],opponent:[]}];
  const qs=Q.questions(battles,{pokemon:gm.pokemon,moves:gm.moves});assert.deepEqual(qs.map(q=>q.kind+':'+(q.side||'')),['result:','form:opponent','form:my']);
  Q.answer(battles,qs[2],'corsola_galarian');assert.ok(battles.every(b=>b.my[0].answers.form==='corsola_galarian'));Q.answer(battles,qs[0],'Loss');assert.equal(battles[0].result,'Loss');assert.equal(battles[0].resultSource,'reviewer');});
+// Shadow eligibility: PvPoke lists `<id>_shadow` only for forms with a released Shadow.
+const shadowKinds=(m,extra)=>Q.questions([{start:0,end:100,result:'Win',my:[],opponent:[m],matchups:[{start:20,end:40,my:'x',opponent:m.key,hitsOnMy:[.05,.06],cadenceOnMy:3}]}],{pokemon:gm.pokemon,moves:gm.moves,...extra}).filter(q=>q.kind==='shadow');
+const palkiaRows=(po,pd,pshadow)=>[{id:'palkia',move:'WATER_GUN',p:pd},{id:'palkia_shadow',move:'WATER_GUN',p:pshadow},{id:'palkia_origin',move:'WATER_GUN',p:po}];
+test('shadow eligibility: a form without a Shadow entry settles Shadow as false, so no Shadow question is asked',()=>{
+ const palkia=(rows,extra)=>member('palkia',['palkia','palkia_shadow','palkia_origin'],rows,extra);
+ // Form unsettled and the regular form has a Shadow: asked.
+ assert.equal(shadowKinds(palkia(palkiaRows(.4,.3,.3))).length,1);
+ // Origin settled by the reviewer, by p >= .98, or as the only form left: not asked.
+ assert.equal(shadowKinds(palkia(palkiaRows(.4,.3,.3),{answers:{form:'palkia_origin'}})).length,0);
+ assert.equal(shadowKinds(palkia(palkiaRows(.985,.01,.005))).length,0);
+ assert.equal(shadowKinds(member('palkia',['palkia_origin'],[{id:'palkia_origin',move:'WATER_GUN',p:1}])).length,0);
+ // Regular Palkia settled: still asked (it has a Shadow).
+ assert.equal(shadowKinds(palkia(palkiaRows(.005,.5,.495),{answers:{form:'palkia'}})).length,1);
+ // Answering the form as Origin conditions the posterior to not-Shadow and settles the species id.
+ const battles=[{start:0,end:100,result:'Win',my:[],opponent:[palkia(palkiaRows(.4,.3,.3))],matchups:[]}];
+ const fq=Q.questions(battles,{pokemon:gm.pokemon,moves:gm.moves}).find(q=>q.kind==='form');assert.ok(fq);const m=Q.answer(battles,fq,'palkia_origin');
+ assert.equal(m.id,'palkia_origin');assert.equal(m.inference.shadowP,0);assert.equal(shadowKinds(m).length,0);
+ assert.deepEqual(Q.shadowEligibility(m,{hasShadow:Q.hasShadowIn(new Map(gm.pokemon.map(p=>[p.speciesId,p])))}),{form:'palkia_origin',eligible:false});
+ // Unsettled form but none of the real candidate forms has a Shadow entry.
+ const none=member('palkia',['palkia_origin','dialga_origin'],[{id:'palkia_origin',move:'WATER_GUN',p:.5},{id:'dialga_origin',move:'DRAGON_BREATH',p:.5}]);
+ assert.equal(shadowKinds(none).length,0);assert.equal(Q.shadowEligibility(none).eligible,false);});
+test('shadow eligibility: Megas have no Shadow, ordinary species do; the gamemaster decides when candidates omit the Shadow id',()=>{
+ const mega=member('venusaur',['venusaur_mega'],[{id:'venusaur_mega',move:'VINE_WHIP',p:1}],{label:'Mega Venusaur'});assert.equal(shadowKinds(mega).length,0);
+ assert.equal(Q.shadowEligibility(mega,{hasShadow:Q.hasShadowIn(new Map(gm.pokemon.map(p=>[p.speciesId,p])))}).eligible,false);
+ const clay=member('claydol',['claydol','claydol_shadow'],[{id:'claydol',move:'MUD_SLAP',p:.5},{id:'claydol_shadow',move:'MUD_SLAP',p:.5}]);assert.equal(shadowKinds(clay).length,1);
+ // Candidates without a Shadow id still ask when the gamemaster says the species has one (and not otherwise).
+ assert.equal(shadowKinds(member('claydol',['claydol'],null)).length,1);assert.equal(shadowKinds(member('claydol',['claydol'],null),{pokemon:gm.pokemon.filter(p=>p.speciesId!=='claydol_shadow')}).length,0);});
+test('question wording names the settled species in English, not the misread nameplate',()=>{
+ const rows=[{id:'qwilfish',move:'POISON_STING',p:.5},{id:'qwilfish_shadow',move:'POISON_STING',p:.5}],q=shadowKinds(member('qwilfish',['qwilfish','qwilfish_shadow'],rows,{label:'Quwilfish'}))[0];
+ assert.match(q.title,/Is the opponent’s Qwilfish a Shadow Pokémon\?/);assert.doesNotMatch(q.title,/Quwilfish/);assert.equal(q.species,'qwilfish');assert.equal(q.speciesName,'Qwilfish');
+ // A settled regional/alternate form is named with its form; its "which form?" question names only the species.
+ const origin=shadowKinds(member('palkia',['palkia','palkia_shadow','palkia_origin'],palkiaRows(.2,.4,.4),{label:'Palkla',answers:{form:'palkia'}}))[0];assert.match(origin.title,/Palkia a Shadow/);
+ const fq=Q.questions([{start:0,end:100,result:'Win',my:[],opponent:[member('weezing',['weezing_galarian','weezing'],null,{label:'Weezng',observedTypes:null,answers:{shadow:false}})]}],{pokemon:gm.pokemon,moves:gm.moves}).find(x=>x.kind==='form');
+ assert.match(fq.title,/Weezing: which form\?/);assert.doesNotMatch(fq.title,/Weezng/);
+ // Candidate English name, then the nameplate marked as such, when the gamemaster has nothing.
+ assert.equal(Q.displayName({label:'Quwilfish',candidates:[{id:'qwilfish',name:'Qwilfish'}]},new Map()),'Qwilfish');
+ assert.equal(Q.displayName({label:'Quwilfish',candidates:[]},new Map()),'Pokémon (nameplate read: “Quwilfish”)');
+ assert.equal(Q.speciesLabel('palkia_origin'),'Palkia (Origin)');assert.equal(Q.speciesLabel('charizard_mega_x'),'Charizard (Mega X)');assert.equal(Q.speciesLabel('mr_mime_galarian'),'Mr. Mime (Galarian)');assert.equal(Q.speciesLabel('ho_oh_shadow'),'Ho-Oh');});
 test('answers become learned priors that move the fast-move and Shadow estimates, and are scored against the model',()=>{
  const qs=[{id:'a',kind:'fastMove',species:'claydol',modelTop:'MUD_SLAP'},{id:'b',kind:'fastMove',species:'claydol',modelTop:'MUD_SLAP'},{id:'c',kind:'shadow',species:'claydol_shadow',modelTop:true}];
  const ans=new Map([['a',{value:'CONFUSION'}],['b',{value:'MUD_SLAP'}],['c',{value:true}]]),learned=Q.learnedFromAnswers(qs,ans);

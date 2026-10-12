@@ -74,3 +74,21 @@ test('focus features: shielded hits and purple-effect moves are skipped; no focu
 test('Pokémon without focus shots use the no-focus held-out thresholds',()=>{
  const ok={confidence:.9,n:30,right:30,accuracy:1,lowerBound:.88,videos:9},model={thresholds:{regular:ok,shadow:null},thresholdsNoFocus:{regular:null,shadow:null}};
  assert.ok(L.shadowGate(model,false,4));assert.equal(L.shadowGate(model,false,0),null);assert.ok(L.shadowGate({thresholds:{regular:ok}},false,0));});
+
+// A form without a Shadow entry in the gamemaster can never be Shadow, whatever the classifier says.
+test('the classifier output is gated: no Shadow for Origin Palkia or a Mega, still free for an ordinary species',()=>{
+ const model={features:['auraT'],mu:[-3],sd:[1],w:[2],b:0},rows=ids=>ids.map(([id,p])=>({id,move:'A',p})),
+  setup=(candidates,allRows,forms,label)=>{const b=battle();Object.assign(b.opponent[0],{label,candidates:candidates.map(id=>({id}))});b.opponent[0].inference={allRows:rows(allRows),forms,moves:[{value:'A',p:1}],shadowP:allRows.filter(([id])=>/_shadow$/.test(id)).reduce((t,[,p])=>t+p,0)};return b;};
+ const palkia=[['palkia',.3],['palkia_shadow',.3],['palkia_origin',.4]],ids=['palkia','palkia_shadow','palkia_origin'];
+ // Origin settled (p >= .98): Shadow rows drop out, shadowP = 0, forms renormalised, classifier probability zeroed.
+ const origin=setup(ids,[['palkia',.005],['palkia_shadow',.005],['palkia_origin',.99]],[{value:'palkia_origin',p:.99},{value:'palkia',p:.01}]);S.applyToBattles([origin],model,{});
+ const o=origin.opponent[0];assert.equal(o.inference.shadowP,0);assert.equal(o.shadowModel.p,0);assert.equal(o.shadowModel.gated,'form has no Shadow variant');assert.ok(o.shadowModel.x,'features are still recorded');
+ assert.ok(!o.inference.allRows.some(r=>/_shadow$/.test(r.id)));assert.ok(Math.abs(o.inference.forms.reduce((t,f)=>t+f.p,0)-1)<1e-9);assert.equal(o.inference.forms[0].value,'palkia_origin');
+ // The form is still open and the regular Palkia has a Shadow: the classifier decides.
+ const open=setup(ids,palkia,[{value:'palkia_origin',p:.4},{value:'palkia',p:.6}]);S.applyToBattles([open],model,{});assert.ok(open.opponent[0].inference.shadowP>0&&open.opponent[0].shadowModel.p>0);
+ // Mega (nameplate says Mega): no Shadow.
+ const mega=setup(['swampert_mega'],[['swampert_mega',1]],[{value:'swampert_mega',p:1}],'Mega Swampert');S.applyToBattles([mega],model,{hasShadow:id=>id==='swampert_mega'?false:undefined});assert.equal(mega.opponent[0].inference.shadowP,0);
+ // Ordinary species: unchanged (the gamemaster lookup says it has a Shadow).
+ const plain=battle();S.applyToBattles([plain],model,{hasShadow:id=>id==='swampert'});assert.ok(plain.opponent[0].inference.shadowP>0&&plain.opponent[0].inference.shadowP<1);
+ // The dated gamemaster decides: the same species without a Shadow entry in that file is gated.
+ const dated=battle();S.applyToBattles([dated],model,{hasShadow:()=>false});assert.equal(dated.opponent[0].inference.shadowP,0);});

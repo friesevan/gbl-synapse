@@ -72,14 +72,14 @@ const asQuestions=()=>[...state.questions.values()].map(q=>({...q,id:q.qid}));
 function learned(){return Q.learnedFromAnswers(asQuestions(),state.answers);}
 // Saves a question answered in the analysis review (your own video) together with its evidence frames.
 async function record(q,value,{recording,frames=[],frameTimes=[]}={}){const qid=safeId(`browser:${recording||'video'}:${q.id}`);const label=q.options?.find(o=>o.value===value)?.label||(value===null?'Not sure':String(value));
- if(!state.questions.has(qid))await putQuestion({qid,source:'browser',recording:recording||'',createdAt:new Date().toISOString(),kind:q.kind,side:q.side||'',key:q.key||'',battle:q.battle,species:q.species||'',title:q.title,detail:q.detail,options:q.options,modelTop:q.modelTop??null,modelP:q.modelP??null,frames,frameTimes,focus:q.focus||''});
+ if(!state.questions.has(qid))await putQuestion({qid,source:'browser',recording:recording||'',createdAt:new Date().toISOString(),kind:q.kind,side:q.side||'',key:q.key||'',battle:q.battle,species:q.species||'',speciesName:q.speciesName||'',title:q.title,detail:q.detail,options:q.options,modelTop:q.modelTop??null,modelP:q.modelP??null,frames,frameTimes,focus:q.focus||''});
  await putAnswer({qid,value,label,kind:q.kind,species:q.species||'',side:q.side||'',modelTop:q.modelTop??null,purple:q.purple??null,answeredAt:new Date().toISOString(),by:state.userId||'',source:'browser'});}
 // Queues every below-threshold detection of a finished analysis (questions.js decides which) and
 // stores each battle's summary and HP timeline, so the analysis can be shown once it is validated.
 // Questions already answered for this recording keep their answers.
 async function submit(questions,summaries,{recording,context={}}){const rec=recording||'video',now=new Date().toISOString();let n=0;
  for(const q of questions){const qid=safeId(`browser:${rec}:${q.id}`);if(state.answers.has(qid))continue;n++;
-  await putQuestion({qid,source:'browser',recording:rec,createdAt:now,kind:q.kind,side:q.side||'',key:q.key||'',battle:q.battle,allBattles:!!q.allBattles,species:q.species||'',title:q.title,detail:q.detail,options:q.options||[],modelTop:q.modelTop??null,modelP:q.modelP??null,purple:q.purple??null,clip:q.clip||null,frameTimes:q.frames||[],frames:[],focus:q.focus||''});}
+  await putQuestion({qid,source:'browser',recording:rec,createdAt:now,kind:q.kind,side:q.side||'',key:q.key||'',battle:q.battle,allBattles:!!q.allBattles,species:q.species||'',speciesName:q.speciesName||'',title:q.title,detail:q.detail,options:q.options||[],modelTop:q.modelTop??null,modelP:q.modelP??null,purple:q.purple??null,clip:q.clip||null,frameTimes:q.frames||[],frames:[],focus:q.focus||''});}
  for(const sm of summaries)await putAnalysis({...sm,aid:`${rec}#${sm.battle}`,recording:rec,context,createdAt:now,by:state.userId||''});
  render();return n;}
 // The answer to a stored question about this battle's Pokémon (your own Pokémon: any battle).
@@ -102,8 +102,10 @@ function analysesView(host){const recs=new Map();for(const a of state.analyses.v
  host.append(box);}
 // ---- view ----
 function pct(x){return `${Math.round(x*100)}%`;}
-// Plain-language question and a short context line, from the stored title.
-function wording(q){const battle=/Battle (\d+)/.exec(q.title||'')?.[1],m=/(?:[Oo]pponent’s|[Yy]our) (.+?)(?:: which| a Shadow)/.exec(q.title||''),name=m?.[1]||'Pokémon',owner=q.side==='my'?(q.attribution?'the creator’s':'your'):'the opponent’s';
+// Plain-language question and a short context line. The Pokémon is named from the stored species (English,
+// settled form) so a misread nameplate in an older stored title never shows; the title is the fallback.
+function speciesShown(q){const n=q.speciesName||(q.species&&Q?.speciesLabel?.(q.species))||'';return q.kind==='form'?n.replace(/ \([^)]*\)$/,''):n;}
+function wording(q){const battle=/Battle (\d+)/.exec(q.title||'')?.[1],m=/(?:[Oo]pponent’s|[Yy]our) (.+?)(?:: which| a Shadow)/.exec(q.title||''),name=speciesShown(q)||m?.[1]||'Pokémon',owner=q.side==='my'?(q.attribution?'the creator’s':'your'):'the opponent’s';
  const question=q.kind==='fastMove'?`Which fast move is ${owner} ${name} using?`:q.kind==='form'?`Which form is ${owner} ${name}?`:q.kind==='shadow'?`Is ${owner} ${name} a Shadow Pokémon?`:q.kind==='result'?`Who won battle ${battle}?`:q.title;
  const context=[battle&&q.kind!=='result'?`Battle ${battle}`:null,q.side==='my'?(q.attribution?'Creator’s Pokémon':'Your Pokémon'):q.side==='opponent'?'Opponent':null,q.recording].filter(Boolean).join(' · ');return {question,context};}
 // ---- Full-size scrubbing from your own recording (nothing is uploaded) ----

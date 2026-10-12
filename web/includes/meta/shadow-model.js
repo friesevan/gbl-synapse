@@ -85,6 +85,18 @@ function setShadowP(inf,p){const rows=inf.allRows||[],s=rows.filter(r=>SH.test(r
  const scale=new Map();for(const [f,m] of mass){const q=m.sh/m.all;if(!(m.all>0&&q>0&&q<1)){scale.set(f,[1,1]);continue;}const qn=q*lr/(q*lr+1-q);scale.set(f,[qn/q,(1-qn)/(1-q)]);}
  const out=rows.map(r=>({...r,p:r.p*scale.get(base(r.id))[SH.test(r.id)?0:1]})),forms=new Map(),moves=new Map();for(const r of out){forms.set(base(r.id),(forms.get(base(r.id))||0)+r.p);moves.set(r.move,(moves.get(r.move)||0)+r.p);}
  Object.assign(inf,{allRows:out,rows:out,shadowP:out.filter(r=>SH.test(r.id)).reduce((t,r)=>t+r.p,0),forms:[...forms].sort((a,b)=>b[1]-a[1]).map(([value,q])=>({value,p:q})),moves:[...moves].sort((a,b)=>b[1]-a[1]).map(([value,q])=>({value,p:q}))});}
+// A form with no Shadow variant (Origin Forme Palkia, every Mega) can never be Shadow: drops any Shadow
+// rows (the sliver of probability they hold is form uncertainty), renormalizes and sets shadowP to 0.
+function clearShadow(inf){const rows=inf.allRows||[],keep=rows.filter(r=>!SH.test(r.id)),z=keep.reduce((t,r)=>t+r.p,0);
+ if(keep.length&&keep.length<rows.length&&z>0){const out=keep.map(r=>({...r,p:r.p/z})),forms=new Map(),moves=new Map();for(const r of out){forms.set(base(r.id),(forms.get(base(r.id))||0)+r.p);moves.set(r.move,(moves.get(r.move)||0)+r.p);}
+  Object.assign(inf,{allRows:out,rows:out,forms:[...forms].sort((a,b)=>b[1]-a[1]).map(([value,q])=>({value,p:q})),moves:[...moves].sort((a,b)=>b[1]-a[1]).map(([value,q])=>({value,p:q}))});}
+ inf.shadowP=0;}
+// Applies the Shadow-eligibility rule (MetaQuestions.shadowEligibility) to the run's members: ineligible
+// ones are gated to "not Shadow" whatever the classifier said. ctx.hasShadow(id) reads the gamemaster the
+// run was fitted with; without it the member's own candidates decide.
+function gateIneligible(battles,ctx){const Q=root.MetaQuestions||(typeof require!=='undefined'?require('./questions.js'):null);if(!Q?.shadowEligibility)return;
+ for(const b of battles)for(const side of ['my','opponent'])for(const p of b[side]||[]){if(!p.inference||Q.shadowEligibility(p,{hasShadow:ctx.hasShadow}).eligible!==false)continue;
+  clearShadow(p.inference);if(p.shadowModel){p.shadowModel.gated='form has no Shadow variant';if(Number.isFinite(p.shadowModel.p))p.shadowModel.p=0;}}}
 // Applies the classifier to every Pokémon in a run. Opponents first use your Pokémon's (old) Shadow
 // estimate; your Pokémon are pooled over all battles. model false → features only (for training);
 // undefined → learned.shadowModel, else DEFAULT_MODEL.
@@ -94,7 +106,7 @@ function applyToBattles(battles,model,ctx={}){if(model===undefined)model=ctx.lea
   let f;if(side==='my'&&done.has(id))f=done.get(id);else{f=features(battles,ref,ctx);if(side==='my')done.set(id,f);}if(!f)continue;
   const q=model?predict(f.x,model):null;p.shadowModel={x:f.x,info:f.info,p:q,version:model?.version??null};out.push({ref,f});}});
  if(model)for(const b of battles)for(const side of ['my','opponent'])for(const p of b[side]||[]){const q=p.shadowModel?.p;if(Number.isFinite(q)&&p.inference)setShadowP(p.inference,clamp(q,.001,.999));}
- return out;}
+ gateIneligible(battles,ctx);return out;}
 // Per-species median aura-purple share across footage (unlabelled), per side. runs: [run objects].
 function speciesPurple(runs,{min=3}={}){const acc={my:{},opponent:{}};for(const run of runs)for(const b of run.full||run||[])for(const g of b.matchups||[])for(const side of ['my','opponent']){
   const v=g[SIDES[side].auraT]?.purple,k=base(g[side]);if(v==null||!k)continue;(acc[side][k]=acc[side][k]||[]).push(v);}

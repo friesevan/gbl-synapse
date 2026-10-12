@@ -34,6 +34,16 @@ const SHADOW_GATE={accuracy:.95,calls:25,lowerBound:.8,videos:5};
 function shadowGate(model,value,focus){const set=focus===0&&model?.thresholdsNoFocus?model.thresholdsNoFocus:model?.thresholds,t=set?.[value?'shadow':'regular'];return t&&t.accuracy>=SHADOW_GATE.accuracy&&t.n>=SHADOW_GATE.calls&&t.lowerBound>=SHADOW_GATE.lowerBound&&(t.videos||0)>=SHADOW_GATE.videos?t:null;}
 function canResolveShadow(q,p,{shadowModel,version}){if(!p||q.audit||q.kind!=='shadow')return null;const t=shadowGate(shadowModel,p.value,p.focus);if(!t||p.p<t.confidence)return null;if(!q.options?.some(o=>o.value===p.value))return null;
  return {value:p.value,confidence:p.p,margin:p.margin,modelVersion:version,resolvedAt:new Date().toISOString(),reason:`Shadow classifier (aura, damage, species rates); held-out ${p.value?'Shadow':'not-Shadow'} calls at ≥${(t.confidence*100).toFixed(0)}% confidence were right ${t.right}/${t.n} on ${t.videos} videos (95% lower bound ${(t.lowerBound*100).toFixed(1)}%).`,source:'model'};}
+// A form with no Shadow variant is never Shadow. PvPoke's gamemaster (the dated one the run was fitted
+// with) lists `<id>_shadow` only for forms with a released Shadow; Q.shadowEligibility applies that to the
+// settled form (human form answer, form p >= .98 or a single real form), or to all real candidate forms
+// while the form is open. A deterministic rule rather than a held-out classifier call: same reversible
+// "model" resolution, so observed meta reads it through model_answers; it re-derives on every refit.
+function noShadowForm(q,run,{gm,answers,version}){if(!q||q.kind!=='shadow'||!run?.full)return null;
+ const mine=q.side==='my'&&q.allBattles,bs=mine?run.full:[run.full[q.battle]].filter(Boolean),m=bs.map(b=>(b[q.side]||[]).find(p=>p.key===q.key)).find(p=>p?.inference);if(!m)return null;
+ const f=(answers||[]).find(a=>eligible(a)&&a.kind==='form'&&video(a)===video(q)&&a.side===q.side&&a.key===q.key&&(a.allBattles||a.battle===q.battle)),e=Q.shadowEligibility(m,{hasShadow:Q.hasShadowIn(gm?new Map(gm.pokemon.map(p=>[p.speciesId,p])):null),form:f?.value});
+ if(e.eligible!==false||!q.options?.some(o=>o.value===false))return null;
+ return {value:false,confidence:1,margin:1,modelVersion:version,resolvedAt:new Date().toISOString(),rule:'no-shadow-form',form:e.form,reason:'form has no Shadow variant'+(e.form?` (${e.form})`:' (none of its possible forms has one)'),source:'model'};}
 function canResolveMove(q,p,{calibration,version}){const c=calibration[q.kind];if(!p||q.audit||!c?.threshold||c.lowerBound<MOVE_POLICY.minLower)return null;const t=Math.max(MOVE_POLICY.floor,c.threshold);
  if(p.p<t||p.margin<MOVE_POLICY.minMargin||!q.options?.some(o=>o.value===p.value))return null;
  return {value:p.value,confidence:p.p,margin:p.margin,modelVersion:version,resolvedAt:new Date().toISOString(),reason:`Re-scored saved damage/timing/energy/icon evidence; held-out ${q.kind} answers at p ≥ ${t}: ${c.right}/${c.total} right over ${c.videoCount} videos (95% lower bound ${(c.lowerBound*100).toFixed(1)}%).`,source:'model'};}
@@ -99,12 +109,14 @@ function execute(input){
  for(const c of Object.values(calibration)){c.lowerBound=wilson(c.right,c.total);c.videoCount=c.videos.length;delete c.videos;if(c.videoCount<3)c.lowerBound=0;}
  Object.assign(calibration,moveCalibration(input,answers,runs,gmFor,errors));
  const st=shadowModel?.thresholds?.regular;calibration.shadow=st?{right:st.right,total:st.n,lowerBound:st.lowerBound,videoCount:st.videos,confidence:st.confidence,direction:'not Shadow',model:'classifier'}:{right:0,total:0,lowerBound:0,videoCount:0,model:shadowModel?'classifier':'default'};
- const answered=new Set(answers.map(a=>a.qid));for(const q of input.questions||[]){const run=fitted.get(video(q));if(!run)continue;const p=prediction(run,q);if(!p)continue;predictions[q.qid]={modelTop:p.value,modelP:p.p};if(answered.has(q.qid)||input.manualReview?.[q.qid])continue;if(!canResolve(q,p,{answers,calibration,version:input.version,shadowModel:learned.shadowModel}))continue;
+ const answered=new Set(answers.map(a=>a.qid));for(const q of input.questions||[]){const run=fitted.get(video(q));if(!run)continue;
+ if(q.kind==='shadow'&&!answered.has(q.qid)&&!input.manualReview?.[q.qid]){const g=noShadowForm(q,run,{gm:gmFor(runs.get(video(q)).r),answers,version:input.version});if(g){predictions[q.qid]={modelTop:false,modelP:1};resolutions[q.qid]=g;continue;}}
+ const p=prediction(run,q);if(!p)continue;predictions[q.qid]={modelTop:p.value,modelP:p.p};if(answered.has(q.qid)||input.manualReview?.[q.qid])continue;if(!canResolve(q,p,{answers,calibration,version:input.version,shadowModel:learned.shadowModel}))continue;
  const entry=runs.get(video(q));if(!independentFits.has(video(q)))independentFits.set(video(q),refitRun(applyLeagueLabels(entry.raw,answers,video(q),input.cupCP),{learned:{...newOnly,shadowModel:learned.shadowModel,fit:input.fit},league:entry.r.league||1500,gm:gmFor(entry.r),channel:entry.r.channel}));
  const independent=prediction(independentFits.get(video(q)),q);if(!independent||independent.value!==p.value||(!['shadow','fastMove','form'].includes(q.kind)&&p.p<.98))continue;
  const resolution=canResolve(q,independent,{answers,calibration,version:input.version,shadowModel:learned.shadowModel});if(resolution){resolution.liveConfidence=p.p;resolutions[q.qid]=resolution;}}
  if(input.outputDir){fs.mkdirSync(input.outputDir,{recursive:true});for(const [vid,run]of fitted)fs.writeFileSync(path.join(input.outputDir,vid+'.json'),JSON.stringify(run));}
  return {learned,predictions,resolutions,calibration,errors,runsRefit:fitted.size,shadowModel:shadowModel&&{cv:shadowModel.cv,thresholds:shadowModel.thresholds,n:shadowModel.n,videos:shadowModel.videos,passes:{regular:!!shadowGate(shadowModel,false),shadow:!!shadowGate(shadowModel,true)}}};
 }
-module.exports={execute,prediction,canResolve,canResolveShadow,shadowGate,shadowRows,archivedLabels,SHADOW_GATE,learnedFor,mergeLearned,applyLeagueLabels,wilson};
+module.exports={execute,prediction,canResolve,noShadowForm,canResolveShadow,shadowGate,shadowRows,archivedLabels,SHADOW_GATE,learnedFor,mergeLearned,applyLeagueLabels,wilson};
 if(require.main===module){const [src,dst]=process.argv.slice(2);fs.writeFileSync(dst,JSON.stringify(execute(JSON.parse(fs.readFileSync(src,'utf8')))));}

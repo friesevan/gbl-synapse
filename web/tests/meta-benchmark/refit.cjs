@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Re-score saved physical HP/cadence evidence, without decoding footage or conditioning on answers.
-const fs=require('node:fs'),K=require('../../includes/meta/combat.js'),Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js');
+const fs=require('node:fs'),K=require('../../includes/meta/combat.js'),Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),Q=require('../../includes/meta/questions.js');
 function loadGameMaster(file){const g=file?JSON.parse(fs.readFileSync(file,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;}
 // League CP for one battle when no label sets it: the video's league unless the nameplate CPs rule it out
 // (a CP above the cap means a higher league; three or more CPs, all at most 500, mean Little Cup).
@@ -28,7 +28,7 @@ function refitRun(input,{learned,league=1500,gm=loadGameMaster(),rankings,params
  const pooled=K.poolMine(run.full||[]);for(const [bi,b] of (run.full||[]).entries()){K.attachInference(b,pooled,fit);
   // Pokémon never measured in a matchup still get a prior-only answer (forms, icons, labels).
   for(const side of ['my','opponent'])for(const p of b[side]||[])if(!p.inference){const c=entries(p);if(c.length)p.inference=K.priorInference(c,{learned,rankings:ranks(leagueOf[bi]),typeLL:p.typeLL,fit,learnedMoves:side==='my'?myMoves:undefined});}Aura.applyToBattle(b,undefined,learned);}
- Shadow.applyToBattles(run.full||[],shadowModel,{learned,speciesPurple,rankings:ranks(league),moveTypes:new Map(gm.moves.map(m=>[m.moveId,m.type]))});for(const b of run.full||[])for(const g of b.matchups||[])delete g.result;return run;
+ Shadow.applyToBattles(run.full||[],shadowModel,{learned,speciesPurple,hasShadow:Q.hasShadowIn(byId),rankings:ranks(league),moveTypes:new Map(gm.moves.map(m=>[m.moveId,m.type]))});for(const b of run.full||[])for(const g of b.matchups||[])delete g.result;return run;
 }
 module.exports={refitRun,loadGameMaster,battleLeague};
 if(require.main===module){const [inPath,outPath,learnedPath]=process.argv.slice(2),t=Date.now();const out=refitRun(JSON.parse(fs.readFileSync(inPath,'utf8')),{learned:learnedPath?JSON.parse(fs.readFileSync(learnedPath,'utf8')):undefined,league:Number(process.env.LEAGUE||1500),gm:loadGameMaster(process.env.GAMEMASTER)});fs.writeFileSync(outPath,JSON.stringify(out));console.log(`refit in ${((Date.now()-t)/1000).toFixed(1)} s`);}

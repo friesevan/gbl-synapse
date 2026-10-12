@@ -57,3 +57,10 @@ test('the hosted page reads a metrics history from the shared store, or explains
  const h=await setup({store:{validation:[question('q1',{video:null})],answers:[],analyses:[],metrics:[metricsHistory(4,[51,52])]},view:'performance'});const perf=walk(h.pane).find(n=>n.className==='meta-perf');
  assert.equal(h.calls.length,0,'no local API calls on the hosted page');assert.match(perf.textContent,/Updated after refit 52/);assert.ok(walk(perf).some(n=>n.tagName==='SVG'));
  const bare=await setup({store:{validation:[question('q1',{video:null})],answers:[],analyses:[]},view:'performance'}),p2=walk(bare.pane).find(n=>n.className==='meta-perf');assert.equal(bare.calls.length,0);assert.match(p2.textContent,/recorded by the local app/);assert.equal(walk(p2).filter(n=>n.tagName==='SVG').length,0);});
+
+test('stored questions show the English species name, not the misread nameplate in their title',async()=>{
+ const stored=question('q1',{species:'qwilfish',side:'opponent',title:'Battle 2 · Is the opponent’s Quwilfish a Shadow Pokémon?'});
+ let h=await setup({questions:[stored]});assert.match(h.pane.textContent,/Is the opponent’s Qwilfish a Shadow Pokémon\?/);assert.doesNotMatch(h.pane.textContent,/Quwilfish/);
+ h=await setup({questions:[question('q1',{species:'palkia_origin',kind:'fastMove',side:'my',title:'Battle 1 · Your Palkla: which fast move?'})]});assert.match(h.pane.textContent,/Which fast move is your Palkia \(Origin\) using\?/);
+ h=await setup({questions:[question('q1',{species:'palkia_origin',kind:'form',side:'opponent',title:'Battle 1 · Opponent’s Palkla: which form?'})]});assert.match(h.pane.textContent,/Which form is the opponent’s Palkia\?/);
+ h=await setup({questions:[question('q1',{species:'',title:'Battle 1 · Is the opponent’s Pokémon (nameplate read: “Quwilfish”) a Shadow Pokémon?',side:'opponent'})]});assert.match(h.pane.textContent,/nameplate read: “Quwilfish”/);});
