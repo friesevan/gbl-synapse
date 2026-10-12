@@ -178,6 +178,8 @@ class ObservedCatalog:
                 periods[r['status']] = periods.get(r['status'], 0) + 1
                 if r.get('reason'):
                     periods[r['reason']] = periods.get(r['reason'], 0) + 1
+                if r.get('repeat'):
+                    periods['repeat-cup'] = periods.get('repeat-cup', 0) + 1
             value = {'revision': revision, 'occurrences': occurrences,
                      'schedule': {'seasons': [{k: s.get(k) for k in ('season', 'name', 'start', 'end', 'source')}
                                               for s in schedule.get('seasons', []) if isinstance(s, dict)],
@@ -403,7 +405,8 @@ class ObservedCatalog:
     def _period(cup, cp, anchor, schedule, verified, unscheduled=None):
         """Checks the battle's observed cup against the GBL schedule for its date.
         status: confirmed (verified recording date inside a period of this cup), estimated (one period of
-        this cup in the upload-date lag window), unassigned (reason: ambiguous, no-date, no-league,
+        this cup in the upload-date lag window; repeat=True when the cup ran in several periods of the window, which
+        are listed and spanned), unassigned (reason: ambiguous = different cups, no-date, no-league,
         championship, contradicted, outside-schedule). contradicted = the schedule ran other formats at this
         CP on those dates but never this cup: the observed cup or the date is wrong."""
         base = {'start': None, 'end': None, 'source': 'unassigned', 'estimated': True, 'status': 'unassigned'}
@@ -426,9 +429,23 @@ class ObservedCatalog:
                 active.append({'id': f.get('id'), 'name': f.get('name') or ((schedule.get('cups') or {}).get(f.get('id')) or {}).get('name'),
                                'start': p.get('start'), 'end': p.get('end')})
                 if f.get('id') == cup:
-                    candidates.append({'start': p['start'], 'end': p['end'], 'source': p.get('source'), 'season': p.get('season'),
+                    candidates.append({'id': f.get('id'), 'start': p['start'], 'end': p['end'], 'source': p.get('source'), 'season': p.get('season'),
                                        'confidence': p.get('confidence')})
         window = {'from': low.isoformat(), 'to': day.isoformat()}
+        ids = {c['id'] for c in candidates}
+        if len(candidates) > 1 and len(ids) == 1:
+            # The same cup ran in more than one period of the window (a repeat week): not ambiguous for the meta, which
+            # is assigned to the cup. The range spans the periods, listed in `periods`.
+            span = {'start': min(c['start'] for c in candidates), 'end': max(c['end'] for c in candidates)}
+            seasons = {c.get('season') for c in candidates}
+            return {**span, 'source': 'recording-date' if verified else 'upload-date', 'scheduleSource': candidates[0].get('source'),
+                    'season': seasons.pop() if len(seasons) == 1 else None, 'confidence': candidates[0].get('confidence'),
+                    'estimated': not verified, 'status': 'confirmed' if verified else 'estimated', 'repeat': True,
+                    'periods': [{k: c.get(k) for k in ('start', 'end', 'season')} for c in candidates],
+                    'candidates': candidates, 'window': window,
+                    'uploadInPeriod': None if verified else any(c['start'] <= anchor <= c['end'] for c in candidates),
+                    'dateBasis': 'repeat cup: %d periods of this cup in the %s' % (
+                        len(candidates), 'verified recording date' if verified else 'upload-date lag window')}
         if len(candidates) == 1:
             c = candidates[0]
             return {**c, 'scheduleSource': c.get('source'), 'source': 'recording-date' if verified else 'upload-date',

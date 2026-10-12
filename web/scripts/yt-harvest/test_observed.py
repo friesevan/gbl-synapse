@@ -64,14 +64,16 @@ class ObservedTests(unittest.TestCase):
         self.assertEqual(b['ending'], 'opponent-forfeit')
         self.assertEqual(b['resultSource'], 'reviewer')
 
-    def test_ambiguous_cup_range_and_verified_date(self):
+    def test_repeat_cup_is_assigned_to_the_cup_and_verified_date_narrows_it(self):
         path = self.web / 'scripts/yt-harvest/data/gbl-schedule.json'
         s = json.loads(path.read_text())
         s['periods'].append({'start': '2026-10-08', 'end': '2026-10-14', 'formats': [{'id': 'willpower', 'cp': 1500}]})
         self.write(path, s)
         o = self.catalog.state()['occurrences'][0]
-        self.assertIsNone(o['cupRange']['start'])
-        self.assertEqual(len(o['cupRange']['candidates']), 2)
+        r = o['cupRange']      # the same cup ran twice in the window: assigned to the cup, both periods listed
+        self.assertEqual((r['status'], r['repeat'], r['start'], r['end']), ('estimated', True, '2026-10-01', '2026-10-14'))
+        self.assertEqual([(p['start'], p['end']) for p in r['periods']], [('2026-10-01', '2026-10-07'), ('2026-10-08', '2026-10-14')])
+        self.assertEqual(self.catalog.state()['summary']['periodStatus']['repeat-cup'], 1)
         raw = json.loads(self.result.read_text())
         raw.update(battleDate='2026-10-09', dateVerified=True)
         self.write(self.result, raw)
@@ -268,11 +270,19 @@ class ScheduleCheckTests(unittest.TestCase):
         self.assertEqual(bad['reason'], 'contradicted')
         self.assertEqual([x['id'] for x in bad['scheduled']], ['retro', 'colormega'])
         self.assertEqual(self.period('retro', '2027-05-01')['reason'], 'outside-schedule')
-        # The upload-lag window holds two Retro periods: ambiguous, never guessed.
+        # The upload-lag window holds two Retro periods: the same cup, so estimated (repeat cup) with both listed.
         self.SCHEDULE['periods'].append({'start': '2026-10-06', 'end': '2026-10-12', 'formats': [{'id': 'retro', 'cp': 1500}]})
         try:
-            amb = self.period('retro', '2026-10-08')
-            self.assertEqual((amb['status'], amb['reason'], len(amb['candidates'])), ('unassigned', 'ambiguous', 2))
+            rep = self.period('retro', '2026-10-08')
+            self.assertEqual((rep['status'], rep['repeat'], len(rep['periods']), rep['start'], rep['end'], rep['uploadInPeriod']),
+                             ('estimated', True, 2, '2026-09-22', '2026-10-12', True))
+            self.assertNotIn('reason', rep)
+            # A repeat of a DIFFERENT cup in the same window does not join it: colormega ran once, retro twice.
+            one = self.period('colormega', '2026-10-04')
+            self.assertEqual((one['status'], one.get('repeat')), ('estimated', None))
+            # A verified date inside one of the two periods is confirmed to that period alone.
+            conf = self.period('retro', '2026-10-08', True)
+            self.assertEqual((conf['status'], conf['start'], conf.get('repeat')), ('confirmed', '2026-10-06', None))
         finally:
             self.SCHEDULE['periods'].pop()
 

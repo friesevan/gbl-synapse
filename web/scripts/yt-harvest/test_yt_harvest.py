@@ -623,5 +623,132 @@ class RetentionAndProbeCache(unittest.TestCase):
                 self.assertEqual(h.run_probe('abcdefghijk',source,30),probe)
                 run.assert_not_called()
 
+MEGA_SCHED = {
+    "cups": {
+        "great": {"name": "Great League", "cp": 1500}, "ultra": {"name": "Ultra League", "cp": 2500},
+        "master": {"name": "Master League", "cp": 10000}, "little": {"name": "Little Cup", "cp": 500},
+        "color": {"name": "Color Cup", "cp": 1500, "aliases": ["color cup", "color cup: great league edition"]},
+        "colormega": {"name": "Mega Color Cup", "cp": 1500, "aliases": ["mega color cup", "mega color cup: great league edition"]},
+        "retro": {"name": "Retro Cup", "cp": 1500},
+        "mega": {"name": "Mega Edition", "cp": 10000, "aliases": ["great league: mega edition", "master league: mega edition",
+                                                                  "ultra league: mega edition", "mega edition"]},
+    },
+    "periods": [
+        {"start": "2025-01-07", "end": "2025-01-13", "formats": [{"id": "color", "cp": 1500}, {"id": "ultra", "cp": 2500}]},
+        {"start": "2026-09-22", "end": "2026-09-28", "formats": [{"id": "retro", "cp": 1500}, {"id": "master", "cp": 10000}]},
+        {"start": "2026-09-29", "end": "2026-10-05", "formats": [{"id": "colormega", "cp": 1500, "name": "Mega Color Cup: Great League Edition"}]},
+        {"start": "2026-10-06", "end": "2026-10-12", "formats": [{"id": "mega", "cp": 1500, "name": "Great League: Mega Edition"},
+                                                                {"id": "mega", "cp": 2500}, {"id": "mega", "cp": 10000}]},
+    ],
+}
+
+
+class MegaVariantRules(unittest.TestCase):
+    S = MEGA_SCHED
+
+    def test_keywords_name_the_mega_variant_and_edition(self):
+        h = lambda t: L.keyword_hits(t, self.S)  # noqa: E731
+        self.assertEqual(h("Shadow Palkia - Color Cup"), {"color": 1})
+        self.assertEqual(h("Mega Color Cup team"), {"colormega": 1})          # not also the plain Color Cup
+        self.assertEqual(h("TOP 100 LEADERBOARDS TEAM (Color Cup Mega)"), {"colormega": 1})
+        self.assertEqual(h("Color Cup and Mega Color Cup"), {"color": 1, "colormega": 1})
+        self.assertEqual(h("Great League: Mega Edition team"), {"mega@1500": 1})   # edition CP, not the Master default
+        self.assertEqual(h("EXPERT PUSH in MEGA GREAT LEAGUE"), {"mega@1500": 1})
+        self.assertEqual(h("The King of Mega Master league"), {"mega": 1})
+        self.assertEqual(h("Ultra League mega edition"), {"mega@2500": 1})
+        self.assertEqual(h("Great League team"), {"great": 1})
+
+    def test_schedule_variant_wins_for_a_keyword_cup_it_did_not_run(self):
+        g = L.guess_league({"title": "Shadow Palkia - Color Cup", "uploadDate": "20261005"}, self.S)
+        self.assertEqual(g["leagueId"], "colormega")
+        self.assertEqual(g["leagueGuess"], "Mega Color Cup: Great League Edition")
+        self.assertIn("schedule variant: color -> colormega", g["leagueEvidence"])
+        self.assertIn("colormega", g["leagueKeywords"])
+        # Upload week after the Mega week: still inside the 14-day lag window of the Mega Color Cup.
+        self.assertEqual(L.guess_league({"title": "Color cup", "uploadDate": "20261012"}, self.S)["leagueId"], "colormega")
+        # The plain cup stays when the schedule ran it, and when the schedule says nothing about either.
+        self.assertEqual(L.guess_league({"title": "Color Cup", "uploadDate": "20250110"}, self.S)["leagueId"], "color")
+        self.assertEqual(L.guess_league({"title": "Color Cup", "uploadDate": "20240101"}, self.S)["leagueId"], "color")
+        # A cup with no Mega variant is never replaced: the schedule and the text disagree and it stays "retro".
+        g = L.guess_league({"title": "Retro Cup", "uploadDate": "20261008"}, self.S)
+        self.assertEqual(g["leagueId"], "retro")
+        self.assertNotIn("schedule variant", " ".join(g["leagueEvidence"]))
+
+    def test_named_edition_resolves_to_its_scheduled_cp(self):
+        g = L.guess_league({"title": "Great League: Mega Edition", "uploadDate": "20261008"}, self.S)
+        self.assertEqual(g["leagueId"], "mega@1500")
+        # A bare "Mega Edition" with several scheduled CP editions is not guessed.
+        self.assertEqual(L.scheduled_variant("mega", {"mega@1500": 1.0, "mega@2500": 1.0}, self.S), None)
+        self.assertEqual(L.scheduled_variant("mega", {"mega@1500": 1.0}, self.S), "mega@1500")
+        self.assertIsNone(L.scheduled_variant("color", {"color": 1.0, "colormega": 1.0}, self.S))   # it ran itself
+
+    def test_refine_ranks_schedule_then_keywords_then_cp(self):
+        obs = {"cps": [1498, 1500, 1491], "species": []}
+        cands = ["color", "colormega", "great", "mega@1500", "retro", "ultra"]
+        r = L.refine_battle_league(obs, cands, self.S, {}, battle_date="20261006", keywords={"colormega": 3}, lag_days=14)
+        self.assertEqual(r["ranked"][0]["id"], "colormega")
+        self.assertEqual(r["ranked"][0]["scheduled"], 0.6)       # the keyword cup ran in the lag window
+        order = [x["id"] for x in r["ranked"]]
+        self.assertLess(order.index("mega@1500"), order.index("great"))   # scheduled beats unscheduled
+        self.assertLess(order.index("great"), order.index("ultra"))       # then the CP cap that fits
+        # No keyword: the formats the schedule ran come first, the lag window after the upload week.
+        r = L.refine_battle_league(obs, cands, self.S, {}, battle_date="20261006", lag_days=14)
+        self.assertEqual({x["id"] for x in r["ranked"][:3]}, {"colormega", "retro", "mega@1500"})
+        self.assertEqual(r["ranked"][0]["id"], "mega@1500")
+        # Genuine disagreement is kept: Retro Cup named, only the Mega Edition ran that week.
+        r = L.refine_battle_league(obs, cands, self.S, {}, battle_date="20261008", keywords={"retro": 3}, lag_days=0)
+        self.assertEqual((r["ranked"][0]["id"], r["ranked"][0]["scheduled"]), ("retro", 0))
+        # A bare league word fixes the CP but does not outrank the cups that ran at it.
+        r = L.refine_battle_league(obs, cands, self.S, {}, battle_date="20261008", keywords={"great": 3}, lag_days=0)
+        self.assertEqual(r["ranked"][0]["id"], "mega@1500")
+
+    def test_mega_edition_counts_at_great_league_cp(self):
+        # An extra OCR digit (14928) is dropped, so the Great League Mega Edition survives; the bare 10000 one ranks lower.
+        obs = {"cps": [150, 149, 1500, 14928], "species": []}
+        r = L.refine_battle_league(obs, ["mega", "mega@1500", "mega@2500"], self.S, {}, battle_date="20261008", keywords={"mega@1500": 3})
+        self.assertEqual((r["ranked"][0]["id"], r["cpCap"]), ("mega@1500", 1500))
+        self.assertEqual(r["ranked"][-1]["id"], "mega")
+        # Truncated reads ('149' from 'CP 1490') give no CP cap, so they cannot pull the battle to Little Cup.
+        r = L.refine_battle_league({"cps": [14, 149, 148], "species": []}, ["great", "little", "mega@1500"], self.S, {},
+                                   battle_date="20261008", keywords={"mega@1500": 3})
+        self.assertIsNone(r["cpCap"])
+        self.assertEqual(r["ranked"][0]["id"], "mega@1500")
+
+    def test_refine_all_rewrites_only_sidecars_with_backup(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            work, web = os.path.join(d, "work"), os.path.join(d, "web")
+            for sub in (os.path.join(work, "results"), os.path.join(work, "labels"),
+                        os.path.join(web, "tests", "meta-benchmark", "sources")):
+                os.makedirs(sub)
+            mon = lambda c: {"form": {"id": "x"}, "cp": c}  # noqa: E731
+            res = {"battles": [{"start": 5, "myDetail": [mon(1490)], "opponentDetail": [mon(1495)]}]}
+            for vid in ("aaaaaaaaaaa", "bbbbbbbbbbb"):
+                with open(os.path.join(work, "results", vid + ".json"), "w") as f:
+                    json.dump(res, f)
+            with open(os.path.join(work, "results", "aaaaaaaaaaa.leagues.json"), "w") as f:      # stale sidecar
+                json.dump({"video": {"leagueId": "color"}, "battles": [{"start": 5, "best": "color"}]}, f)
+            with open(os.path.join(web, "tests", "meta-benchmark", "sources", "registry.json"), "w") as f:
+                json.dump([{"id": "aaaaaaaaaaa", "title": "Pokemon Go Monday Color cup", "uploadDate": "20261006"},
+                           {"id": "bbbbbbbbbbb", "title": "Color Cup", "uploadDate": "20261006"}], f)
+            with open(os.path.join(work, "labels", "bbbbbbbbbbb.json"), "w") as f:   # a reviewer's video-wide label wins
+                json.dump({"leagueId": "retro"}, f)
+
+            def digest():
+                return {n: hashlib.sha256(open(os.path.join(work, "results", n), "rb").read()).hexdigest()
+                        for n in os.listdir(os.path.join(work, "results")) if not n.endswith(".leagues.json")}
+            before = digest()
+            s = L.refine_all(work, web, os.path.join(d, "bak"), schedule=self.S, gamemaster={})
+            self.assertEqual((s["videos"], s["written"], s["created"]), (2, 1, 1))
+            read = lambda v: json.load(open(os.path.join(work, "results", v + ".leagues.json")))  # noqa: E731
+            self.assertEqual(read("aaaaaaaaaaa")["battles"][0]["best"], "colormega")
+            self.assertEqual(read("bbbbbbbbbbb")["battles"][0]["best"], "retro")
+            self.assertTrue(os.path.exists(os.path.join(d, "bak", "aaaaaaaaaaa.leagues.json")))
+            self.assertEqual(json.load(open(os.path.join(d, "bak", "aaaaaaaaaaa.leagues.json")))["battles"][0]["best"], "color")
+            self.assertEqual(digest(), before)                      # results/*.json untouched
+            again = L.refine_all(work, web, os.path.join(d, "bak"), schedule=self.S, gamemaster={})
+            self.assertEqual((again["written"], again["created"]), (0, 0))   # idempotent
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

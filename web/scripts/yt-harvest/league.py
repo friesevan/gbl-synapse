@@ -7,6 +7,11 @@
    rules the observed teams violate are eliminated). Usable from Node by shelling out:
        python3 -I league.py refine '{"cps":[1498,1500],"species":["medicham","azumarill"]}' 2025-01-10
    prints JSON with the ranked surviving formats.
+3. refine-all WORK_DIR [--dry-run] [--backup-dir D] [--web-root W]: rewrites results/*.leagues.json from the stored
+   results with the current rules (no re-analysis); only sidecars are written, each existing one backed up first.
+
+Ranking, in order: formats the GBL schedule ran in the upload-lag window, the video's keywords (a keyword cup the
+schedule did not run stands for its same-name Mega variant that it did), CP cap fit, species eligibility.
 """
 import datetime as dt
 import json
@@ -115,25 +120,59 @@ def _cup_patterns(schedule):
         if cid in BASE:
             continue
         names = [c.get("name", "")] + list(c.get("aliases", []))
-        names = [re.escape(n.lower()) for n in names if n and len(n) >= 4]
+        names = [n.lower() for n in names if n and len(n) >= 4]
+        # "Mega Color Cup" is also written "Color Cup Mega" (titles, tags).
+        names += [n[5:] + " mega" for n in names if n.startswith("mega ") and not n.endswith(" mega")]
+        names = [re.escape(n) for n in names]
         if names:
             pats[cid] = re.compile(r"(?<!\w)(" + "|".join(sorted(set(names), key=len, reverse=True)) + r")(?!\w)", re.I)
     return pats
 
 
+def _core_name(name):
+    """'Mega Color Cup: Great League Edition' -> 'color' (edition words and the CP edition dropped)."""
+    words = re.findall(r"[a-z0-9]+", (name or "").lower().split(":")[0])
+    return " ".join(w for w in words if w not in ("mega", "cup", "edition"))
+
+
+def cup_variants(schedule):
+    """[(plain_id, mega_id)] for cups that share a name apart from "Mega" (Color Cup / Mega Color Cup) and a CP.
+    The Mega Edition itself (no name left) is not a variant of anything."""
+    cups = schedule.get("cups", {})
+    by_core = {}
+    for cid, c in cups.items():
+        if cid in BASE or not isinstance(c, dict):
+            continue
+        core = _core_name(c.get("name"))
+        if core:
+            by_core.setdefault((core, c.get("cp")), []).append(cid)
+    pairs = []
+    for ids in by_core.values():
+        mega = [i for i in ids if "mega" in cups[i]["name"].lower().split(":")[0].split()]
+        pairs += [(p, m) for p in ids if p not in mega for m in mega]
+    return pairs
+
+
 _PAT_CACHE = {}
+
+# "Great League: Mega Edition", "Mega Great League", "mega master league": the CP edition is named in the text.
+MEGA_EDITION = re.compile(r"(?<!\w)(?:mega\s+(?:edition\s+)?(great|ultra|master)(?:\s+league)?|"
+                          r"(great|ultra|master)\s+league\s*[:\-–|,]?\s*mega(?:\s+edition)?)(?!\w)", re.I)
 
 
 def keyword_hits(text, schedule):
-    """Return {formatId: number_of_matches} for base leagues and named cups found in text."""
+    """Return {formatId: number_of_matches} for base leagues and named cups found in text.
+    A Mega Edition named with its league resolves to its CP edition ('mega@1500' for Great League); a plain cup
+    whose Mega variant is the one named ("Mega Color Cup") does not also count for the plain cup."""
     text = text or ""
     hits = {}
     key = id(schedule)
     if key not in _PAT_CACHE:
         _PAT_CACHE.clear()
-        _PAT_CACHE[key] = _cup_patterns(schedule)
+        _PAT_CACHE[key] = (_cup_patterns(schedule), cup_variants(schedule))
+    pats, pairs = _PAT_CACHE[key]
     cup_found = False
-    for cid, pat in _PAT_CACHE[key].items():
+    for cid, pat in pats.items():
         n = len(pat.findall(text))
         if n:
             hits[cid] = n
@@ -142,11 +181,52 @@ def keyword_hits(text, schedule):
         n = len(re.findall(pat, text, re.I))
         if n:
             hits[lid] = n
+    for plain, mega in pairs:
+        if plain in hits and mega in hits:
+            hits[plain] -= hits[mega]    # each "Mega Color Cup" contains a "Color Cup" that is not a plain mention
+            if hits[plain] <= 0:
+                del hits[plain]
+    editions = {}
+    for m in MEGA_EDITION.finditer(text):
+        base = (m.group(1) or m.group(2)).lower()
+        ek = format_key("mega", BASE[base][1], schedule.get("cups", {}))
+        editions[ek] = editions.get(ek, 0) + 1
+        if hits.get(base, 0) > 0:
+            hits[base] -= 1          # the league word belongs to the edition's name
+            if hits[base] == 0:
+                del hits[base]
+    if editions:
+        rest = max(0, hits.pop("mega", 0) - sum(editions.values()))
+        for ek, n in editions.items():
+            hits[ek] = hits.get(ek, 0) + n
+        if rest:
+            hits["mega"] = hits.get("mega", 0) + rest
+        cup_found = True
     # "Little Cup" is a league here; a named cup with "great league" in its name ("Great League Remix")
     # counts for the cup, the base league stays as a weaker alternative.
     if cup_found and "great" in hits and re.search(r"great league remix|remix", text, re.I):
         hits["great"] = max(1, hits["great"] - 1)
     return hits
+
+
+def scheduled_variant(fid, sched, schedule):
+    """The schedule-window format that stands for a text-matched format the schedule did not run: the Mega variant
+    of the same-name cup at the same CP (Color Cup -> Mega Color Cup), or the one scheduled CP edition of a bare
+    Mega Edition. None when fid itself ran in the window, or when the choice is not unique."""
+    if fid in sched:
+        return None
+    cups = schedule.get("cups", {})
+    cp = (get_format(fid, cups)[1] or {}).get("cp")
+    found = set()
+    for plain, mega in cup_variants(schedule):
+        if plain == fid.partition("@")[0]:
+            found |= {k for k in sched if k.partition("@")[0] == mega and (get_format(k, cups)[1] or {}).get("cp") == cp}
+    if fid == "mega":
+        found |= {k for k in sched if k.partition("@")[0] == "mega"}
+    if len(found) > 1:
+        top = max(sched[k] for k in found)
+        found = {k for k in found if sched[k] == top}
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def guess_kind(title, chapters=(), leagues_in_chapters=0):
@@ -209,8 +289,17 @@ def guess_league(meta, schedule):
     for fid, w in sched.items():
         evidence.append(f"{'schedule' if w == 1.0 else 'schedule (lag window)'}: {fid}")
     sched_cps = {(get_format(f, cups)[1] or {}).get("cp") for f in sched}
+    words = {}
     kind = guess_kind(meta.get("title"), meta.get("chapters"), len(chap_leagues))
     if scores:
+        # A cup the text names but the schedule did not run in the window stands for the Mega variant (or the CP
+        # edition) that it did run: "Color Cup" in the week of the Mega Color Cup.
+        for fid in list(scores):
+            alt = scheduled_variant(fid, sched, schedule)
+            if alt:
+                scores[alt] = scores.get(alt, 0) + scores.pop(fid)
+                evidence.append(f"schedule variant: {fid} -> {alt}")
+        words = {k: round(v, 2) for k, v in scores.items()}   # what the text named, before the schedule weighs in
         # Text decides; the schedule confirms (or weakens) it.
         for fid in list(scores):
             if fid in sched:
@@ -243,7 +332,7 @@ def guess_league(meta, schedule):
         name = f"{name} ({cup['cp']} CP)"
     return _with_championship({"leagueGuess": name, "leagueId": top[0], "leagueConfidence": conf,
                                "leagueEvidence": sorted(set(evidence))[:12], "cupCandidates": sorted(sched),
-                               "kindGuess": kind}, meta)
+                               "leagueKeywords": words, "kindGuess": kind}, meta)
 
 
 def _with_championship(guess, meta):
@@ -391,28 +480,42 @@ def species_allowed(cup, sid, mon, moves=(), gm=None):
     return ok
 
 
-def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=None, battle_date=None):
+CP_CEILING = 6500       # no player's Pokémon shows more: a larger read has an extra digit
+CAP_ORDER = {1500: 0, 2500: 1, 10000: 2, 500: 3}   # when nothing else separates formats, the usual leagues first
+
+
+def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=None, battle_date=None,
+                         keywords=None, lag_days=0):
     """Narrow the format of ONE analysed battle.
 
     observed: {"cps": [ints, both teams], "species": [PvPoke speciesIds seen, both teams],
                "moves": {speciesId: [MOVE_IDS]} optional,
                "teams": {"my": [{species, cp}], "opponent": [...]} optional -> adds "rocket" {flag, reasons}}
     candidates: format ids to consider (default: schedule formats around battle_date, else all
-                four base leagues). Returns {"ranked": [{id,name,cp,score,reasons}], "eliminated":
-                [{id,reason}], "cpCap": cap}."""
+                four base leagues).
+    battle_date / lag_days: the date to check the schedule at (upload date + lag window for uploads).
+    keywords: format ids the video's title/tags/description named ({id: strength} or a list).
+    Ranking: formats the schedule ran in the window first, then the video's keywords, then CP cap fit and
+    eligibility, then how recently in the window. A Mega Edition counts at the CP of its edition (mega@1500 is Great
+    League CP), so a Great League team never favours a 10000 CP Mega Edition.
+    Returns {"ranked": [{id,name,cp,score,scheduled,keyword,reasons}], "eliminated": [{id,reason}], "cpCap": cap}."""
     schedule = schedule or load_schedule()
     gamemaster = gamemaster if gamemaster is not None else load_gamemaster()
     cups = schedule.get("cups", {})
+    sched = schedule_formats(schedule, battle_date, lag_days=lag_days) if battle_date else {}
+    kw = dict(keywords) if isinstance(keywords, dict) else {k: 1 for k in keywords or []}
     off_schedule = set()
     if not candidates:
-        candidates = sorted(schedule_formats(schedule, battle_date, lag_days=0)) if battle_date else []
+        candidates = sorted(sched)
         if candidates:
             # Base leagues stay possible (friend battles, tournaments, schedule gaps) but rank lower.
             off_schedule = {b for b in BASE if b not in candidates}
             candidates += sorted(off_schedule)
         candidates = candidates or list(BASE)
-    cps = [c for c in observed.get("cps") or [] if c]
-    cap = cp_cap_for(cps) if cps else None
+    elif sched:
+        off_schedule = {c for c in candidates if c not in sched}
+    cps = [c for c in observed.get("cps") or [] if c and c <= CP_CEILING]
+    cap = plausible_cap(cps)     # None when the reads look truncated ('149' from 'CP 1490'): no CP evidence then
     moves = observed.get("moves") or {}
     ranked, eliminated = [], []
     for fid in candidates:
@@ -450,8 +553,23 @@ def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=No
         if restricted and observed.get("species") and not unknown:
             score += 1.0   # a restricted cup that the whole team satisfies is informative
             reasons.append("all species eligible")
-        ranked.append({"id": fid, "name": cup.get("name", fid), "cp": ccap, "score": round(score, 2), "reasons": reasons})
-    ranked.sort(key=lambda r: (-r["score"], r["cp"], r["id"]))
+        # A keyword only counts where the CPs do not contradict it (a Great League word over an Ultra League team). A
+        # bare league word ("Great League") names a CP, not a cup: it cannot outrank the cups the schedule ran at it.
+        word = kw.get(fid, 0) if cap is None or ccap == cap else 0
+        if fid in BASE and sched and fid not in sched:
+            word = 0
+        if word:
+            reasons.append("named in the title, tags or description")
+        ranked.append({"id": fid, "name": cup.get("name", fid), "cp": ccap, "score": round(score, 2),
+                       "scheduled": sched.get(fid, 0), "keyword": word, "reasons": reasons})
+    # A cup the schedule did not run in the window but the text names still ranks first: the schedule and the text
+    # disagree, and the result says so (observed.py: contradicted) instead of quietly picking another cup that ran.
+    # Where no keyword settles it, the formats the schedule ran in the window come first, then the keyword's CP
+    # (when the CPs are unreadable), CP cap fit and eligibility, then the most recently started.
+    in_window = lambda r: r["scheduled"] > 0 or not sched  # noqa: E731
+    word_cps = {(get_format(k, cups)[1] or {}).get("cp") for k in kw} if cap is None else set()
+    ranked.sort(key=lambda r: (-r["keyword"], not in_window(r), bool(word_cps) and r["cp"] not in word_cps, -r["score"],
+                               -r["scheduled"], CAP_ORDER.get(r["cp"], 9), r["id"]))
     out = {"ranked": ranked, "eliminated": eliminated, "cpCap": cap}
     teams = observed.get("teams")
     if teams:
@@ -459,8 +577,167 @@ def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=No
     return out
 
 
+# ---------------------------------------------------------------- video-level document and bulk rewrite
+
+def refine_video(res, video_league, schedule, gamemaster, upload_date=None, lag_days=UPLOAD_LAG_DAYS):
+    """The *.leagues.json document of one analysed video (what harvest.write_league_refinement stores), with every
+    battle ranked against the schedule at the upload date (+ lag window) and the video's own keyword format.
+
+    res: the stored result ({"battles": [...], "probe": {...}}); video_league: guess_league() output."""
+    kws = dict(video_league.get("leagueKeywords") or {})     # what the title/tags/description named
+    cands = sorted(set((video_league.get("cupCandidates") or []) + ([video_league["leagueId"]] if video_league.get("leagueId") else [])
+                       + list(kws) + list(BASE)))
+    screens = len(((res.get("probe") or {}).get("screens")) or [])
+    championship = bool(video_league.get("championship"))
+    possible = championship or bool(video_league.get("possibleChampionship")) or screens >= 2
+    out = []
+    for b in res.get("battles", []):
+        def team(side):
+            return [{"species": (m.get("form") or {}).get("id") or m.get("formId"), "cp": m.get("cp")}
+                    for m in b.get(side + "Detail") or []]
+        my, opp = team("my"), team("opponent")
+        mons = my + opp
+        obs = {"cps": [m["cp"] for m in mons if isinstance(m.get("cp"), (int, float))],
+               "species": [m["species"] for m in mons if isinstance(m.get("species"), str)],
+               "teams": {"my": my, "opponent": opp}}
+        r = refine_battle_league(obs, cands, schedule, gamemaster, battle_date=upload_date, keywords=kws, lag_days=lag_days)
+        rocket = r.get("rocket") or {"flag": False, "reasons": []}
+        entry = {"start": b.get("start"), "best": r["ranked"][0]["id"] if r["ranked"] else None,
+                 "ranked": [x["id"] for x in r["ranked"][:4]], "cpCap": r["cpCap"], "eliminated": len(r["eliminated"]),
+                 "options": [{"id": x["id"], "name": x["name"], "cp": x["cp"], "score": x["score"]} for x in r["ranked"][:4]],
+                 "cps": obs["cps"], "rocket": rocket["flag"], "rocketReasons": rocket["reasons"]}
+        if rocket["flag"]:
+            entry["battleType"] = "rocket"
+        elif championship:
+            entry["battleType"] = "championship"
+            ccap = plausible_cap([m.get("cp") for m in my])
+            entry["best"] = CHAMPIONSHIP_ID if ccap in (None, 1500) else f"{CHAMPIONSHIP_ID}@{ccap}"
+        out.append(entry)
+    return {"video": {**video_league, "championship": championship, "possibleChampionship": possible, "screens": screens},
+            "battles": out}
+
+
+def _read_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def _stored_meta(work_dir, ids):
+    """{videoId: meta} from a COPY of the harvester's state.sqlite (the live database is never opened)."""
+    import shutil
+    import sqlite3
+    import tempfile
+    out = {}
+    src = os.path.join(work_dir, "state.sqlite")
+    if not os.path.exists(src):
+        return out
+    with tempfile.TemporaryDirectory() as tmp:
+        for suffix in ("", "-wal", "-shm"):
+            if os.path.exists(src + suffix):
+                shutil.copy2(src + suffix, os.path.join(tmp, "state.sqlite" + suffix))
+        db = sqlite3.connect(os.path.join(tmp, "state.sqlite"))
+        try:
+            for vid, meta in db.execute("SELECT id, meta FROM videos WHERE meta IS NOT NULL"):
+                if vid in ids:
+                    try:
+                        out[vid] = json.loads(meta)
+                    except ValueError:
+                        pass
+        finally:
+            db.close()
+    return out
+
+
+def reviewed_league(video_league, schedule, label, registered):
+    """A confirmed video-wide label takes precedence over title/schedule guesses (harvest._reviewed_league)."""
+    pending = (label or {}).get("leagueId")
+    reviewed = registered if (registered or {}).get("reviewerLeague") else {}
+    key = pending if pending and pending != "other" else reviewed.get("leagueId")
+    if not key:
+        return video_league
+    _, cup = get_format(key, schedule.get("cups", {}))
+    if not cup:
+        return video_league
+    evidence = reviewed.get("leagueEvidence") or [{"source": "human-validation", "leagueId": key}]
+    name = reviewed.get("leagueGuess") if reviewed.get("leagueId") == key else cup.get("name", key)
+    return {**video_league, "leagueId": key, "leagueGuess": name, "leagueConfidence": 1, "leagueEvidence": evidence,
+            "reviewerLeague": True, "cupCandidates": [], "leagueKeywords": {key: 3}}
+
+
+def refine_all(work_dir, web_root=None, backup_dir=None, dry_run=False, schedule=None, gamemaster=None):
+    """Rewrite results/*.leagues.json from the stored results with the current inference rules, without re-analysis.
+    Reads results/*.json, labels/, state.sqlite (a copy) and the registry; WRITES ONLY the sidecars, after copying
+    each existing one into backup_dir. Returns a summary dict."""
+    import shutil
+    web_root = web_root or os.path.normpath(os.path.join(HERE, "..", ".."))
+    schedule = schedule or load_schedule()
+    gamemaster = gamemaster if gamemaster is not None else load_gamemaster()
+    results = os.path.join(work_dir, "results")
+    names = sorted(n for n in os.listdir(results) if n.endswith(".json")
+                   and not n.endswith((".leagues.json", ".learned.json")) and n != "batch-summary.json")
+    ids = {n[:-5] for n in names}
+    registry = _read_json(os.path.join(web_root, "tests", "meta-benchmark", "sources", "registry.json"), [])
+    registry = {v.get("id"): v for v in (registry if isinstance(registry, list) else registry.get("videos", [])) if isinstance(v, dict)}
+    metas = _stored_meta(work_dir, ids)
+    backup_dir = backup_dir or os.path.join(work_dir, "results-backup-leagues-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    summary = {"videos": 0, "written": 0, "created": 0, "battlesChanged": 0, "battles": 0, "noMetadata": 0, "backup": None, "changes": {}}
+    for name in names:
+        vid = name[:-5]
+        res = _read_json(os.path.join(results, name), None)
+        if not isinstance(res, dict) or not isinstance(res.get("battles"), list):
+            continue
+        sidecar = os.path.join(results, vid + ".leagues.json")
+        old = _read_json(sidecar, None)
+        meta = {**registry.get(vid, {}), **metas.get(vid, {})}
+        if meta.get("title") or meta.get("uploadDate"):
+            video_league = guess_league(meta, schedule)
+        elif isinstance(old, dict) and isinstance(old.get("video"), dict):
+            video_league = old["video"]
+            summary["noMetadata"] += 1
+        else:
+            video_league = guess_league(meta, schedule)
+            summary["noMetadata"] += 1
+        video_league = reviewed_league(video_league, schedule, _read_json(os.path.join(work_dir, "labels", name), {}), registry.get(vid))
+        doc = refine_video(res, video_league, schedule, gamemaster, meta.get("uploadDate"))
+        summary["videos"] += 1
+        before = {b.get("start"): b.get("best") for b in (old or {}).get("battles", [])} if isinstance(old, dict) else {}
+        for b in doc["battles"]:
+            summary["battles"] += 1
+            if before.get(b["start"]) != b["best"]:
+                summary["battlesChanged"] += 1
+                k = f"{before.get(b['start'])} -> {b['best']}"
+                summary["changes"][k] = summary["changes"].get(k, 0) + 1
+        if isinstance(old, dict) and json.dumps(old, sort_keys=True) == json.dumps(doc, sort_keys=True):
+            continue
+        if dry_run:
+            summary["written" if old else "created"] += 1
+            continue
+        if old is not None:
+            os.makedirs(backup_dir, exist_ok=True)
+            shutil.copy2(sidecar, os.path.join(backup_dir, vid + ".leagues.json"))
+            summary["backup"] = backup_dir
+        with open(sidecar + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=1)
+        os.replace(sidecar + ".tmp", sidecar)
+        summary["written" if old is not None else "created"] += 1
+    summary["changes"] = dict(sorted(summary["changes"].items(), key=lambda kv: -kv[1])[:15])
+    return summary
+
+
 if __name__ == "__main__":
-    if len(sys.argv) >= 3 and sys.argv[1] == "refine":
+    if len(sys.argv) >= 3 and sys.argv[1] == "refine-all":
+        import argparse
+        ap = argparse.ArgumentParser(prog="league.py refine-all", description=refine_all.__doc__)
+        ap.add_argument("work_dir")
+        ap.add_argument("--web-root", default=None, help="checkout whose registry.json supplies titles/upload dates (default: this one)")
+        ap.add_argument("--backup-dir", default=None)
+        ap.add_argument("--dry-run", action="store_true")
+        a = ap.parse_args(sys.argv[2:])
+        print(json.dumps(refine_all(a.work_dir, a.web_root, a.backup_dir, a.dry_run), indent=1))
+    elif len(sys.argv) >= 3 and sys.argv[1] == "refine":
         obs = json.loads(sys.argv[2])
         date = sys.argv[3] if len(sys.argv) > 3 else None
         cands = sys.argv[4].split(",") if len(sys.argv) > 4 else None

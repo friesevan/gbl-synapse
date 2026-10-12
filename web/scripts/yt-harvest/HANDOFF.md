@@ -164,9 +164,25 @@ period of the cup in that season; "Unassigned" holds battles without a period. T
 **Schedule check** (`observed.py _period`, per battle `cupRange.status` / `reason` / `contradiction`):
 - `confirmed`: a verified recording date inside a period of the observed cup;
 - `estimated`: the upload date with the 14-day recording lag overlaps exactly one period of the cup;
-- `unassigned`: `ambiguous` (several periods in the window), `no-date`, `no-league`, `championship`,
+- `estimated` + `repeat: true` ("repeat cup"): the same cup ran in several periods of the window. It is assigned to
+  the cup; `periods`/`candidates` list every period and start/end span them (counted in `periodStatus['repeat-cup']`);
+- `unassigned`: `ambiguous` (different cups; not reachable today), `no-date`, `no-league`, `championship`,
   `outside-schedule`, or `contradicted` (the schedule ran other formats at that CP on those dates and never
   this cup; `scheduled` lists what ran). Totals are in `summary.periodStatus`.
+
+**League inference rules** (`league.py`): (1) a keyword cup the schedule did not run in the upload-lag window stands
+for its same-name Mega variant (`cup_variants`: Color Cup / Mega Color Cup, Halloween, Catch) or the one scheduled CP
+edition of a bare Mega Edition, when that ran; "Mega Color Cup" / "Color Cup Mega" do not also count as the plain
+cup; "Great League: Mega Edition" / "Mega Great League" resolve to `mega@1500` (Great League CP), not the 10000 CP
+default. (2) `refine_battle_league` ranks: cups the text names (not a bare league word when the schedule did not run
+it), then formats the schedule ran in the window, then CP cap fit and species eligibility. Truncated CP reads
+('149' from 'CP 1490') give no cap (`plausible_cap`), reads above 6500 are dropped. A named cup the schedule never ran
+and has no Mega variant stays, so observed.py reports `contradicted` with both named. Human league answers override
+everything (observed.py). (3) `python3 -I league.py refine-all WORK_DIR [--dry-run]` rewrites only the
+`results/*.leagues.json` sidecars from stored results (metadata from a copy of state.sqlite and the registry), backing
+each up to `results-backup-leagues-<time>/`; `python3 -I observed_audit.py [WORK_DIR] [--web-root W]` prints the
+schedule-check counts and contradiction categories offline. `harvest.write_league_refinement` still uses the old
+call (no date/keywords); new analyses should call `league.refine_video(...)` instead.
 - On 2026-10-12 (1,496 battles): 0 confirmed (no verified recording dates), 1,070 estimated, 426 unassigned
   (192 ambiguous, 142 contradicted, 43 no date, 30 no league, 19 outside the schedule). 134 of the
   contradictions are Great League "Color Cup" battles uploaded while the schedule ran Mega Color Cup.
