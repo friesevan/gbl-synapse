@@ -920,8 +920,10 @@ class Harvester:
             if not getattr(self.a, "no_probe", False) and not reprocess:
                 probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)
                 plan = probe_plan(probe)
-            elif reprocess and not getattr(self.a, "no_probe", False) and labels.get("perspective") in ("left", "right"):
-                probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)   # screens only; whole video is analysed
+            elif reprocess and not getattr(self.a, "no_probe", False):
+                # Screens only; the whole video is analysed. The probe's search (32 keyframes, then 16 seeks) finds
+                # screens run-node's CROP=auto (16 seeks) misses, e.g. a faint phone edge on a dark backdrop.
+                probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)
                 plan = {"CROP": probe["box"] and ",".join(map(str, probe["box"]))} if probe and probe.get("box") else {}
             crop = perspective_crop(probe, labels.get("perspective"))
             if crop and plan is not None:
