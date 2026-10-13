@@ -184,7 +184,9 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     series:{t0:d.t0!=null?+d.t0.toFixed(2):null,fps:FPS,my:d.series.my.map(p=>p?+p.fill.toFixed(3):null),opponent:d.series.opponent.map(p=>p?+p.fill.toFixed(3):null)},fit,result:r});}
   b.evidence=battleEvidence(b);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))K.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById,fit);}
  // Focus shots during charged attacks (camera on one Pokémon) for the Shadow classifier (aura.js focusMoments).
- // Results from the timeline once the HP series exist (core.js inferResult).
+ // Results from the timeline once the HP series exist (core.js inferResult). The centred cutscene bar around each
+ // battle's end is kept too (hp.js centredReadings): a knockout in the final cutscene shows only there (rule 'knockout').
+ for(const b of finished)b.cutsceneBar=Hp.centredReadings(window(b.end-8,b.end+4),W);
  C.applyInferredResults(finished,{videoEnd});
  for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);b.focus=Aura.focusMoments(b,window(b.start-2,b.end+8).map(f=>barP===Hp.BAR?f:{...f,bars:forFocus(f.bars)}),W);}
  const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled,fit);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=K.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit});}Aura.applyToBattle(b,undefined,learned);}Shadow.applyToBattles(finished,undefined,{learned,rankings,moveTypes:new Map(gm.moves.map(m=>[m.moveId,m.type]))});

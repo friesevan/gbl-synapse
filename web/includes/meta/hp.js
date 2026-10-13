@@ -173,5 +173,10 @@ function track(frames,width,height=0){const s=width/REF_W,out={my:[],opponent:[]
   if(!xs.size){out[side]=frames.map(()=>null);continue;}const best=[...xs].sort((a,b)=>b[1]-a[1])[0][0]*3*s;let lastY=null;
   out[side]=frames.map(f=>{const c=f.bars.filter(b=>use(b)&&Math.abs(b.x0-best)<=4*s).sort((a,b)=>(lastY===null?0:Math.abs(a.y0-lastY)-Math.abs(b.y0-lastY))||(b.y1-b.y0)-(a.y1-a.y0));const b=c[0];if(!b)return null;lastY=b.y0;return {t:f.t,fill:b.fill,trail:b.trail};});}
  return out;}
-const api={BAR,BAR_WIDE,WIDE_ASPECT,barSettings,phoneBars,BAND,cls,outline,hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
+// The centred cutscene bar's readings in a window of frames: [[t, fill, y0], …] (every centred bar of every frame;
+// y0 in 886-wide units). track() leaves these out of both sides' HP, but the defender's bar, framed alone as it is
+// hit, shows a knockout in the final cutscene: run-node.cjs saves the battle's last seconds (b.cutsceneBar) and
+// core.js inferResult reads them (rule 'knockout').
+function centredReadings(frames,width){const s=width/REF_W,out=[];for(const f of frames)for(const b of f.bars||[])if(centred(b,width))out.push([+f.t.toFixed(1),+b.fill.toFixed(3),Math.round(b.y0/s)]);return out;}
+const api={BAR,BAR_WIDE,WIDE_ASPECT,barSettings,phoneBars,BAND,cls,outline,hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,centredReadings,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
 })(typeof window==='undefined'?globalThis:window);

@@ -143,6 +143,33 @@ test('timeline results: two fainted on the counter and the last HP bar emptied a
  g=C.inferResult(tl({fo:2,fm:2,my:fill(30,.5),opp:fill(30,0)}));assert.deepEqual([g.source,g.rule,g.value,g.p],['guess','tie','Win',.84]);
  assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.05),opp:fill(30,0)})),null);
  assert.equal(C.inferResult(tl({fo:2,fm:1,end:100,my:fill(30,.5),opp:fill(30,0),extra:{end:105}})),null);});
+test('timeline results: a knockout in the final cutscene (centred bar empty at the end) is asked with its guess until promoted',()=>{
+ // b.cutsceneBar: [t, fill, y0] readings of the centred bar around the end; neither side's own bar emptied.
+ const cut=(t0,vals)=>vals.map((v,i)=>[+(t0+i/10).toFixed(1),v,980]),ko=cut(99.2,[.4,.3,.2,.1,0,0,0,0,0,0,0,0,0]);
+ let g=C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:fill(30,.4),extra:{cutsceneBar:ko}}));assert.deepEqual([g.source,g.rule,g.value,g.p],['guess','knockout','Win',.96]);
+ g=C.inferResult(tl({fm:2,fo:0,my:fill(30,.4),opp:fill(30,.7),extra:{cutsceneBar:ko}}));assert.deepEqual([g.rule,g.value],['knockout','Loss']);
+ // Not when the cutscene bar is not empty in its last second, the reading is over 3 s from the end, the counter is 2/2,
+ // the other side's own bar is nearly empty too, or the saved result has no cutscene readings (older runs). fadeAt:
+ // null (no fade, no next battle) leaves nothing else to decide, so null means the rule did not fire.
+ assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:fill(30,.4),extra:{fadeAt:null,cutsceneBar:cut(99.2,[0,0,0,0,0,.2,.2,.2,.2,.2,.2])}})),null);
+ assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:fill(30,.4),extra:{fadeAt:null,cutsceneBar:cut(95,[0,0,0,0,0])}})),null);
+ assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:fill(30,.4),extra:{fadeAt:null,cutsceneBar:cut(104,[.1,0,0])}})),null,'readings more than 3 s after the end are ignored');
+ assert.equal(C.inferResult(tl({fo:2,fm:2,my:fill(30,.5),opp:fill(30,.4),extra:{fadeAt:null,cutsceneBar:ko}})),null);
+ assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.05),opp:fill(30,.4),extra:{fadeAt:null,cutsceneBar:ko}})),null);
+ assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:fill(30,.4),extra:{fadeAt:null}})),null);
+ // The opponent's own bar emptying is still the confident rule.
+ assert.equal(C.inferResult(tl({fo:2,fm:1,my:fill(30,.5),opp:fill(30,0),extra:{cutsceneBar:ko}})).source,'faints');
+ // Learns like the other rules: a guess until the learning loop promotes it, then a confident 'knockout' result.
+ const bs=[tl({fo:2,fm:1,my:fill(30,.5),opp:fill(30,.4),extra:{cutsceneBar:ko}})];
+ C.applyInferredResults(bs,{videoEnd:400});assert.deepEqual([bs[0].result,bs[0].resultSource,bs[0].resultGuess.rule,bs[0].resultGuess.value],['Unknown','','knockout','Win']);
+ C.applyInferredResults(bs,{videoEnd:400,promoted:new Set(['knockout'])});assert.deepEqual([bs[0].result,bs[0].resultSource,bs[0].resultGuess],['Win','knockout',undefined]);
+ C.applyInferredResults(bs,{videoEnd:400});assert.deepEqual([bs[0].result,bs[0].resultSource],['Unknown','']);
+ assert.match(C.guessDetail(g),/you lost.*final charged-attack cutscene/);});
+test('hp.js centredReadings keeps every centred (cutscene) bar with its time, fill and height',()=>{
+ const H=require('../includes/meta/hp.js'),bar=(x0,o={})=>({x0,y0:900,y1:914,x1:x0+246,fill:.6,trail:0,frame:1,...o});
+ const fr=[{t:10.04,bars:[bar(55),bar(321,{fill:.0004})]},{t:10.1,bars:[bar(450)]},{t:10.2,bars:[bar(318,{fill:.25,y0:880}),bar(322,{fill:0,y0:900})]}];
+ assert.deepEqual(H.centredReadings(fr,886),[[10,0,900],[10.2,.25,880],[10.2,0,900]]);
+ assert.deepEqual(H.centredReadings([{t:3,bars:[bar(321*296/886,{y0:300})]}],296),[[3,.6,898]],'source pixels: y0 in 886-wide units');});
 test('timeline results: surrender dialog, then the battle ends: you forfeited',()=>{
  const r=C.inferResult(tl({end:50,events:[{t:48,kind:'surrender'}]}));assert.deepEqual([r.result,r.ending,r.source],['Loss','you-forfeit','surrender']);
  assert.equal(C.inferResult(tl({end:50,events:[{t:30,kind:'surrender'}]})),null);});

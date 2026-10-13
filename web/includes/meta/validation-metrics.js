@@ -40,7 +40,7 @@ function shadowSeries(history){return records(history).filter(r=>num(r.heldOut?.
 // Headline tiles: held-out accuracy per kind with the change since the previous refit that measured it,
 // then live queue counts (answers, model resolved, open) with the change since the last refit.
 // Result rules on the owner's answers: right/total per rule, with the promotion gate (>= 95% on >= 30 answers from >= 5 videos).
-const RULE_ORDER=['fade','tie','mid-start','both-alive','unread','faints','surrender'];
+const RULE_ORDER=['fade','tie','mid-start','both-alive','unread','knockout','faints','surrender'];
 function ruleDetail(h){const rules=h.rules||{},names=[...RULE_ORDER.filter(n=>rules[n]),...Object.keys(rules).filter(n=>!RULE_ORDER.includes(n))];
  return names.map(n=>{const r=rules[n],p=r.total?Math.round(r.right/r.total*100):0;return `${n} ${fmtInt(r.right)}/${fmtInt(r.total)} (${p}%${r.promoted?', confident':r.uncertain?`, asks; gate ${fmtInt(r.total)}/30 answers${num(r.videos)?`, ${fmtInt(r.videos)}/5 videos`:''}`:''})`;}).join(' · ');}
 function tiles(history,live={}){const recs=records(history),out=[],last=recs.at(-1);

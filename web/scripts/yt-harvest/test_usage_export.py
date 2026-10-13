@@ -122,8 +122,9 @@ class UsageExportTests(unittest.TestCase):
         _, report = self.build()
         self.assertEqual(sum(report['resultSources'].values()), report['eligibleTeams'])
         self.assertEqual([ue.result_from(b) for b in ({'result': 'Win', 'resultSource': 'faints'}, {'result': 'Loss', 'resultSource': 'reviewer'},
-                          {'result': 'Win', 'resultSource': 'result screen'}, {'result': 'Unknown', 'resultSource': 'unresolvable'}, {'result': 'Unknown'})],
-                         ['inferred', 'human', 'read', 'unresolvable', 'unknown'])
+                          {'result': 'Win', 'resultSource': 'result screen'}, {'result': 'Unknown', 'resultSource': 'unresolvable'}, {'result': 'Unknown'},
+                                                 {'result': 'Win', 'resultSource': 'knockout'})],
+                         ['inferred', 'human', 'read', 'unresolvable', 'unknown', 'inferred'])
 
     def test_eligibility_rules_and_reasons(self):
         usage, report = self.build()

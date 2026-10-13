@@ -307,12 +307,16 @@ class HudTracker{
 //   fade (a fade to black after the last HUD with both sides alive: opponent forfeit, 10/14), tie (counter 2/2, the
 //   last bar empty on one side: that side lost, 41/49), mid-start (counter 3 but the recording began mid-battle and
 //   the bars don't agree: 7/15), unread (a result-like screen OCR couldn't read), both-alive (older saved results
-//   without fade data and both bars alive at the end: the forfeit-looking case; re-extraction adds the fields).
+//   without fade data and both bars alive at the end: the forfeit-looking case; re-extraction adds the fields),
+//   knockout (counter 2 on one side, ≤1 on the other, and the centred bar of the final charged-attack cutscene read
+//   empty within 3 s of the end, the other side's own bar ≥ 10%: the knockout of that side's last Pokémon; the
+//   cutscene bar is the defender's, framed alone as it is hit; b.cutsceneBar from run-node.cjs; 74/77 read result
+//   screens on 122 re-extracted labelled videos, 7/9 owner answers, 2026-10-13).
 //   Timer endings (both alive at 0:00) can't be told apart: the clock isn't read.
 // - UNRESOLVABLE, closed (policy) when no rule applies, there is no fade and no result-like screen, and the next
 //   battle's HUD follows within 10 s or the recording ends (a hard cut).
 const RESULT_RULES={zero:.03,alive:.1,lag:3,cut:10,fade:6};
-const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46};
+const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46,knockout:.96};
 const PROMOTABLE=new Set(Object.keys(RESULT_GUESS_P));
 // Sources that inference may set and re-derive; legacy names from saved results are replaced too.
 const INFERRED_SOURCES=new Set(['','faints','surrender','unresolvable','Poké Ball count','surrender dialog',...PROMOTABLE]);
@@ -322,11 +326,15 @@ function median(a){const s=a.filter(Number.isFinite).sort((p,q)=>p-q),n=s.length
 function lastHp(b){let g=null;for(const m of b.matchups||[])if(m.series&&(!g||m.end>g.end))g=m;if(!g)return {};const s=g.series,out={};
  for(const side of ['my','opponent']){const pts=[];(s[side]||[]).forEach((v,i)=>{if(v!=null&&Number.isFinite(v))pts.push([s.ts?s.ts[i]:s.t0+i/s.fps,v]);});if(!pts.length)continue;const tl=pts.at(-1)[0];out[side]={t:tl,v:median(pts.filter(p=>p[0]>=tl-2).map(p=>p[1]))};}
  return out;}
+// The centred cutscene bar at the end of the battle (b.cutsceneBar: [[t, fill, y0], …] around the end): {v: median fill
+// over the last 1 s of readings up to `lag` s after the end, t: time of the last one}, or null.
+function lastCutscene(b,lag=RESULT_RULES.lag){const pts=(b.cutsceneBar||[]).filter(p=>Number.isFinite(p[1])&&p[0]<=b.end+lag);if(!pts.length)return null;const tl=pts.at(-1)[0];return {t:tl,v:median(pts.filter(p=>p[0]>=tl-1).map(p=>p[1]))};}
 const GUESS_WHY={fade:'The screen faded to black with both sides still standing, which usually means the opponent left or forfeited, but the game fades at every ending',
  tie:'Both sides had two Pokémon down and one last HP bar read empty at the end; the empty side probably lost, but the final knockout is often hidden by the attack animation',
  'mid-start':'All three of one side’s Pokémon show as fainted, but the recording began mid-battle so the counter may be stale and the HP bars don’t confirm it',
  unread:'A result-like screen appeared but could not be read, and nothing on the timeline decides',
- 'both-alive':'Both HP bars were still above empty at the end, so the opponent probably left or forfeited (this saved result has no fade data)'};
+ 'both-alive':'Both HP bars were still above empty at the end, so the opponent probably left or forfeited (this saved result has no fade data)',
+ knockout:'Two Pokémon of the losing side had fainted on the Poké Ball counter and the HP bar shown alone in the final charged-attack cutscene emptied as the battle ended; that bar is the defender\u2019s, but the cutscene does not show whose it is'};
 const GUESS_VALUE={'Win:opponent-forfeit':'the opponent forfeited','Win':'you won','Loss':'you lost','Loss:you-forfeit':'you forfeited','Tie':'a tie'};
 // The question text for a guess; p is the measured precision when known ({right,total}) else the default.
 function guessDetail(g,stat){const n=stat&&stat.total>=10?`${stat.right} of ${stat.total} of your earlier answers agreed`:`about ${Math.round(g.p*100)}% right in earlier checks`;
@@ -343,6 +351,9 @@ function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.e
  const zeroed=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my';return f[x]>=2&&f[y]<2&&empty(x)&&standing(y);});
  if(zeroed.length===1){const x=zeroed[0];return {result:x==='opponent'?'Win':'Loss',source:'faints',reason:`Two of ${name[x]} Pokémon fainted on the Poké Ball counter and the last one's HP bar emptied at the end`};}
  const lose=x=>x==='opponent'?'Win':'Loss';
+ // The last knockout inside a cutscene: the defender's bar is centred there, not in either side's own HP series.
+ const cut=lastCutscene(b,R.lag),ko=!!cut&&cut.v<=R.zero&&Math.abs(b.end-cut.t)<=R.lag,knocked=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my';return ko&&f[x]>=2&&f[y]<2&&standing(y);});
+ if(knocked.length===1)return guess('knockout',lose(knocked[0]),`Counter at 2 for ${name[knocked[0]]} side; the bar shown alone in the final cutscene emptied at the end`);
  if(three.length===1)return guess('mid-start',lose(three[0]),`Poké Ball counter shows all three of ${name[three[0]]} Pokémon fainted, but the recording started mid-battle`);
  if(f.my===2&&f.opponent===2){const e=['my','opponent'].filter(empty);if(e.length===1&&standing(e[0]==='my'?'opponent':'my'))return guess('tie',lose(e[0]==='my'?'my':'opponent'),`Counter at 2 on both sides; ${name[e[0]]} last HP bar is empty`);}
  if(b.resultUnread)return guess('unread',three[0]?lose(three[0]):'Win:opponent-forfeit','A result-like screen could not be read');
@@ -463,5 +474,5 @@ HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null){const b=
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

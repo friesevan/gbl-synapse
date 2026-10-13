@@ -125,11 +125,12 @@ def in_window(collected, since, until):
 
 
 def result_from(b):
-    """read (result screen), inferred (battle timeline: faints / surrender), human (reviewer), unresolvable or unknown."""
+    """read (result screen), inferred (battle timeline: faints / surrender, or an uncertain rule the learning loop promoted),
+    human (reviewer), unresolvable or unknown."""
     src, result = str(b.get('resultSource') or ''), b.get('result')
     if src == 'reviewer':
         return 'human'
-    if src in ('faints', 'surrender', 'Poké Ball count', 'surrender dialog'):
+    if src in ('faints', 'surrender', 'Poké Ball count', 'surrender dialog', 'fade', 'tie', 'mid-start', 'unread', 'both-alive', 'knockout'):
         return 'inferred'
     if src == 'unresolvable':
         return 'unresolvable'
