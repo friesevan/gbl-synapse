@@ -30,24 +30,42 @@ function localeDictionary(pokemon,names,lang,english=null){const loc=LOCALES[lan
   if(m){const pre=m[2]==='Mega'?loc.mega:loc.primal;if(!pre)continue;shown=pre+local+(m[3]?m[3].trim():'');}
   const key=nameKey(shown,lang);if(key.length<(loc.script?2:3)||english?.has(key))continue;if(!map.has(key))map.set(key,[]);if(!map.get(key).some(x=>x.speciesId===p.speciesId))map.get(key).push(p);}
  return map;}
-// Exact match, or one wrong character for longer names when exactly one species is that close.
-function matchLocale(text,map,lang){if(!map)return null;const cjk=!!LOCALES[lang]?.script;let key=nameKey(String(text).replace(/\bCP\s*\d+/gi,''),lang);if(key.length<(cjk?2:3))return null;
+// Korean names are compared by jamo (the letters inside a syllable): blurry plates mostly lose one stroke (메→에,
+// 벨→켈), which is one jamo but a whole syllable. Up to a quarter of the jamo may differ when one species is
+// closest. Mega X and Y differ only in the final Latin letter, which Korean OCR reads as a syllable (누, 뉘); the
+// English read of the same plate (latin) usually still ends in it.
+const jamo=s=>{let o='';for(const c of s){const i=c.charCodeAt(0)-0xAC00;o+=i<0||i>11171?c:String.fromCharCode(0x1100+Math.floor(i/588),0x1161+Math.floor(i%588/28))+(i%28?String.fromCharCode(0x11A7+i%28):'');}return o;},jamoNames=new WeakMap();
+function matchJamo(key,map,latin){const kj=jamo(key),tol=Math.max(1,kj.length>>2);if(kj.length<6)return null;let names=jamoNames.get(map);if(!names)jamoNames.set(map,names=[...map].map(([name,items])=>[jamo(name),name,items]));
+ let best=Infinity,found=[];for(const [nj,name,items] of names){if(Math.abs(nj.length-kj.length)>tol)continue;const d=distance(kj,nj);if(d>tol||d>best)continue;if(d<best){best=d;found=[];}found.push([name,items]);}
+ const tail=/([a-z])[^a-z]*$/i.exec(String(latin||''))?.[1]?.toLowerCase();if(found.length>1&&(tail==='x'||tail==='y')&&found.every(([n])=>/[xy]$/.test(n))){const pick=found.filter(([n])=>n.endsWith(tail));if(pick.length)found=pick;}
+ return found.length&&found.every(([,items])=>englishKey(items[0])===englishKey(found[0][1][0]))?found[0][1]:null;}
+// Exact match, or one wrong character for longer names when exactly one species is that close (Korean: matchJamo).
+function matchLocale(text,map,lang,latin=null){if(!map)return null;const cjk=!!LOCALES[lang]?.script;let key=nameKey(String(text).replace(/\bCP\s*\d+/gi,''),lang);if(key.length<(cjk?2:3))return null;
  let candidates=map.get(key),quality='exact';
  // CJK OCR often adds a stray digit or Latin letter at either end (the CP's first digit, a ball's edge).
  if(!candidates&&cjk){const core=key.replace(/^[0-9a-z]+|[0-9a-z]+$/g,'');if(core!==key&&core.length>=2){candidates=map.get(core);if(!candidates&&core.length>=4)key=core;}}
+ if(!candidates&&lang==='ko'){candidates=matchJamo(key,map,latin);quality='suggestion';}
  if(!candidates){if(key.length<(cjk?4:5))return null;let found=null,ambiguous=false;for(const [name,items] of map){if(Math.abs(name.length-key.length)>1||distance(key,name)>1)continue;if(found&&englishKey(found[0])!==englishKey(items[0]))ambiguous=true;found=found||items;}
   if(!found||ambiguous)return null;candidates=found;quality='suggestion';}
  return {...hitOf(text,candidates,quality),lang};}
 // Which language a video's nameplates use, from exact matches of distinct species. It starts as English
 // and switches once to a language with two exact matches, or one long one (≥ 3 CJK characters / 5 letters)
 // while English has none. Until then other languages are only consulted, never used, so English videos
-// keep their results. Extra OCR for CJK languages stops once English has 3 species or after `maxTries`.
+// keep their results. Extra OCR for CJK languages stops once English has 3 species, or after `maxTries`
+// plates (`maxBlind` while English has named nothing: on blurry 288×640 uploads the first exact Korean
+// match came at the 63rd plate). Plates whose English read has no letter are skipped (CJK reads of them were
+// empty too). After `narrowAfter` tries a language whose reads average `narrowGap` points of confidence below
+// the best language's is no longer read, so a long search costs about one read per plate. `lang` presets the
+// language (a second pass over a video whose language was decided late).
 class NameLanguage{
- constructor({maxTries=40}={}){this.lang='en';this.votes={};this.tries=0;this.maxTries=maxTries;}
+ constructor({lang='en',maxTries=40,maxBlind=200,narrowAfter=20,narrowGap=20}={}){this.lang=lang||'en';this.votes={};this.tries=0;this.maxTries=maxTries;this.maxBlind=maxBlind;this.narrowAfter=narrowAfter;this.narrowGap=narrowGap;this.conf={};}
  count(lang){return this.votes[lang]?.size||0;}
  vote(lang,key){(this.votes[lang]||(this.votes[lang]=new Set())).add(key);if(this.lang!=='en'||lang==='en')return false;const k=this.count(lang),long=key.length>=(LOCALES[lang]?.script?3:5);
   if(k>=2||(k===1&&long&&this.count('en')===0)){this.lang=lang;return true;}return false;}
- searching(){return this.lang==='en'&&this.count('en')<3&&this.tries<this.maxTries;}
+ searching(){return this.lang==='en'&&this.count('en')<3&&this.tries<(this.count('en')?this.maxTries:this.maxBlind);}
+ // Mean confidence of a CJK model's reads while searching (a model not read yet, e.g. not loaded in the browser, stays in).
+ heard(lang,confidence){const c=this.conf[lang]||(this.conf[lang]={n:0,sum:0});c.n++;c.sum+=confidence||0;}
+ reads(lang){if(this.tries<this.narrowAfter||!this.conf[lang]?.n)return true;const mean=l=>this.conf[l]?.n?this.conf[l].sum/this.conf[l].n:0,best=Math.max(...Object.keys(this.conf).map(mean));return mean(lang)>=best-this.narrowGap;}
 }
 // Resolves one nameplate. eng: {text, confidence} from the English OCR; alt(lang) reads the box with that
 // language's OCR model (CJK only; omit it where no model is available). Returns {hit, switched}.
@@ -56,10 +74,10 @@ class NameLanguage{
 function readName(eng,{dict,locales={},language,alt=null,minConfidence=45}){const m=match(eng.text,dict);let switched=false,cjkTried=false;
  const englishHit=m&&eng.confidence>=minConfidence?{...m,confidence:eng.confidence,raw:eng.text}:null;
  if(englishHit?.quality==='exact')return {hit:englishHit,switched:language.vote('en',englishHit.key)};
- let exact=null,fuzzy=null;
+ let exact=null,fuzzy=null;const searching=language.lang==='en'&&language.searching()&&/\p{L}/u.test(String(eng.text));
  for(const [lang,map] of Object.entries(locales)){if(!map||(language.lang!=='en'&&language.lang!==lang))continue;const cjk=!!LOCALES[lang]?.script;
-  if(cjk&&(!alt||(language.lang==='en'&&!language.searching())))continue;const r=cjk?alt(lang):eng;cjkTried=cjkTried||cjk;
-  const lm=r&&r.confidence>=minConfidence?matchLocale(r.text,map,lang):null;if(!lm)continue;const hit={...lm,confidence:r.confidence,raw:r.text};
+  if(cjk&&(!alt||(language.lang==='en'&&(!searching||!language.reads(lang)))))continue;const r=cjk?alt(lang):eng;cjkTried=cjkTried||cjk;if(cjk&&r&&language.lang==='en')language.heard(lang,r.confidence);
+  const lm=r&&r.confidence>=minConfidence?matchLocale(r.text,map,lang,eng.text):null;if(!lm)continue;const hit={...lm,confidence:r.confidence,raw:r.text};
   if(lm.quality==='exact'){switched=language.vote(lang,lm.key)||switched;exact=hit;break;}fuzzy=fuzzy||hit;}
  if(cjkTried&&language.lang==='en')language.tries++;
  if(language.lang==='en')return {hit:englishHit,switched};

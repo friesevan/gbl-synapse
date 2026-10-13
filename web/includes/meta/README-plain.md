@@ -82,6 +82,7 @@ On a 12-core laptop, the batch engine used by the YouTube harvester analyses abo
 - Read a result the upload cut away when the Poké Balls do not settle it.
 - Tell apart two forms with identical types and moves, such as Dialga and Dialga Origin, except by what players usually run.
 - Read nicknames on the recorder's own side.
+- Name the Pokémon in uploads whose crop cuts the names off the top of the phone screen.
 
 The [technical reference](README.md#10-gaps-and-improvement-areas) lists what would fix each of these, and what would make it faster.
 

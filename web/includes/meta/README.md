@@ -334,6 +334,20 @@ Harvested uploads come from phones in many languages. Before 2026-10-11, 101 of 
 
 Ten sampled videos that gave no battle went from 0 to 55 battles. All 9 labelled recordings produced identical JSON before and after each of these changes, and English videos never switched language. Still open: results of videos that cut their result screens (most CJK uploads) come only from the Poké Ball count; Chinese two-line banners read poorly with the fast model; Portuguese move names are not in PokeAPI.
 
+**At harvest scale, and the language search (2026-10-13).** The 2026-10-12 harvest re-analysed 286 requeued videos with these fixes. Japanese-titled videos went from 0 to 409 battles (45 of 74 gained), Korean from 1 to 92, Chinese from 0 to 38; on Latin-script videos the results read went from 6 to 351. Of the CJK videos still at 0, most are not battle footage (events, raids, guides); 36 analyses had spent the CJK search budget with English never reaching three species, 16 of them uploads of one Korean channel at 288×640, whose other 33 videos switched and gave about 5 battles each (one per game of a 5-game set). Their plates are blurry: the Korean model reads 메가뮤츠Y as 메가뮤츠누 and 이벨타르 as 이켈타로, so the first exact match came at the 53rd–79th plate, after the 40-plate budget, and every new fingerprint of the same unreadable plate (a "0", an empty read) cost a try. Changes:
+
+- **Search budget** (`NameLanguage`): plates whose English read has no letter cost no CJK read and no try; the budget is 200 plates while English has named nothing (40 once it has); after 20 tries a model whose reads average 20 points of confidence below the best one's is no longer asked, so a long search costs about one read per plate (models not read yet, such as ones the browser hasn't loaded, stay in).
+- **Korean by jamo** (`matchJamo`): after the switch to Korean, a plate matches the species whose name is closest in jamo (the letters inside a syllable), within a quarter of the jamo, when one species is closest. A blurred stroke changes one jamo but a whole syllable. Mega X and Y differ only in the final Latin letter, which Korean OCR reads as a syllable; the English read of the same plate usually still ends in it. Damaging each of the 1,076 Korean names with random jamo errors gave the wrong species 3 times at one error, 0 at two and 3 at three (the rest right or unmatched), and two consistent reads are still needed per species. Suggestions never switch the language.
+- **Second pass** (`run-node.cjs`): the pass is single, so battles that ended before the language was decided had no species and were dropped. When the language was decided more than 45 s after the first nameplate (`LATE_LANGUAGE`), the video is analysed again with it preset (`NAME_LANGUAGE`); OCR is cached, so this mostly costs a second decode. The two Japanese videos tested whose first battle starts at the switch have long intros: the decision came within 45 s of their first plate and their output is unchanged.
+
+| Video | UI | Harvest 2026-10-12 | Budget | + jamo | + second pass |
+| --- | --- | --- | --- | --- | --- |
+| 99komx6lfIw (288×640) | ko | 0 battles | 2 battles, 3 species | 2, 3 | **5 battles**, 7 opponent species, 5 results |
+| 9KDK30i9hOI (288×640) | ko | 0 | 3, 3 + 3 | 3, 7 + 6, 1 full team | **5 battles**, 12 + 14 species, 2 full teams |
+| 6qkOGaSvDIk (phone mock-up frame) | ja | 0 | 2 | — | 2 |
+
+Not recoverable from nameplates: uploads whose crop cuts the names off the phone's top (K7vaQKc1Gxs: only the ball row is in the frame; te5W8Jrc-Mk: the names are cut in half). The species are still in the "X used Y!" and send-out banners, which read well in every language; using banner species when no nameplate reads is listed under gaps.
+
 ## 7. Accuracy: what has been measured
 
 ### Battle level, on the labelled benchmark
@@ -444,6 +458,7 @@ Ordered by expected impact, with the evidence behind each estimate.
 | **Forms with identical types** | Kyurem, Mega Mewtwo, Dialga/Palkia Origin rest on priors; forms never qualify for auto-resolution (21 answers) | use charged-attack damage (the forms' stats differ), ask for form labels specifically on those species |
 | **Low-resolution sources** | 288×640 and 360×640 uploads lose matchups entirely (23 labels with no evidence) | enlarge OCR crops while measuring bars at native size; lower the minimum bar height for small sources with its own validation |
 | **Lead when the opponent swaps immediately** | "Go, X!" banners are recorded but not yet used to set the lead | use the first opponent "Go" banner as the lead when it precedes the first stable nameplate |
+| **Names cropped off the top** | some uploads crop the phone's top so the nameplate names are outside the frame (K7vaQKc1Gxs) or cut in half (te5W8Jrc-Mk); the tracker needs a nameplate species, so these give 0 battles | take species from the "X used Y!" and "Go, X!" / send-out banners (read in every language, with the side) when the nameplates name nothing |
 | **Nicknamed recorder Pokémon** | only the recorder's side can be nicknamed; OCR cannot resolve them | a species check question when nameplate confidence is below ~60, or the local vision model as second reader |
 | **Label independence** | boundary labels come from the same Poké Ball cues as the method | a second labeller, and labels from the game's own battle log where creators share it |
 
@@ -472,7 +487,7 @@ python3 web/run_app.py                                            # local app: h
 bash web/scripts/yt-harvest/overnight.sh --hours 9                # unattended harvest
 ```
 
-Environment variables of the runner: `GAMEMASTER=path` (game data as of the recording date), `LEAGUE=1500|2500|10000|500`, `CROP=auto|x0,y0,x1,y1`, `START`/`END`/`RANGES`, `FPS=10`, `HUD_EVERY=5`, `FFMPEG_THREADS=1`, `DECODE_ROWS=full`, `LEARNED_PATH`, `NAME_LOCALES`, `OCR_CACHE_DIR`. Benchmark runs need ffmpeg and the Tesseract CLI; CJK models live in `~/.cache/gbl-synapse/tessdata`.
+Environment variables of the runner: `GAMEMASTER=path` (game data as of the recording date), `LEAGUE=1500|2500|10000|500`, `CROP=auto|x0,y0,x1,y1`, `START`/`END`/`RANGES`, `FPS=10`, `HUD_EVERY=5`, `FFMPEG_THREADS=1`, `DECODE_ROWS=full`, `LEARNED_PATH`, `NAME_LOCALES`, `NAME_LANGUAGE` (preset nameplate language), `LATE_LANGUAGE=45` (second pass when the language was decided this many seconds after the first nameplate; −1 never), `OCR_CACHE_DIR`. Benchmark runs need ffmpeg and the Tesseract CLI; CJK models live in `~/.cache/gbl-synapse/tessdata`.
 
 ## 12. History and provenance
 
@@ -485,6 +500,7 @@ The extractor was ported from the owner's **PoGo Recorder / PoGoAnalyzer** proto
 | v3 | 2026-10-10 | single-pass Node engine at 10 fps, whole-matchup HP series, energy and moveset reconciliation, charged-attack damage, effect text, learned priors from 195 answers, cross-upload dedup, shared sample |
 | v4 | 2026-10-11 | evidence model refit on 228 labels (gap likelihood, proportional noise, clock-time energy, icon confusion), Shadow classifier, focus shots, HP-bar detector rework, recalibration and screen refit, other UI languages |
 | | 2026-10-12 | results from the timeline with learning rules, result screens and banners in ten languages, boundary rules, evidence refit on the new hits, per-video observed catalog |
+| | 2026-10-13 | language search for blurry CJK uploads (budget, model narrowing), Korean names by jamo, second pass when the language was decided late |
 
 ## 13. Dependencies and attribution
 

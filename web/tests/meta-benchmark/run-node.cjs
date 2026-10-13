@@ -19,6 +19,8 @@
 //   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
 //   NAME_LOCALES=de,ja,… | off   nameplate languages tried besides English (default: all; CJK ones need
 //                     their Tesseract model in TESSDATA_LOCALES, default ~/.cache/gbl-synapse/tessdata)
+//   NAME_LANGUAGE=ko  preset the nameplate language; LATE_LANGUAGE=45  re-run with it when it was decided more
+//                     than this many s after the first nameplate (-1: never)
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
 const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs'),Dialog=require('./surrender-cache.cjs'),Calibration=require('./calibration-cache.cjs');
 const Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),C=require('../../includes/meta/core.js'),K=require('../../includes/meta/combat.js'),Hp=require('../../includes/meta/hp.js');
@@ -37,7 +39,8 @@ const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'me
 // or once it has been recognised (core.js NameLanguage).
 const TESSDATA_LOCALES=process.env.TESSDATA_LOCALES||path.join(os.homedir(),'.cache/gbl-synapse/tessdata'),wantLocales=process.env.NAME_LOCALES==='off'?[]:process.env.NAME_LOCALES?process.env.NAME_LOCALES.split(','):Object.keys(C.LOCALES);
 const localNames=require('../../includes/meta/species-names.json').names,locales=Object.fromEntries(wantLocales.filter(l=>C.LOCALES[l]&&(!C.LOCALES[l].script||fs.existsSync(path.join(TESSDATA_LOCALES,C.LOCALES[l].ocr+'.traineddata')))).map(l=>[l,C.localeDictionary(gm.pokemon,localNames,l,dict)]));
-const nameLanguage=new C.NameLanguage();
+// NAME_LANGUAGE=ko|ja|… presets the nameplate language (set by the second pass below).
+const presetLanguage=process.env.NAME_LANGUAGE&&locales[process.env.NAME_LANGUAGE]?process.env.NAME_LANGUAGE:null,nameLanguage=new C.NameLanguage({lang:presetLanguage});
 // Banners in other UI languages: localised move names (move-names.json, PokeAPI) per language.
 const localMoves=require('../../includes/meta/move-names.json').names,moveMaps=Object.fromEntries(Object.keys(C.LOCALES).map(l=>[l,C.moveDictionary(gm.moves,localMoves,l)]));
 // The language model to read a result screen, banner, dialog or effect text with: the video's CJK language once
@@ -72,7 +75,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  const hudOffset=new C.HudOffset();
  // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
- function nameOf(img,s,t){let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;const r=ocr(img,s.nameBox),box=s.nameBox,res=C.readName(r,{dict,locales,language:nameLanguage,alt:lang=>ocrLocale(img,box,lang)});hit=res.hit;names.set(s.bits,hit);if(res.switched){names.forgetUnread();metrics.nameLanguageAt=t;}}else metrics.cached++;return hit;}
+ function nameOf(img,s,t){let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;if(metrics.firstPlateAt===undefined)metrics.firstPlateAt=t;const r=ocr(img,s.nameBox),box=s.nameBox,res=C.readName(r,{dict,locales,language:nameLanguage,alt:lang=>ocrLocale(img,box,lang)});hit=res.hit;names.set(s.bits,hit);if(res.switched){names.forgetUnread();metrics.nameLanguageAt=t;}}else metrics.cached++;return hit;}
  let dy=null,k=0,filled=0,lastT=null,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*rowsUsed*4,frame=Buffer.alloc(W*H*4);
  // Banners: English text first ("Go, X!", "X used Y!"); other Latin-script UIs from the same text; a CJK UI
  // (once recognised) only with its language model (core.js localBanner). Chinese banners take two lines.
@@ -196,6 +199,14 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  out.full=finished.map(b=>({...b,matchups:b.matchups.map(({result,...g})=>g)}));
  // The nameplate language, when it isn't English (absent = English).
  if(nameLanguage.lang!=='en')out.nameLanguage=nameLanguage.lang;
+ if(presetLanguage)metrics.nameLanguagePreset={lang:presetLanguage,decidedAt:Number(process.env.NAME_LANGUAGE_AT)||null,firstPassSeconds:Number(process.env.NAME_LANGUAGE_FIRST_PASS)||null};
+ // The pass is single: battles that ended before the language was decided had no species and were dropped. When the
+ // decision came more than LATE_LANGUAGE s after the first nameplate, the video is analysed again with the language
+ // preset (OCR is cached, so the second pass mostly costs the decode).
+ const late=Number(process.env.LATE_LANGUAGE??45);if(!presetLanguage&&nameLanguage.lang!=='en'&&late>=0&&metrics.nameLanguageAt-metrics.firstPlateAt>late){fs.rmSync(tmp,{recursive:true,force:true});
+  console.log(`${out.recording}: nameplates are ${nameLanguage.lang}, decided at ${metrics.nameLanguageAt} s (first plate ${metrics.firstPlateAt} s); analysing again with the language preset`);
+  const r=require('node:child_process').spawnSync(process.execPath,[__filename,video,outPath],{env:{...process.env,NAME_LANGUAGE:nameLanguage.lang,NAME_LANGUAGE_AT:String(metrics.nameLanguageAt),NAME_LANGUAGE_FIRST_PASS:String((Date.now()-started)/1000)},stdio:'inherit'});
+  if(r.status===0)return;console.log('second pass failed; keeping the first');}
  fs.writeFileSync(outPath,JSON.stringify(out));fs.rmSync(tmp,{recursive:true,force:true});
  const ms=metrics.ms;console.log(`${out.recording}: ${battles.length} battles, ${videoSeconds.toFixed(0)} s video in ${seconds.toFixed(1)} s (${out.realtime}× real time) · ${out.ocrReads} OCR reads · decode wait ${(ms.decodeWait/1000).toFixed(1)} s, HUD ${(ms.hud/1000).toFixed(1)} s (OCR ${(ms.ocr/1000).toFixed(1)} s), bars ${(ms.bars/1000).toFixed(1)} s, fit ${(ms.fit/1000).toFixed(1)} s`);
 })();

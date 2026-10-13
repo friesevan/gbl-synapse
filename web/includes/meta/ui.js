@@ -76,7 +76,7 @@ async function cjkWorker(lang){if(cjk.workers[lang])return cjk.workers[lang];sta
 const cjkActive=()=>{const l=nameLanguage.lang;return C.LOCALES[l]?.script?cjk.workers[l]||null:null;};
 async function cjkAlt(eng,box){if(cjk.off)return null;const decided=C.LOCALES[nameLanguage.lang]?.script?nameLanguage.lang:null;
  if(decided){const w=cjk.workers[decided];if(!w)return null;const r=await ocrRegion(hudCanvas,box,{worker:w});return l=>l===decided?r:null;}
- if(nameLanguage.lang!=='en'||!nameLanguage.searching()||C.match(eng.text,dict))return null;if(++cjk.unread<6)return null;
+ if(nameLanguage.lang!=='en'||!nameLanguage.searching()||!/\p{L}/u.test(eng.text)||C.match(eng.text,dict))return null;if(++cjk.unread<6)return null;
  if(cjk.tries>=8){cjk.i++;cjk.tries=0;}const lang=CJK_TRY[cjk.i];if(!lang){cjk.off=true;return null;}
  let w;try{w=await cjkWorker(lang);}catch(e){cjk.off=true;metrics.languageNote=`The nameplates look Japanese, Korean or Chinese, but the ${CJK_NAME[lang]} OCR model couldn't be loaded here (${e?.message||e}). Run the local app (START.command → Meta Extractor) or the Node runner, which read those languages.`;status(metrics.languageNote);return null;}
  cjk.tries++;metrics.cjkReads=(metrics.cjkReads||0)+1;const r=await ocrRegion(hudCanvas,box,{worker:w});return l=>l===lang?r:null;}

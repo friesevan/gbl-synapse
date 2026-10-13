@@ -27,9 +27,27 @@ test('CJK plates are read with the language model while undecided, and one long 
  const alt=lang=>{calls.push(lang);return lang==='ko'?{text:'갸라도스',confidence:80}:{text:'',confidence:0};};
  const r=C.readName({text:'7 ll|',confidence:30},{dict,locales,language,alt});assert.equal(r.switched,true);assert.equal(r.hit.key,'gyarados');assert.equal(language.lang,'ko');assert.deepEqual(calls,['ja','ko']);
  calls.length=0;C.readName({text:'x',confidence:20},{dict,locales,language,alt});assert.deepEqual(calls,['ko'],'only the recognised language is read afterwards');});
-test('CJK reads stop once English has three species or the budget is spent',()=>{const language=new C.NameLanguage({maxTries:2});let calls=0;const alt=()=>{calls++;return {text:'',confidence:0};};
- for(let i=0;i<5;i++)C.readName({text:'junk',confidence:10},{dict,locales,language,alt});assert.equal(calls,2*4);
+test('CJK reads stop once English has three species or the budget is spent',()=>{const language=new C.NameLanguage({maxTries:2,maxBlind:3});let calls=0;const alt=()=>{calls++;return {text:'',confidence:0};};
+ for(let i=0;i<5;i++)C.readName({text:'junk',confidence:10},{dict,locales,language,alt});assert.equal(calls,3*4,'longer budget while English has named nothing');
+ const named=new C.NameLanguage({maxTries:2,maxBlind:3});C.readName({text:'Melmetal',confidence:90},{dict,locales,language:named,alt});calls=0;
+ for(let i=0;i<5;i++)C.readName({text:'junk',confidence:10},{dict,locales,language:named,alt});assert.equal(calls,2*4,'the short budget once English named a species');
  const en=new C.NameLanguage();for(const t of ['Melmetal','Azumarill','Registeel'])C.readName({text:t,confidence:90},{dict,locales,language:en,alt});calls=0;C.readName({text:'junk',confidence:10},{dict,locales,language:en,alt});assert.equal(calls,0);});
+test('Korean names match by jamo on blurry plates; Mega X/Y from the English read; only after the switch',()=>{
+ assert.equal(m('ko','이 켈 타로')?.key,'yveltal');assert.equal(m('ko','여 텔 타르')?.key,'yveltal');assert.equal(m('ko','에가여타그로스')?.key,'megametagross');assert.equal(m('ko','이 켈 타로').quality,'suggestion');
+ assert.equal(m('ko','메가뮤츠누'),null,'X or Y undecided without the English read');assert.equal(C.matchLocale('메가뮤츠누',locales.ko,'ko','mARaAyY')?.key,'megamewtwoy');assert.equal(C.matchLocale('메가뮤츠누',locales.ko,'ko','O7IRAX')?.key,'megamewtwox');
+ assert.equal(m('ko','자 시 이'),null,'short names keep one jamo of slack');assert.equal(m('ko','니드리')?.key,undefined);
+ const language=new C.NameLanguage(),alt=()=>({text:'이 켈 타로',confidence:70});assert.equal(C.readName({text:'ogoe',confidence:0},{dict,locales,language,alt}).hit,null,'suggestions never switch the language');assert.equal(language.lang,'en');
+ language.lang='ko';assert.equal(C.readName({text:'ogoe',confidence:0},{dict,locales,language,alt}).hit?.key,'yveltal');});
+test('plates without a letter in the English read cost no CJK read and no try',()=>{const language=new C.NameLanguage();let calls=0;const alt=()=>{calls++;return {text:'',confidence:0};};
+ for(const t of ['','0','  ','(56 6030','|'])C.readName({text:t,confidence:80},{dict,locales,language,alt});assert.equal(calls,0);assert.equal(language.tries,0);
+ C.readName({text:'wrgmazy',confidence:0},{dict,locales,language,alt});assert.equal(calls,4);assert.equal(language.tries,1);});
+test('after 20 tries only the CJK models that read with confidence are asked; the video still switches',()=>{const language=new C.NameLanguage();const asked={};
+ const conf={ja:25,ko:60,'zh-Hant':15,'zh-Hans':20};const alt=lang=>{asked[lang]=(asked[lang]||0)+1;return {text:'',confidence:conf[lang]};};
+ for(let i=0;i<30;i++)C.readName({text:'junk'+i,confidence:5},{dict,locales,language,alt});
+ assert.deepEqual(asked,{ja:20,ko:30,'zh-Hant':20,'zh-Hans':20});
+ const ko=lang=>lang==='ko'?{text:'자 시 안',confidence:73}:{text:'',confidence:10};assert.equal(C.readName({text:'ZAI)',confidence:9},{dict,locales,language,alt:ko}).hit?.key,'zacian');assert.equal(language.lang,'ko');
+ const browser=new C.NameLanguage();for(let i=0;i<25;i++)C.readName({text:'junk'+i,confidence:5},{dict,locales,language:browser,alt:lang=>lang==='ja'?{text:'',confidence:30}:null});
+ let koAsked=0;C.readName({text:'junk',confidence:5},{dict,locales,language:browser,alt:lang=>{if(lang==='ko')koAsked++;return null;}});assert.equal(koAsked,1,'a model not read yet (browser: not loaded) is still asked');});
 test('result screens in German, Spanish and Portuguese; English unchanged',()=>{
  assert.equal(C.outcome('DU HAST GEWONNEN!'),'Win');assert.equal(C.outcome('GUT GEKAMPFT!'),'Loss');assert.equal(C.outcome('iGANASTE!'),'Win');assert.equal(C.outcome('jHAS GANADO!'),'Win');
  assert.equal(C.outcome('iBUEN INTENTO!'),'Loss');assert.equal(C.outcome('VOCE VENCEU!'),'Win');assert.equal(C.outcome('OTIMA TENTATIVA!'),'Loss');
