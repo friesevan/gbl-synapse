@@ -423,3 +423,21 @@ Takes effect on the next harvester start.
   LC21LciODO8 6bk9nbypShQ hBgoNV-zhoU Kx3FBsCOHSo (maw_a7oKYMM is a known-good video: keep it).
 - Result screens, banners, dialogs and effectiveness texts in Japanese, Korean, Chinese, French and Italian (plus German,
   Spanish, Portuguese banners); split/merge rules in the tracker; CJK models fetched on demand in the browser.
+
+## Status 2026-10-13 (screen locate: each frame's own edges)
+
+Details: `includes/meta/README.md`, *Locating the phone screen*. Takes effect on the next harvester start.
+
+- Cause of 4 zero-battle Japanese uploads from Npoke (`-QiUVfUf8jo`, `M5ED7uc0aao`, `SwlQC3kwKIs`, `avOqMEM2QmA`; saved
+  results `crop: null`): the phone sits between a team card and an art panel, and each battle clip is placed a few
+  pixels apart (right edge 690–697 of 960), so no column is an edge on half the sampled frames and the median edge
+  search found no box. `g8PnIk1zbDA` is a team-explanation slideshow without battles (0 is correct).
+- Fix (`screen.js` locate, shared by the probe, `CROP=auto` and the browser): a last pass over each frame's own strong
+  edges, kept where the HUD reads on that frame; the box reading on the most frames wins. It runs only when the earlier
+  passes find nothing, so their boxes are unchanged (8 retained videos checked, identical).
+- `CROP=auto` (the requeue path), before → after: battles 0 → 5, 4, 6, 4; opponent species 0 → 13, 7, 15, 11; full teams
+  0 → 3, 1, 3, 3. The retained Spanish `_bnPdUKMYpw` (dark arena on a dark backdrop) 0 → 11 battles, 33 species.
+- Open: one crop per video. Clips placed > ~2 px from it read no HUD (M5ED7uc0aao: two placements 6 px apart, about
+  2 of 6 battles lost; avOqMEM2QmA its first). Needs per-placement boxes through probe, plan and runner (README *Gaps*).
+  91 saved results ran `CROP=auto` without a box and 117 were probe-skipped for "screen not found"; some would gain
+  from a re-extraction. Nothing was requeued.
