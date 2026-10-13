@@ -34,7 +34,7 @@ A team's score is the share of battles it wins, with a draw counting as half, ag
 - **Teams:** every team the search evaluated, with its training score (noisy, from the search itself), its screening score and its fresh-test score (the trustworthy ones). You can search teams the same way as the rankings, for example `melmetal&cramorant&@counter` or `lead:melmetal`.
 - **Battles and replays:** click a team, then a battle, and the site replays it with the same engine and the same random seed, checks that it gets the saved result, and graphs all six Pokémon's HP.
 - **Compare Teams:** two teams on the same opponents, with the difference, an interval, and which battles changed.
-- **Search Performance:** how much better the model's picks were than random picks each round, how its prediction error fell, how the primary team did against the baselines, and, when a challenger needed a second exam, whether its advantage held up.
+- **Search Performance:** how much better the model's picks were than random picks each round, how its prediction error fell, how the primary team did against the baselines, and, when a challenger needed a second exam, whether its advantage held up. When a run tested it, it also shows how each finalist scored against six opponent play styles (from never switching to never shielding), so you can see whether a score depends on one way of playing.
 - **Import Report:** load the result of your own overnight run.
 
 ## How good is it

@@ -32,3 +32,25 @@ test('one browser worker compares multiple fixtures and accepts subsequent repla
  messages.length=0;await ctx.onmessage({data:{teams:[a,b],seed:17,mechanicsHash:mechanicsHash({version:'v4'}),dataHash:dataHash(),engineOptions:options}});
  assert.ok(!messages.some(m=>m.error),JSON.stringify(messages));assert.equal(messages.at(-1).pairedScore,rows[0].a);assert.ok(messages.at(-1).a.samples.length>3);
 });
+test('a run with non-default controller options replays exactly in the browser, and only under its own identity',async()=>{
+ const d=require('../../includes/pro/data/team-teams/index.json'),a=d.rows[0].team.map(i=>d.variants[i]),b=d.opponents.slice(0,3);
+ const controller={replyModel:'weighted',replyTemperature:.25,rolloutContinuation:8},options={beliefRoster:prior(),...controller};
+ for(const [x,y,seed] of [[a,b,17],[b,a,551]]){
+  const traced=play(x,y,defaults,defaults,{...options,seed,trace:true}),browser=replay(x,y,seed,options);
+  const plain=JSON.parse(JSON.stringify(browser));plain.timeline.forEach(e=>{delete e.values;delete e.detail;});assert.deepEqual(plain,JSON.parse(JSON.stringify(traced)));
+  assert.ok(traced.planner.continuations>0);
+ }
+ // The worker accepts a variant report only with the variant's mechanics id, and never a default report claiming it.
+ const messages=[],ctx=vm.createContext({structuredClone,console:{log(){}},Math:Object.create(Math),fetch:async file=>({ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(base,file),'utf8'))}),postMessage:m=>messages.push(JSON.parse(JSON.stringify(m)))});
+ ctx.importScripts=(...files)=>files.forEach(f=>vm.runInContext(fs.readFileSync(path.join(base,f),'utf8'),ctx));ctx.importScripts('team-replay-v4-worker.js');
+ const variant=mechanicsHash({version:'v4',controller}),send=(hash,engineOptions)=>{messages.length=0;return ctx.onmessage({data:{teams:[a,b],seed:17,mechanicsHash:hash,dataHash:dataHash(),engineOptions}});};
+ assert.match(variant,/\+controller:replyModel=weighted,replyTemperature=0\.25,rolloutContinuation=8$/);
+ await send(mechanicsHash({version:'v4'}),options);assert.match(messages.at(-1).error||'',/different simulator/);
+ await send(variant,{beliefRoster:prior()});assert.match(messages.at(-1).error||'',/different simulator/);
+ await send(variant,options);assert.ok(!messages.some(m=>m.error),JSON.stringify(messages));assert.equal(messages.at(-1).pairedScore,play(a,b,defaults,defaults,{...options,seed:17}).score);
+ // The page's pre-check (neural-portable.js) uses the same identity.
+ const page=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(base,'neural-portable.js'),'utf8'),page);vm.runInContext(fs.readFileSync(path.join(base,'team-replay-v4-manifest.js'),'utf8'),page);
+ assert.equal(page.NeuralPortable.expectedMechanics({engineVersion:'neural-team-search-v4',engineOptions:options},page.NeuralReplayV4),variant);
+ assert.equal(page.NeuralPortable.expectedMechanics({engineVersion:'neural-team-search-v4',engineOptions:{beliefRoster:[]}},page.NeuralReplayV4),mechanicsHash({version:'v4'}));
+ assert.equal(page.NeuralPortable.expectedMechanics({engineVersion:'neural-team-search-v4',engineOptions:{controllerTeams:[{switchMargin:0},null]}},page.NeuralReplayV4),null);
+});

@@ -70,6 +70,30 @@ strength. The primary stays the screening winner. The validator in `neural-repor
 `neural-portable.js` shows it as a table in Search Performance and as one line under each finalist's bar
 ("across 6 metas: min 62.5%, spread 14.1 points"). `training/team-search/sensitivity.cjs` re-runs the panel for a finished
 run or report; see its header and [the evaluation protocol](../../training/team-search/EVALUATION_PROTOCOL.md).
+## Controller options and opponent policy styles in a report
+
+A run started with `--reply-model weighted` (and `--reply-temperature`) or `--rollout-continuation N` uses a different
+controller ([OBSERVATION_CONTROLLER.md](../../training/next/OBSERVATION_CONTROLLER.md), "Controller options"). Its
+report carries the options in `engineOptions` (`replyModel`, `replyTemperature`, `rolloutContinuation`) and its
+`mechanicsHash` is the v4 id plus a suffix such as `+controller:replyModel=weighted,replyTemperature=0.25`. The v4
+adapter (`team-replay-v4-manifest.js`, `controllerSuffix`) replays such a report only when the suffix matches the
+options; older adapters refuse it. Reports without options are unchanged. `engineOptions.controllerTeams` (per-side
+controllers) is refused.
+
+A run started with `--policy-panel N` adds an optional top-level `policyPanel` block (absent otherwise): the finalists,
+after the final test, replayed on N common fixtures once per opponent style while they keep the run's controller.
+
+- `policyPanel.styles[]`: `name` and `label` (`default`, `weighted-replies`, `no-voluntary-switches`,
+  `eager-switches`, `always-shield`, `never-shield`) and the opponent's `controller` options;
+- `policyPanel.fixtures`: `requested`, `completed` (a common prefix when the deadline stopped it), `seed`,
+  `exploratory` (fewer than 256);
+- `policyPanel.own`: the finalists' controller (`label`, `controller`);
+- `policyPanel.teams[]` (primary first): `team` (indexes into `table.variants`), `label`, `scores` per style name,
+  `mean`, `min`, `max`, `spread` (best minus worst style), `spreadInterval95` (simultaneous paired band),
+  `bestStyle`, `worstStyle`, and `versusDefault[]` (`style`, `delta` = style minus default, `interval95`, `verdict`).
+
+The viewer adds a caption line to the finalists card and a table to Search Performance; `neural-report-core.js`
+validates the block when it is present. The panel never affects selection.
 
 The following v3 instructions are historical.
 

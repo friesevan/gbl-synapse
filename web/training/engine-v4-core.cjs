@@ -11,7 +11,7 @@ const {random,defaults}=require('./utils.cjs');
 // training label. Each encounter still gets a fresh isolated VM and Game Master.
 const scripts=new Map();
 function runFile(file,context){let script=scripts.get(file);if(!script){script=new vm.Script(fs.readFileSync(file,'utf8'),{filename:file});scripts.set(file,script);}script.runInContext(context);}
-function play(teamA,teamB,policyA=defaults,policyB=defaults,{seed=1,cp=1500,lookahead=false,horizon=24,interval=4,trace=false,audit=false,neutralPriority=false,plannerTeams=[true,true],beliefRoster=[],beliefTeams=[],beliefSamples=3,simulationOptimizations=true}={}){
+function play(teamA,teamB,policyA=defaults,policyB=defaults,{seed=1,cp=1500,lookahead=false,horizon=24,interval=4,trace=false,audit=false,neutralPriority=false,plannerTeams=[true,true],beliefRoster=[],beliefTeams=[],beliefSamples=3,simulationOptimizations=true,replyModel,replyTemperature,rolloutContinuation,switchMargin,shieldPolicy,controllerTeams}={}){
  let time=0,id=0,result=null,events=0,lastPhase='',timeouts=0;const timers=new Map(),rng=random(seed);
  const schedule=(fn,delay,repeat)=>{const key=++id;timers.set(key,{fn,at:time+delay,repeat});return key;};
  const math=Object.create(Math);math.random=rng;
@@ -27,7 +27,8 @@ function play(teamA,teamB,policyA=defaults,policyB=defaults,{seed=1,cp=1500,look
  for(const f of ['GameMaster','DamageCalculator','ActionLogic','TimelineEvent','TimelineAction','DecisionOption','Battle','Pokemon'])load(path.join(base,'vendor/'+f+'.js'));
  load(path.join(__dirname,'vendor/TrainingAI.js'));load(path.join(__dirname,'vendor/Player.js'));
  load(path.join(__dirname,'next/lookahead-v4.js'));load(path.join(__dirname,'next/observations.js'));
- context.input={simulationOptimizations,trace,beliefRoster,beliefTeams,beliefSamples,plannerTeams,neutralPriority,lookahead,horizon,interval,audit,seed,data:simulationOptimizations?JSON.parse(gameMasterText):structuredClone(data),teams:[teamA,teamB],policies:[policyA,policyB],cp};
+ // Controller options (next/lookahead-v4.js, <controller-options>): absent ones are the v4 defaults.
+ context.input={simulationOptimizations,trace,beliefRoster,beliefTeams,beliefSamples,plannerTeams,neutralPriority,lookahead,horizon,interval,audit,seed,data:simulationOptimizations?JSON.parse(gameMasterText):structuredClone(data),teams:[teamA,teamB],policies:[policyA,policyB],cp,replyModel,replyTemperature,rolloutContinuation,switchMargin,shieldPolicy,controllerTeams};
  vm.runInContext(`
  var gm=GameMaster.getInstance();gm.data=input.data;gm.originalData=gm.data;gm.createSearchMaps();gm.rankings={};
  installTeamSimulationSafety(input);
