@@ -1,5 +1,48 @@
 # Simulator and team-search performance
 
+## Forecast reuse — 2026-10-13
+
+Details, proofs and raw numbers: [findings/speed-forecast.md](findings/speed-forecast.md).
+
+A new profile (48 search-shaped fixtures in one process, belief priors exactly as `search.cjs` builds them) put 62% of the time in forecast branches. Building forecast Pokémon alone took 29%: six clones per branch plus one per guessed-opponent check. Garbage collection took 13%, and global name lookups in the contextified VM were slow (about 350 ns each). Five changes, all behind `simulationOptimizations` (the baseline path is unchanged):
+
+- Each duel forecast is simulated once per step. A forecast Battle only ever holds the two duel members, so belief worlds that imagine the same duel share it, and `terminal()` still values each world's own bench. Duel simulations fell 33%.
+- Bench and outgoing clones are built once per row and role. They are only read afterwards, and are kept across steps in a 64-entry LRU. Pressure terms between such finished clones are memoised.
+- Guessed-opponent clones are kept across steps. HP, energy and cooldown only pass through start values, so they are copied in exactly as `reset()` would copy them.
+- The VM context uses `vm.constants.DONT_CONTEXTIFY` with the same globals (Node 20.18+). Global lookups no longer go through interceptors.
+- The fresh per-encounter Game Master is `JSON.parse` of the file text instead of `structuredClone`. The structure is the same; it takes about half the time.
+
+Forecast Pokémon built per 48 battles fell from 69,707 to 18,528. Exact recycling of duel Pokémon (restoring last step's clones from a learned layout) was implemented and verified exact, but it was slower (0.92×) and was dropped.
+
+Identity checks found 0 differences in score, turns, remaining Pokémon, charged count, planner statistics, public observations, HP samples and timeline events:
+
+- 96 search-shaped fixtures with special forms and Shadow entries, plus 12 under other settings (`training/forecast-reuse.test.cjs`);
+- 192 pool and observed-meta fixtures;
+- 192 stored observations of the 2026-10-12 v4 run;
+- the frozen pre-optimisation reference and browser-replay tests.
+
+All 111 tests pass. The new source hash is registered under the unchanged v4 mechanics id.
+
+Throughput, 4 workers, `nice -n 10`, on a machine shared with other jobs (load average 12–30), median of 3 alternating runs:
+
+| Comparison | Fixtures | Before | After | Ratio |
+| --- | --- | ---: | ---: | ---: |
+| Previous optimised path → new optimised path | 192 search-shaped (pool, observed meta, 2,048-lineup bank) | 9.19 battles/s | 18.07 battles/s | **1.97×** |
+| Previous optimised path → new optimised path | 192 `simulatorFixtures` | 14.93 | 28.34 | 1.90× |
+| Baseline path → optimised path (`benchmark-simulator-speed.cjs`) | 192 `simulatorFixtures` | 11.40 | 31.05 | 2.72× (was 1.33× on 12 workers) |
+| Baseline path → optimised path | 96 search-shaped | 8.27 | 22.29 | 2.70× |
+
+These are smoke-scale figures on a loaded machine, not an overnight throughput claim. The 12-worker measurement is still to be run:
+
+```sh
+node training/benchmark-simulator-speed.cjs 192 3 12 training/simulator-speed-results.json
+node training/benchmark-simulator-speed.cjs 192 3 12 training/simulator-speed-search.json --fixtures search --pool training/runs/team-search/pool.json --usage-file "$HOME/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json" --usage-half-life-days 30 --usage-as-of 2026-10-12 --usage-prior-strength 155
+```
+
+Checkpoints started under the earlier code cannot resume under this one, because the algorithm hash covers the source. Warm starts from v4 evidence, reports and replays remain compatible.
+
+The sections below describe the 2026-10-10 optimisation.
+
 The dominant slowdown is repeated forecast preparation: every switching response
 creates a duel and prepares six Pokémon, while damage checks build guessed opponents.
 The earlier twelve-battle CPU profile attributed roughly 15% to type tables, 6% each

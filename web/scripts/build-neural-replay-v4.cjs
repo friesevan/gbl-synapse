@@ -15,6 +15,8 @@ body=body.slice(0,start)+` Math.random=rng;
  // Fresh simulator declarations and singleton state for every battle, matching the trainer VM.
  ${vendor}
 `+body.slice(end);
+// The trainer parses a fresh Game Master from its file text; the browser clones the fetched data.
+body=body.replace('simulationOptimizations?JSON.parse(gameMasterText):structuredClone(data)','structuredClone(data)');
 body=body.replace('function play(','function replayCore(').replace(' context.input=', ' const input=').replace(' vm.runInContext(`','').replace(' `,context);','').replace('const b=context.battle,players=context.players;','const b=battle;').replace('context.plannerStats','plannerStats');
 // Viewer-only observation: capture resolved attack context without modifying battle decisions.
 body=body.replace(' const b=battle;',` const b=battle;
@@ -26,7 +28,7 @@ body=body.replace(' const b=battle;',` const b=battle;
  };}
 `);
 body=body.replace('actor:e.actor}', 'actor:e.actor,values:Array.from(e.values||[]),...(e.detail?{detail:e.detail}:{})}');
-if(body.includes('context.input')||body.includes('vm.runInContext'))throw Error('Unexpected VM-only source remains');
+if(body.includes('context.input')||body.includes('vm.runInContext')||body.includes('gameMasterText'))throw Error('Unexpected VM-only source remains');
 const utils=read('training/utils.cjs').replace("'use strict';",'').replace(/module\.exports=.*;/,'');
 let wrapper=read('training/engine-v4.cjs').replace("'use strict';",'').replace("const legacy=require('./engine-v4-core.cjs');","const legacy={play:replayCore,defaults};").replace("const {random}=require('./utils.cjs');",'').replace(/module\.exports=.*;/,'');
 wrapper=wrapper.replace(/ if\(!options\.beliefRoster\).*?\n/," if(!options.beliefRoster?.length)throw Error('Replay requires the report public belief prior');\n");
