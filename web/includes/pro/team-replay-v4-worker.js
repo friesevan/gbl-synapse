@@ -3,7 +3,9 @@ let host='localhost',webRoot='',siteVersion='training',settings={colorblindMode:
 const $={ajax(){},getJSON(url,cb){if(url.includes('aiArchetypes'))cb(archetypes);},each(items,cb){for(let i=0;i<items.length;i++)if(cb(i,items[i])===false)break;}};
 importScripts('team-replay-v4-runtime.js','team-replay-v4-manifest.js');
 onmessage=async({data:request})=>{try{
- if(request.mechanicsHash!==NeuralReplayV4.mechanicsHash||request.dataHash!==NeuralReplayV4.dataHash)throw Error('This report uses a different simulator or data snapshot. Install its matching viewer adapter before replaying.');
+ // A run with non-default controller options replays only under its own mechanics id (base id + controller suffix).
+ let expected;try{expected=NeuralReplayV4.mechanicsHash+(NeuralReplayV4.controllerSuffix?NeuralReplayV4.controllerSuffix(request.engineOptions||{}):'');}catch(e){expected=null;}
+ if(request.mechanicsHash!==expected||request.dataHash!==NeuralReplayV4.dataHash)throw Error('This report uses a different simulator or data snapshot. Install its matching viewer adapter before replaying.');
  [data,archetypes]=await Promise.all([fetch('data/gamemaster.json').then(r=>{if(!r.ok)throw Error('Game data unavailable');return r.json();}),fetch('vendor/training/aiArchetypes.json').then(r=>r.json())]);
  const options={...(request.engineOptions||{}),trace:request.explain||request.mode!=='compare'};
  function one(a,b,seed){const result=play(a,b,defaults,defaults,{...options,seed});if(result.timedOut)throw Error('Replay timed out');return {a:result,pairedScore:result.score,fixtureMode:'single'};}

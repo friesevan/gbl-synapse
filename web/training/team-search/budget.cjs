@@ -1,10 +1,11 @@
 'use strict';
 function trainingBudget({ start, deadline, now, newBattles, screenTeams, screenOpponents,
-  validationTeams, validationOpponents, baselineCount, battlesPerFixture=2 }) {
+  validationTeams, validationOpponents, baselineCount, battlesPerFixture=2, extraBattles=0 }) {
   const fixed = start + (deadline - start) * .8;
   if (newBattles < 512 || now <= start) return { deadline: fixed, estimatedEvaluationSeconds: null };
   const rate = newBattles / ((now - start) / 1000);
-  const battles = (screenTeams * screenOpponents + (validationTeams + baselineCount) * validationOpponents) * battlesPerFixture;
+  // extraBattles: evaluation work after the final test (search.cjs --policy-panel), in battles.
+  const battles = (screenTeams * screenOpponents + (validationTeams + baselineCount) * validationOpponents) * battlesPerFixture + extraBattles;
   const estimate = battles / rate;
   // A conservative margin protects final comparisons when simulation slows.
   return { deadline: Math.max(start, Math.min(fixed, deadline - estimate * 1250)),

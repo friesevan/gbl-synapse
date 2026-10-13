@@ -13,6 +13,8 @@ function validate(d){
   const ids=new Set(o.beliefRoster.map(p=>p.speciesId));
   if(ids.size!==o.beliefRoster.length||o.beliefRoster.some(p=>typeof p.speciesId!=='string'||!Number.isInteger(p.dex)||!Number.isFinite(p.weight)||p.weight<0||!Array.isArray(p.moveset)||p.moveset.length<2||p.moveset.length>4||p.moveset.some(m=>typeof m!=='string')))fail('invalid belief species');
   if(o.beliefTeams.some(t=>!Array.isArray(t)||t.length!==3||new Set(t).size!==3||t.some(id=>!ids.has(id))))fail('invalid belief lineup');
+  // Controller options travel in engineOptions (one controller for both sides); per-side controllers are evaluation-only.
+  if(o.controllerTeams!=null)fail('invalid controller options');
  }
  const ids=new Set();let fixtures=0;
  for(const row of table.rows){
@@ -27,6 +29,12 @@ function validate(d){
  }
  // Optional (added with the previous-champions baseline group); older reports simply lack it.
  if(d.champions!=null){const c=d.champions,ok=i=>Number.isInteger(i)&&table.variants[i];if(!Array.isArray(c.teams)||c.teams.length>500||c.teams.some(t=>!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||typeof t.label!=='string'||t.label.length>200)||c.skipped!=null&&(!Array.isArray(c.skipped)||c.skipped.length>500||c.skipped.some(x=>!x||typeof x.label!=='string'||typeof x.detail!=='string')))fail('invalid previous champions');if(c.comparisons!=null&&(!Array.isArray(c.comparisons.entries)||c.comparisons.entries.length>500||c.comparisons.entries.some(e=>!Array.isArray(e.team)||e.team.length!==3||!e.team.every(ok)||!Number.isFinite(e.score)||!Number.isFinite(e.delta)||!Array.isArray(e.interval95)||e.interval95.length!==2||!e.interval95.every(Number.isFinite)||typeof e.verdict!=='string')))fail('invalid champion comparisons');}
+ // Optional (opponent policy styles: search.cjs --policy-panel, training/next/policy-panel.cjs); older reports lack it.
+ if(d.policyPanel!=null){const p=d.policyPanel,ok=i=>Number.isInteger(i)&&table.variants[i],score=x=>Number.isFinite(x)&&x>=0&&x<=1,band=b=>Array.isArray(b)&&b.length===2&&b.every(x=>Number.isFinite(x)&&x>=-1&&x<=1),name=x=>typeof x==='string'&&x.length>0&&x.length<=64;
+  if(!Array.isArray(p.styles)||p.styles.length<2||p.styles.length>12||p.styles.some(s=>!s||!name(s.name)||typeof s.label!=='string'||s.label.length>100)||new Set(p.styles.map(s=>s.name)).size!==p.styles.length)fail('invalid policy panel styles');
+  if(!p.fixtures||!Number.isInteger(p.fixtures.requested)||!Number.isInteger(p.fixtures.completed)||p.fixtures.completed<0||p.fixtures.completed>p.fixtures.requested||p.own!=null&&typeof p.own.label!=='string')fail('invalid policy panel fixtures');
+  if(!Array.isArray(p.teams)||p.teams.length>64||p.teams.some(t=>!t||!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||!p.styles.every(s=>score(t.scores?.[s.name]))||![t.mean,t.min,t.max].every(score)||!Number.isFinite(t.spread)||!band(t.spreadInterval95)||t.versusDefault!=null&&(!Array.isArray(t.versusDefault)||t.versusDefault.some(v=>!v||!name(v.style)||!Number.isFinite(v.delta)||!band(v.interval95)))))fail('invalid policy panel teams');
+ }
  return d;
 }
 async function verifySnapshot(d){const raw=JSON.stringify([d.snapshot.published,d.snapshot.overrides,d.snapshot.gameMaster]),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==d.dataHash)throw Error('The report’s pinned data failed its integrity check');return d;}

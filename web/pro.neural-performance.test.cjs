@@ -17,3 +17,11 @@ test('report names an observed-team meta and stays silent for a synthetic prior'
  const d=JSON.parse(zlib.gunzipSync(fs.readFileSync(__dirname+'/includes/pro/data/team-v3-refined.pvpteams.json.gz')));
  assert.equal(ctx.NeuralPortable.observedMeta(d.meta),'');assert.equal(ctx.NeuralPortable.observedMeta(undefined),'');
 });
+test('finalist card caption and table summarise the opponent policy-style panel, and stay silent without one',()=>{
+ const styles=[{name:'default',label:'Default'},{name:'never-shield',label:'Never shield'}],team=t=>t.join('/');
+ const d={policyPanel:{fixtures:{requested:64,completed:64,exploratory:true},own:{label:'default'},styles,method:'m',teams:[{team:['A','B','C'],scores:{default:.8,'never-shield':.9},mean:.85,min:.8,max:.9,spread:.1,spreadInterval95:[.02,.18],worstStyle:'default'},{team:['D','E','F'],scores:{default:.7,'never-shield':.74},mean:.72,min:.7,max:.74,spread:.04,spreadInterval95:[-.03,.11],worstStyle:'default'}]}};
+ assert.equal(ctx.NeuralPortable.policyPanelCaption(d,team),'Opponent play styles (2 styles × 64 common fixtures, after the final test): A/B/C scored 80.0% to 90.0%, a spread of 10.0 pp (simultaneous 95% 2.0 to 18.0), lowest against Default; finalist spreads 4.0 to 10.0 pp. Exploratory: fewer than 256 fixtures. A small spread means a score does not hinge on one way of playing the opponent.');
+ const table=ctx.NeuralPortable.policyPanelTable(d,team);
+ assert.deepEqual(Array.from(table.head),['Team','Default','Never shield','Mean','Lowest','Spread','Simultaneous 95%']);assert.deepEqual(Array.from(table.rows[1]),['D/E/F','70.0%','74.0%','72.0%','70.0%','4.0 pp','-3.0 to 11.0 pp']);
+ assert.equal(ctx.NeuralPortable.policyPanelCaption({},team),'');assert.equal(ctx.NeuralPortable.policyPanelTable({policyPanel:{teams:[]}},team),null);
+});
