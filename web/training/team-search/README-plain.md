@@ -45,6 +45,10 @@ Two cautions. First, scores from different versions of the simulator or differen
 
 On a 12-core laptop the simulator plays about 16 full battles per second with the current controller; an eight-hour run completes roughly 300 search rounds and about 300,000 battles before the exams begin. Fitting the network takes about 20 seconds per round and scoring 12,000 candidates about 1.5 seconds, so nearly all the time goes to battles. The graphics card is not used: the battle engine is branching game logic, not matrix maths.
 
+## How we know a change helped
+
+Two overnight runs can differ by luck alone, so "the new score is higher" is not enough. Every comparison here puts all the teams on the same opponents, and a difference only counts when it is larger than the margin around it: with 512 opponent teams that margin is about 4 to 5 points, so smaller gaps are called ties. A change that only makes the program faster must give identical results. A change to the search is tested by running the old and new versions with the same budget and seeds, then putting both final teams, and the earlier winners, through one fresh set of opponents; every new run now also tests the earlier winners automatically as a fixed "previous champions" group. If the new search simply finds the old champion again, that is a tie, not a failure. A change to the assumptions themselves (the controller, the opponent meta, the simulator) makes scores before and after incomparable, so it is judged by how realistic it is, not by whether the score went up. The [full procedure](EVALUATION_PROTOCOL.md) has the details and the [technical reference](README.md#8-evaluation-protocol) the numbers.
+
 ## What it cannot do yet
 
 - Promise the *best* team. It has looked at a few thousand of 1.65 billion teams; it finds strong teams under its assumptions.

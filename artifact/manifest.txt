@@ -153,6 +153,7 @@ scripts/yt-harvest/data/gbl-schedule.json
 training/next/NEXT_RUN_AUDIT.md
 training/next/OBSERVATION_CONTROLLER.md
 training/next/README.md
+training/team-search/EVALUATION_PROTOCOL.md
 training/team-search/MODEL_AUDIT.md
 training/team-search/PERFORMANCE.md
 training/team-search/PILOT_FINDINGS.md

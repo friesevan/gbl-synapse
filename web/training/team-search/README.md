@@ -2,7 +2,7 @@
 
 Team Rankings searches for the strongest three-Pokémon Great League teams, with their movesets, against a modelled distribution of opponent teams. It simulates complete 3-v-3 battles with PvPoke's engine under an observation-limited controller, learns a neural matchup model from those outcomes to decide which teams are worth simulating next, and then tests its finalists on opponent panels that never touched the training. The site's **PvPoke Pro › Team Rankings** tab shows the result: every evaluated team, its scores at each stage, the search's learning curves, and a deterministic replay of any saved battle.
 
-This is the technical reference and the run guide. A short plain-language summary is in [README-plain.md](README-plain.md). Detailed measurements live beside this file: [PERFORMANCE.md](PERFORMANCE.md) (simulator and fitting speed), [REFINEMENT_FINDINGS.md](REFINEMENT_FINDINGS.md) (acquisition benchmark), [PILOT_FINDINGS.md](PILOT_FINDINGS.md), [MODEL_AUDIT.md](MODEL_AUDIT.md), the controller's [information boundary](../next/OBSERVATION_CONTROLLER.md) and the [next-run audit](../next/NEXT_RUN_AUDIT.md). This revision describes the code as of 2026-10-12.
+This is the technical reference and the run guide. A short plain-language summary is in [README-plain.md](README-plain.md). Detailed measurements live beside this file: [PERFORMANCE.md](PERFORMANCE.md) (simulator and fitting speed), [EVALUATION_PROTOCOL.md](EVALUATION_PROTOCOL.md) (how to tell an improvement from noise), [REFINEMENT_FINDINGS.md](REFINEMENT_FINDINGS.md) (acquisition benchmark), [PILOT_FINDINGS.md](PILOT_FINDINGS.md), [MODEL_AUDIT.md](MODEL_AUDIT.md), the controller's [information boundary](../next/OBSERVATION_CONTROLLER.md) and the [next-run audit](../next/NEXT_RUN_AUDIT.md). This revision describes the code as of 2026-10-12.
 
 > **Status in one paragraph.** The published v1 run (October 9–10, 2026) selected Melmetal / Jumpluff / Shadow Quagsire, which scored 68.3% on 512 untouched opponent fixtures and beat the best simple baseline group by 17.6 points (paired interval 14.1–21.1). Its surrogate cut held-out team-prediction error by 77% against predicting the mean. Since then the controller was changed to see only what a player sees (v4), the search acquisition was improved by a measured 18.8 points of proposal quality, and the opponent meta can now be the teams observed in harvested YouTube battles. The first full v4 run against the observed meta (2026-10-12) selected Shadow Talonflame / Mandibuzz / Bastiodon at 83.5% on 512 untouched fixtures, with all seven other finalists inside the unresolved band. All scores are simulated expected scores under the modelled meta and controller, not human win rates, and scores under different metas are not comparable with each other (section 9).
 
@@ -42,7 +42,7 @@ A team is three ordered Pokémon (the lead matters) from a pool of 300 eligible 
 | Evaluation | `evaluation.cjs` | screening, baselines, paired bootstraps |
 | Reports | `report.cjs`, `export-report.cjs`, `evidence.cjs` | `report.html`, `report.pvpteams.json.gz` |
 | Viewer | `web/includes/pro/neural.js`, `neural-portable.js`, `neural-report-core.js`, `team-browser.js`, `team-comparison.js`, `team-replay-v4-*.js` | import, rankings, charts, replay |
-| Audits and tools | `audit-model.cjs`, `audit-exploration.cjs`, `benchmark-acquisition.cjs`, `absorb-evaluation.cjs`, `merge.cjs`, `remap.cjs`, `status.cjs`, `stop.cjs` | read-only diagnostics on frozen checkpoints |
+| Audits and tools | `audit-model.cjs`, `audit-exploration.cjs`, `benchmark-acquisition.cjs`, `absorb-evaluation.cjs`, `merge.cjs`, `remap.cjs`, `status.cjs`, `stop.cjs`, `rematch.cjs`, `compare-history.cjs`, `champions.cjs` | read-only diagnostics on frozen checkpoints and equal-footing comparisons of runs |
 
 ### Running a search
 
@@ -66,6 +66,8 @@ node training/team-search/launch-next.cjs --hours 8 --out training/runs/team-sea
 ```
 
 When the run finishes, import `training/runs/<run>/report.pvpteams.json.gz` in PvPoke Pro › Team Rankings. Runs stay local in `training/runs/`, which git ignores.
+
+`launch-next.cjs` also tests the earlier winners: the published v1 and v3 primaries and the primary of every completed run with the same pool hash (final panel of at least 256 fixtures) join the final panel as the fixed `previous-champions` baseline group. `--champions FILE[,FILE…]` replaces that list, `--champions none` disables it, and `--champions-scope finalists` takes every final-tested team of each source (section 8, [EVALUATION_PROTOCOL.md](EVALUATION_PROTOCOL.md)).
 
 ## 3. The search space: eligible Pokémon and movesets
 
@@ -172,6 +174,8 @@ Each round (`search.cjs`, `propose.cjs`, `acquisition.cjs`):
 3. **Comparisons.** The primary versus each baseline group uses a paired bootstrap over whole opponent fixtures (5,000 resamples, 95% interval), conditional on those baseline teams and the pinned simulator. The primary versus each other finalist uses a simultaneous paired bootstrap whose band accounts for comparing several finalists at once; a finalist is "unresolved" when its band crosses zero. The screening-selected primary stays the primary even if another finalist's final point estimate is higher.
 4. **Reuse without contamination.** `absorb-evaluation.cjs` converts a finished run's screening, final and baseline battles into training evidence for a *new* run, marks their seeds as used, and the launcher then draws a fresh validation seed that must not collide. `merge.cjs` and `remap.cjs` combine or translate raw fixture observations only across identical pools and mechanics.
 
+**Telling an improvement from noise.** Whether a change helped depends on its class, and the sealed final panel only answers part of the question. A pure speed or refactor change must reproduce byte-identical outcomes (same seeds, a fixed `--rounds`) and is then measured for throughput. A search, acquisition or model change under the same pool, meta, controller and seeds is judged by an equal-budget A/B: the two primaries are re-simulated together on one fresh panel with `rematch.cjs` (paired bootstraps, simultaneous bands over all pairs), alongside the `previous-champions` baseline group and matched-battle history curves from `compare-history.cjs`. The group is the earlier winners (the published v1 and v3 primaries and every completed run with the same pool hash, added automatically by `launch-next.cjs`; `--champions FILE[,FILE…]` elsewhere), re-simulated on the run's own sealed final panel, so each comparison is paired and unbiased. A rediscovered champion, or any difference inside the interval (about 4 points for one comparison and 5 for several at 512 fixtures), is a tie, not a failure. A simulator, controller or meta change relabels everything: scores are comparable only under the new assumptions, so the old champions are re-simulated there and the change itself is judged by realism metrics (mechanics-fidelity fixtures, and the report fields `policyPanel` and `sensitivity` that are being added; they are not in reports yet), never by a higher score. Including the previous victors is enough only when simulator, meta and pool are unchanged and they are compared with the new primary on the same sealed panel. See [EVALUATION_PROTOCOL.md](EVALUATION_PROTOCOL.md) for the decision procedure and the statistical fine print.
+
 ## 9. Results so far
 
 Scores from different controllers or metas are not comparable with each other: each row is conditional on its own simulator version and opponent distribution.
@@ -216,7 +220,7 @@ The Team Rankings tab loads the published v1 archive by default and can import a
 - **Teams:** every evaluated team with training score, cautious selection score, screening score and fresh-test score; 500 per page; search with the rankings syntax where each AND term may match a different member (`melmetal&cramorant&@counter`), `lead:` scopes a predicate to the lead, negation excludes teams; Lead and alphabetical Backline columns; Min, Max and Average published rank; an Alternate Moveset badge against the published recommendation.
 - **Battles:** each team's paired battle list by stage; clicking a fixture reruns both orientations in a Web Worker with the report's engine version, seed, controller and belief priors, verifies the replay against the stored score, and graphs all six Pokémon's HP with attack, shield, switch and faint markers. Replay is allowed only when the report's mechanics and data hashes match the installed adapter.
 - **Team Comparison:** two teams on their freshest common stage: paired score deltas, an approximate 95% interval, changed outcomes, conditional opponent associations, side-by-side replays, and an optional matched exploratory panel of up to 512 fixtures. Comparison replays list the charged attacks actually used and flag changed moves that never fired.
-- **Search Performance:** proposal quality (trailing means of neural, random and uncertainty picks), the training leader's raw score, held-out MSE against the constant baseline, simulation progress, the final baseline comparison, finalist cards and the opponent-meta line ("Opponent meta: 75% observed teams, 25% PvPoke prior · 190 teams (181 distinct) from 18 creators …").
+- **Search Performance:** proposal quality (trailing means of neural, random and uncertainty picks), the training leader's raw score, held-out MSE against the constant baseline, simulation progress, the final baseline comparison (with the previous-champions group and a champion-by-champion table when the run had one), finalist cards and the opponent-meta line ("Opponent meta: 75% observed teams, 25% PvPoke prior · 190 teams (181 distinct) from 18 creators …").
 
 The report contract (`format: "pvp-team-report"`, schema 1, engine versions v1–v4) is documented in [NEURAL_REPORTS.md](../../includes/pro/NEURAL_REPORTS.md).
 
@@ -232,6 +236,7 @@ The report contract (`format: "pvp-team-report"`, schema 1, engine versions v1�
 | **Retained movesets and IVs** | five 1-v-1-scouted movesets per entry; default IV builds; a team-specific moveset can be excluded | targeted moveset mutation outside the five with 3-v-3 retention; alternate IV builds for the finalists |
 | **Surrogate error and calibration** | team RMSE about 6 points; ensemble spread is not an interval; held-out identities come from the same search and meta | candidate, opponent, policy and meta holdouts; proper uncertainty needs both grouping dimensions and independent simulation |
 | **Selection and multiple comparisons** | eight finalists with overlapping bands; the primary is pre-selected, but the best-looking final score is still optimistic | a new sealed test for any newly selected winner; larger common finalist panels; minimum sample thresholds before a contender can lead |
+| **Telling a real improvement from noise** | a run's own final score is conditional on its panel and assumptions (the v1 primary's 68.3% became 42.2% on the observed meta under the v4 controller in an exploratory 64-fixture rematch); one run per arm gives no estimate of search-to-search variance; at 512 fixtures differences under about 4 to 5 points are unresolved | the tools now exist: `previous-champions`, `rematch.cjs`, `compare-history.cjs` and [EVALUATION_PROTOCOL.md](EVALUATION_PROTOCOL.md). Still open: replicated seeds per arm, time-to-champion (history records scores, not team identity), 1,024 or more fixtures for sub-3-point claims, and the realism metrics (`policyPanel`, `sensitivity`) for assumption changes |
 | **Mechanics fidelity** | PvPoke's emulator approximations (CMP ties, buff chances, switch and catch timing) are inherited; canonical routing removes caller-order artefacts, not game differences | dedicated parity fixtures against the game's training mode; keep the mechanics hash honest |
 | **Coverage of the space** | 3,215 canonical identities seen in 3,453 records, 0.00019% of the pool | this is inherent; the honest claim is "a strong team under these assumptions", never "the optimal team" |
 
@@ -258,7 +263,13 @@ node training/benchmark-simulator-speed.cjs 192 3 12 training/simulator-speed-re
 node training/team-search/benchmark-neural-speed.cjs
 node training/team-search/export-report.cjs training/runs/<run>
 node training/next/controller-check.cjs 128
+node training/team-search/rematch.cjs RUN_A RUN_B [--finalists] --fixtures 512 --workers 12 --meta hybrid --out training/runs/rematch.json   # equal-footing re-simulation of primaries or finalists
+node training/team-search/rematch.cjs --print training/runs/rematch.json
+node training/team-search/compare-history.cjs RUN_A RUN_B --labels old,new --json training/runs/history-comparison.json                    # matched-battle history comparison
+node training/team-search/search.cjs ... --champions includes/pro/data/team-search.json,includes/pro/data/team-v3-refined.pvpteams.json.gz,training/runs/RUN   # previous champions as a baseline group
 ```
+
+`rematch.cjs` takes run directories, `recommendations.json`, portable reports or the v1 archive, maps each composition into the pool, draws a fresh panel (refusing a seed a source used), and prints every pair under one simultaneous band; `--finalists` adds all final-tested teams. `compare-history.cjs` reads two `history.jsonl` files at equal cumulative battles and reports neural-proposal quality, held-out team error against the constant predictor, best training score, teams labelled and battles per labelled team, each as improvement, no difference or regression. With `--champions`, the checkpoint, `recommendations.json` (`champions`, `championComparisons`), `report.html`, `findings.md` and the portable report carry the `previous-champions` group, and a resumed run keeps the champions its checkpoint registered; without the flag every output is unchanged.
 
 ## 14. History
 
@@ -271,6 +282,7 @@ node training/next/controller-check.cjs 128
 | v6 acquisition | 2026-10-10 | promising exploration (mean + spread), local moveset and lead neighbourhoods, rotating retests; +18.8 points proposal quality in a paired benchmark |
 | v4 | 2026-10-10 | observation-limited controller with belief priors; simulator optimisations (1.33×); staged acquisition (−43.75% battles) |
 | observed meta | 2026-10-11 | harvested YouTube opponent teams as the main opponent distribution, creator-capped and time-decayed |
+| evaluation tooling | 2026-10-13 | `previous-champions` baseline group, `rematch.cjs`, `compare-history.cjs` and the decision procedure in EVALUATION_PROTOCOL.md |
 
 ## 15. References
 

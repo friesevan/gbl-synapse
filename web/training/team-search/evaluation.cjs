@@ -37,10 +37,15 @@ function coverageTeam(pool,penalty=0,order=0){
  }if(!changed)break;}
  const shift=order%3,team=[...chosen.slice(shift),...chosen.slice(0,shift)];if(order%4===3)[team[1],team[2]]=[team[2],team[1]];return team;
 }
-function baselineTeams(pool,count,seed){
+// Previous champions (champions.cjs) join as a fourth fixed group, `previous-champions`: teams that won earlier
+// runs, mapped into this pool and fixed before the final test. They are extra to `count`, so the three
+// generated groups, and therefore the random stream, are unchanged whether or not champions are supplied.
+function baselineTeams(pool,count,seed,{champions=[]}={}){
  const r=random(seed),best=new Map();pool.variants.forEach((v,i)=>{if(!best.has(v.speciesId)||pool.variants[best.get(v.speciesId)].scoutScore<v.scoutScore)best.set(v.speciesId,i);});
  const uniform=Math.ceil(count/3),weighted=Math.ceil((count-uniform)/2);
- return Array.from({length:count},(_,i)=>i<uniform?{team:randomTeam(pool.variants,r),kind:'uniform-random'}:i<uniform+weighted?{team:weightedTeam(pool.species,r).map(s=>best.get(s.speciesId)),kind:'weight-sampled-best-moves'}:{team:coverageTeam(pool,(i-uniform-weighted)*.25,i-uniform-weighted),kind:'greedy-scout-coverage'});
+ const generated=Array.from({length:count},(_,i)=>i<uniform?{team:randomTeam(pool.variants,r),kind:'uniform-random'}:i<uniform+weighted?{team:weightedTeam(pool.species,r).map(s=>best.get(s.speciesId)),kind:'weight-sampled-best-moves'}:{team:coverageTeam(pool,(i-uniform-weighted)*.25,i-uniform-weighted),kind:'greedy-scout-coverage'});
+ const seen=new Set(),previous=[];for(const champion of champions||[]){const team=Array.isArray(champion)?champion:champion.team;if(!Array.isArray(team)||team.length!==3||team.some(i=>!Number.isInteger(i)||!pool.variants[i])||new Set(team.map(i=>pool.variants[i].dex)).size!==3)throw Error('Previous champion is not a legal team in this pool');const key=team[0]+':'+team.slice(1).sort((a,b)=>a-b).join(',');if(seen.has(key))continue;seen.add(key);previous.push({team:team.slice(),kind:'previous-champions'});}
+ return [...generated,...previous];
 }
 function compare(primary,baselines,{seed=1,samples=5000}={}){
  if(!primary||!baselines.length)return null;const n=matchedRows(primary,baselines);if(!Number.isInteger(samples)||samples<100)throw Error('Bootstrap requires at least 100 samples');

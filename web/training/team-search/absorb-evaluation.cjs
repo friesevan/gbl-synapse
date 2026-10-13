@@ -49,7 +49,7 @@ function absorb(state, pool) {
   output.battles = output.observations.length * factor;
   output.models = []; output.pending = null; output.history = []; output.runtime = null;
   output.validations = []; output.screenResults = []; output.finalistTeams = [];
-  output.baselineResults = []; output.comparisons = {};
+  output.baselineResults = []; output.comparisons = {}; output.champions = null; output.championComparisons = null;
   output.evaluationEvidence = { fixtureSeeds: [...seeds], addedFixtures: added, duplicates,
     requiresFreshValidationSeed: true, note: 'Earlier pilot evaluation is now training data; use a new final test.' };
   return output;

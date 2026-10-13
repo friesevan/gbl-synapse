@@ -15,6 +15,26 @@ Read [the current guide](../../training/team-search/README.md) and
 The exact verified simulator implementation preserves historical v4 replay IDs;
 changed search settings require a new run or compatible v4 warm-start.
 
+## Previous champions in a report
+
+A run started with `--champions` (the launcher adds the published v1 and v3 primaries and every completed
+matching run automatically) tests earlier winning teams on its final panel as a fourth baseline group. In the
+report this is `baselines["previous-champions"]` (the same shape as the other groups: `delta`, `interval95`,
+`fixtures`, `baselineTeams`) plus an optional top-level `champions` block, `null` when the run had none:
+
+- `champions.teams[]`: `team` (three indexes into `table.variants`, lead first), `label`, `sources[]`
+  (`source`, `role` primary or finalist, `rank`, the source's own `finalScore`, which is not comparable);
+- `champions.skipped[]`: compositions not mapped into the run's pool, with `reason` and `detail`;
+- `champions.comparisons`: `outcome` (`primary-better`, `tie-rediscovered`, `unresolved`, `champion-better`),
+  `summary`, `fixtures`, and `entries[]` with each champion's final-panel `score`, `delta` (primary minus
+  champion), simultaneous `interval95` and `verdict` (`primary-better`, `challenger-better`, `unresolved`,
+  `same-team`).
+
+Champion teams are ordinary rows in `table.rows` with `baseline: "previous-champions"`, so their matchups can be
+inspected and replayed like any other tested team. The validator in `neural-report-core.js` checks the block when it is
+present; reports without it are unchanged and remain valid. See
+[the evaluation protocol](../../training/team-search/EVALUATION_PROTOCOL.md) for how to read the comparison.
+
 The following v3 instructions are historical.
 
 # Neural team search v3: run, import and transfer

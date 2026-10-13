@@ -25,6 +25,8 @@ function validate(d){
    for(const m of matches[key])if(!Array.isArray(m)||m.length!==3||!Array.isArray(m[0])||m[0].length!==3||m[0].some(i=>!Number.isInteger(i)||!table.opponents[i])||!Number.isInteger(m[1])||m[1]<0||m[1]>0xffffffff||!Number.isFinite(m[2])||m[2]<0||m[2]>1)fail('malformed battle');
   }
  }
+ // Optional (added with the previous-champions baseline group); older reports simply lack it.
+ if(d.champions!=null){const c=d.champions,ok=i=>Number.isInteger(i)&&table.variants[i];if(!Array.isArray(c.teams)||c.teams.length>500||c.teams.some(t=>!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||typeof t.label!=='string'||t.label.length>200)||c.skipped!=null&&(!Array.isArray(c.skipped)||c.skipped.length>500||c.skipped.some(x=>!x||typeof x.label!=='string'||typeof x.detail!=='string')))fail('invalid previous champions');if(c.comparisons!=null&&(!Array.isArray(c.comparisons.entries)||c.comparisons.entries.length>500||c.comparisons.entries.some(e=>!Array.isArray(e.team)||e.team.length!==3||!e.team.every(ok)||!Number.isFinite(e.score)||!Number.isFinite(e.delta)||!Array.isArray(e.interval95)||e.interval95.length!==2||!e.interval95.every(Number.isFinite)||typeof e.verdict!=='string')))fail('invalid champion comparisons');}
  return d;
 }
 async function verifySnapshot(d){const raw=JSON.stringify([d.snapshot.published,d.snapshot.overrides,d.snapshot.gameMaster]),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==d.dataHash)throw Error('The report’s pinned data failed its integrity check');return d;}
