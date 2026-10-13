@@ -5,8 +5,10 @@ const bar=(x0,o={})=>({x0,y0:500,y1:514,x1:x0+246,fill:.6,trail:0,frame:1,...o})
 function strips(xs,W=886){const H=40*xs.length,data=new Uint8ClampedArray(W*H*4);for(let i=0;i<data.length;i+=4)data[i+3]=255;
  xs.forEach((x0,k)=>{const o=40*k;for(let y=o;y<o+40;y++)for(let x=x0-2;x<x0+248;x++){const i=(y*W+x)*4;if(y===o+10)data[i]=data[i+1]=data[i+2]=250;else if(y>=o+14&&y<=o+27&&x>=x0&&x<x0+150){data[i]=0;data[i+1]=228;data[i+2]=172;}}});
  return {data,width:W,height:H};}
-test('phone screens keep the original windows, centred bars included',()=>{
+test('phone screens keep the original windows; the aura and effect text still count a centred bar as the opponent\'s',()=>{
  assert.equal(Hp.barSettings(886,1884),Hp.BAR);assert.equal(Hp.barSettings(886,1628),Hp.BAR,'0.544, the widest phone measured, still uses the phone layout');
+ // assignBars places the aura box and the effect-text strip. Skipping the centred bar there cost the Shadow
+ // classifier 4 of 391 held-out calls and log-loss (README section 3), so on phones it stays the opponent's.
  const as=Hp.assignBars([bar(55),bar(322)],886,1884);assert.equal(as.my.x0,55);assert.equal(as.opponent.x0,322);
  assert.deepEqual(Hp.assignBars([bar(55),bar(322)],886),as,'no height: phone rule');
  assert.equal(Hp.assignBars([bar(135)],886,1884).my,null);});
@@ -21,7 +23,12 @@ test('track follows your bar on a 16:9 screen; the cutscene bar no longer stands
  // The centred bar shows on more frames than the opponent's own bar (as in a matchup with long cutscenes).
  const frames=[0,1,2,3,4,5].map(i=>({t:i*.1,bars:[bar(121,{fill:.8-i*.05}),bar(322,{fill:.3}),...(i%2?[]:[bar(533,{fill:.5})])]}));
  const w=Hp.track(frames,886,1580);assert.deepEqual(w.my.map(p=>+p.fill.toFixed(2)),[.8,.75,.7,.65,.6,.55]);assert.deepEqual(w.opponent.map(p=>p?.fill??null),[.5,null,.5,null,.5,null]);
- const p=Hp.track(frames,886,1884);assert.ok(p.my.every(x=>x===null),'the phone window misses x 121');assert.ok(p.opponent.every(x=>x.fill===.3),'phones keep the original rule');});
+ const p=Hp.track(frames,886,1884);assert.ok(p.my.every(x=>x===null),'the phone window misses x 121');assert.deepEqual(p.opponent.map(x=>x?.fill??null),[.5,null,.5,null,.5,null],'phones skip the cutscene bar too');});
+test('track on a phone: the opponent\'s series follows their own bar, not the more frequent cutscene bar',()=>{
+ // Long cutscenes: the centred bar (yours or theirs, whoever attacks) shows on 4 of 6 frames, the opponent's own bar on 3.
+ const frames=[0,1,2,3,4,5].map(i=>({t:i*.1,bars:[bar(55,{fill:.9}),...(i<4?[bar(322,{fill:.2+i*.1})]:[]),...(i%2?[]:[bar(450,{fill:.6})])]}));
+ const p=Hp.track(frames,886,1884);assert.ok(p.my.every(x=>x.fill===.9));assert.deepEqual(p.opponent.map(x=>x?.fill??null),[.6,null,.6,null,.6,null]);
+ assert.ok(Hp.track(frames.map(f=>({...f,bars:f.bars.filter(b=>b.x0===322)})),886,1884).opponent.every(x=>x===null),'cutscene bars alone give no opponent series');});
 test('wide screens: your bar further right, a centred cutscene bar belongs to neither side',()=>{
  assert.equal(Hp.barSettings(886,1318),Hp.BAR_WIDE);
  const as=Hp.assignBars([bar(135),bar(450)],886,1318);assert.equal(as.my.x0,135);assert.equal(as.opponent.x0,450);

@@ -75,7 +75,10 @@ const measureBar=(img,bar)=>({fill:bar.fill,trail:bar.trail});
 // whoever attacks, inside the opponent's window: your cutscene bar was read as the opponent's (aura, HP),
 // and where the opponent's own bar showed less often the cutscene bar became their series (false 13–29%
 // "hits"). Screens ≥ 0.55 use x 30–230 for your bar and skip centred bars. Phone screens keep the original
-// rule (a centred bar counts as the opponent's).
+// windows; their HP series (track) skip centred bars too, but assignBars (the aura box and effect-text
+// strip) still counts a centred bar as the opponent's there (2026-10-13, 92 labelled phone videos
+// re-extracted: in track it removed 696 matchups of cutscene-bar series and held-out fast moves went
+// 169 → 171/196; in assignBars it cost the Shadow classifier 4 held-out calls and log-loss, so it stays).
 // Outline colour was measured too (white vs light blue) but differs by video and encoding, so it isn't used.
 const WIDE_ASPECT=.55,BAR_WIDE={...BAR,sides:{my:[30,230],opponent:[230,600]}};
 const isWide=(width,height)=>height>0&&width/height>=WIDE_ASPECT;
@@ -163,8 +166,9 @@ function cadence(list){const gaps=[];for(let i=1;i<list.length;i++){const g=list
  const [turns,repeats]=[...counts].sort((a,b)=>b[1]-a[1]||a[0]-b[0])[0];return {turns,repeats,gaps};}
 // Follows each side's bar through a window of frames: the real bar keeps the same left edge, while
 // effects and scenery that happen to match come and go. frames: [{t, bars}] from findBars.
-// Screens ≥ 0.55 (assignBars): your window is x 30–230 and centred cutscene bars are skipped.
-function track(frames,width,height=0){const s=width/REF_W,out={my:[],opponent:[]},wide=isWide(width,height),use=b=>!wide||!centred(b,width);
+// Screens ≥ 0.55 (assignBars): your window is x 30–230. Centred cutscene bars are skipped on every screen:
+// the attacker's bar (yours about as often as theirs) is not one side's HP.
+function track(frames,width,height=0){const s=width/REF_W,out={my:[],opponent:[]},wide=isWide(width,height),use=b=>!centred(b,width);
  for(const [side,lo,hi] of wide?[['my',30,229.99],['opponent',230,600]]:[['my',30,80],['opponent',230,600]]){const xs=new Map();for(const f of frames)for(const b of f.bars)if(use(b)&&b.x0>=lo*s&&b.x0<=hi*s){const k=Math.round(b.x0/(3*s));xs.set(k,(xs.get(k)||0)+1);}
   if(!xs.size){out[side]=frames.map(()=>null);continue;}const best=[...xs].sort((a,b)=>b[1]-a[1])[0][0]*3*s;let lastY=null;
   out[side]=frames.map(f=>{const c=f.bars.filter(b=>use(b)&&Math.abs(b.x0-best)<=4*s).sort((a,b)=>(lastY===null?0:Math.abs(a.y0-lastY)-Math.abs(b.y0-lastY))||(b.y1-b.y0)-(a.y1-a.y0));const b=c[0];if(!b)return null;lastY=b.y0;return {t:f.t,fill:b.fill,trail:b.trail};});}
