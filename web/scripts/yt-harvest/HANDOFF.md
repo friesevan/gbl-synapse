@@ -441,3 +441,20 @@ Details: `includes/meta/README.md`, *Locating the phone screen*. Takes effect on
   2 of 6 battles lost; avOqMEM2QmA its first). Needs per-placement boxes through probe, plan and runner (README *Gaps*).
   91 saved results ran `CROP=auto` without a box and 117 were probe-skipped for "screen not found"; some would gain
   from a re-extraction. Nothing was requeued.
+
+## Status 2026-10-13 (battles lost in the 2026-10-12 re-analysis)
+
+Details: `includes/meta/README.md` §6, *Battles lost in the 2026-10-12 re-analysis*, and §3 *Battle boundaries from the HUD*.
+
+- _bnPdUKMYpw (11 → 0): the screen locate, fixed above (main's code: 11 battles, 11 full teams, 5 results). A requeued
+  re-analysis skips `probe.cjs` and locates with run-node's `CROP=auto` (16 seeks), a weaker search than a first analysis
+  gets (32 keyframes, then the seeks); this video's old result had come from the probe's box.
+- uYt7eHxdT8I 17 → 12 battles (full teams 12 → 11), PyY0dvrz9m8 7 → 5, iMkGf4Flu0k 7 → 5, o-RROgfJWJg 9 → 6, 5d9UzKXX_XQ
+  6 → 5: correct merges by the boundary rules (same opponent CPs on both sides of each 0.5–5.5 s join); uYt7eHxdT8I had
+  one team counted twice. No change needed.
+- Fixed (`core.js` HudTracker): a battle opened on a misread first HUD (often right after a fade) that turns fresh within
+  20 s no longer keeps "Recording starts mid-battle", which excluded its team from the usage export ("lead unknown") and
+  from lead questions. Saved results keep the flag until re-analysed. Candidates, with a flagged battle opening < 25 s
+  after the previous one (20 battles, 18 full teams; 8 confirmed by replay): 36cfA5qVVrI 5d9UzKXX_XQ Baiai1zZWj8
+  C3njE-P31NQ N51EETBZm94 WQGHOO5AjNI _T8lKPVFesk a-mnQk662RQ eK-nGuYVh5E maw_a7oKYMM miczjE9kUI0 nqByV0SN4VU s93qk0PwYTc
+  u2jAMngLVBw xe-lOmy2x24. khxysRLr8AE and Mxwep4-3rVI keep theirs (their HUD never reads fresh). Nothing was requeued.

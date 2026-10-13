@@ -100,6 +100,7 @@ Within a battle, fainted balls and used shields can only increase. So a HUD with
 - Two shields vanishing at once on one frame right before a fresh HUD is a misread: the icons hide as a charged attack starts. A real shield takes one.
 - After a fade to black, a HUD returning at least 3 s later with fewer fainted Pokémon than the battle has seen starts the next battle (one video had the recorder's first ball misread as fainted on every frame, so no HUD was ever "fresh" and four battles merged).
 - A battle seen on a single HUD frame that opened mid-battle is dropped when a later HUD closes it.
+- A battle that opened on a HUD that wasn't fresh (the first frame after a fade with a shield icon still appearing or a ball read '?', or a misread while the HUD settles) and turns fresh within 20 s under the first two rules was seen from its start: it loses the "Recording starts mid-battle" flag. It used to keep the flag, so its full team was left out of the usage export ("lead unknown") and the lead questions, and the Poké Ball counter could not settle its result (asked as "mid-start").
 
 ### HP bars, damage trails and the dense pass
 
@@ -351,6 +352,18 @@ Ten sampled videos that gave no battle went from 0 to 55 battles. All 9 labelled
 
 Not recoverable from nameplates: uploads whose crop cuts the names off the phone's top (K7vaQKc1Gxs: only the ball row is in the frame; te5W8Jrc-Mk: the names are cut in half). The species are still in the "X used Y!" and send-out banners, which read well in every language; using banner species when no nameplate reads is listed under gaps.
 
+**Battles lost in the 2026-10-12 re-analysis (checked 2026-10-13).** Against the previous results of the requeued videos:
+
+| Video | UI | Battles | Full teams | Why |
+| --- | --- | --- | --- | --- |
+| _bnPdUKMYpw | es | 11 → 0 | 10 → 0 | no screen found (see *Locating the phone screen*); with today's `locate`: 11 battles, 33 opponent species, 11 full teams, 5 results |
+| uYt7eHxdT8I | es | 17 → 12 | 12 → 11 | correct: 5 split parts rejoined; one team had been counted twice |
+| PyY0dvrz9m8, iMkGf4Flu0k, o-RROgfJWJg, 5d9UzKXX_XQ | en | 7 → 5, 7 → 5, 9 → 6, 6 → 5 | unchanged | correct: split parts rejoined |
+
+Every rejoined part shows the same opponent Pokémon, with the same CPs, on both sides of its join, 0.5–5.5 s apart, and in most the same matchup runs across the join. uYt7eHxdT8I's lost full team is a double count: one battle (Thievul 1488, Corviknight 1492, Clodsire 1500 CP; Charjabug against Clodsire from 463 to 474 s) had been split at 467.5 s by one frame that read no shields on either side, exactly the case of the two-shields rule.
+
+The re-analysis also raised the number of later battles flagged "Recording starts mid-battle" from 5 to 83. Most are in Japanese uploads whose first Poké Ball reads as fainted on every frame, where the flag stays. Others came from the boundary rules: the post-fade rule opens the next battle on its first HUD, often read with a shield icon still appearing or a ball read '?', and the settling rule kept the flag although the HUD turned fresh half a second later (5d9UzKXX_XQ at 110.5 s). Replaying the recorded tracker inputs of 10 videos with the fix in *Battle boundaries from the HUD*: 8 battles (all full teams, in 6 videos) lose the flag, two videos whose HUD never reads fresh keep theirs (khxysRLr8AE, Mxwep4-3rVI), and nothing else changes.
+
 ## 7. Accuracy: what has been measured
 
 ### Battle level, on the labelled benchmark
@@ -506,6 +519,7 @@ The extractor was ported from the owner's **PoGo Recorder / PoGoAnalyzer** proto
 | v4 | 2026-10-11 | evidence model refit on 228 labels (gap likelihood, proportional noise, clock-time energy, icon confusion), Shadow classifier, focus shots, HP-bar detector rework, recalibration and screen refit, other UI languages |
 | | 2026-10-12 | results from the timeline with learning rules, result screens and banners in ten languages, boundary rules, evidence refit on the new hits, per-video observed catalog |
 | | 2026-10-13 | language search for blurry CJK uploads (budget, model narrowing), Korean names by jamo, second pass when the language was decided late |
+| | 2026-10-13 | a battle that turns fresh within 20 s of its start is not flagged as starting mid-battle |
 
 ## 13. Dependencies and attribution
 

@@ -241,8 +241,12 @@ class HudTracker{
   // most 3 s before a fresh HUD (within 15 s, a charged-attack cutscene): shield icons hide or blur as a charged attack
   // starts; a real shield takes one. Nobody may have fainted. In 35 saved videos 5 of 264 battles were
   // such 28–56 s parts split off at 0.5–1 s gaps; cGATSvEItIM had 3 more, one across an 8 s cutscene.
-  const c0=this.current,settling=c0&&t-c0.start<20&&gap<8,transient=c0&&c0.usedJump>=2&&this.lastHud-c0.usedAt<=3&&gap<15;
-  if(c0&&fresh&&c0.used>0&&(settling||transient)&&this.current.fainted.my+this.current.fainted.opponent===0){const c=this.current;c.used=0;c.shieldsUsed={my:0,opponent:0};c.events=c.events.filter(e=>e.kind!=='shield');}
+  // Such a fresh HUD also shows the battle's start: a battle that opened on a misread (a shield, or a ball read '?', often
+  // on the first HUD after a fade, below) and turns fresh within 20 s was seen from its start, so it drops the "mid-battle"
+  // flag, which cost the 2026-10-12 re-analysis full teams in the usage export and the counter's results (5d9UzKXX_XQ 110.5 s).
+  const c0=this.current,settling=c0&&t-c0.start<20&&gap<8,transient=c0&&c0.usedJump>=2&&this.lastHud-c0.usedAt<=3&&gap<15,clean=c0&&fresh&&(settling||transient)&&c0.fainted.my+c0.fainted.opponent===0;
+  if(clean&&c0.used>0){c0.used=0;c0.shieldsUsed={my:0,opponent:0};c0.events=c0.events.filter(e=>e.kind!=='shield');}
+  if(clean&&t-c0.start<20)c0.flags=c0.flags.filter(f=>!f.startsWith('Recording starts mid-battle'));
   // After a fade to black, a HUD that returns (≥ 3 s later) with fewer fainted Pokémon than the battle has seen starts
   // the next battle even when it doesn't read as fresh (a misread ball or shield on every frame): fainted counts never go
   // down within a battle. cBePYfn3m1U merged 4 battles into one 772 s "battle" that way (fades at 136, 322 and 522 s).
