@@ -15,6 +15,14 @@ Read [the current guide](../../training/team-search/README.md) and
 The exact verified simulator implementation preserves historical v4 replay IDs;
 changed search settings require a new run or compatible v4 warm-start.
 
+## Selection protocol in a report
+
+`search` records the optional safeguards of the run: `minLeadFixtures` (a team with fewer fixtures than this ranked after every team with that many, so it could neither lead, be the retest incumbent nor be screened; `search.selection` describes what it did: teams at or above the threshold, screening candidates, whether the ranking fell back), `confirmationOpponents` (the planned size of the sealed confirmation panel) and `validationOpponentsMax` (the planned larger final panel). They are absent when off.
+
+`finalPanel` keeps `requestedFixtures` (the planned base panel), `completedFixtures` (the total, including extension steps) and `complete`, and, when the final panel was to grow, `extension`: `baseFixtures`, `requestedMax`, `step` (64), `completedFixtures`, `steps[]` (`fixtures`, `added`, `requested`, `seconds`, `battles`) and `stoppedBecause` (`target-reached`, `time`, `stopped`, `base-incomplete`).
+
+`confirmation` sits beside `finalistComparisons` and is `null` when no challenger needed confirming (older reports lack it). When present it describes one sealed panel: `seed`, `requestedFixtures`, `completedFixtures`, `complete`, `primary` (three indexes into `table.variants`), `finalPanelFixtures`, `triggers[]` (what the final panel found: `stage` `final-panel` or `extended-final-panel`, `fixtures`, `challengers[]` with `evidence` of kind `finalist` or `previous-champion`), `teams[]` (`team`, `role` `primary` or `challenger`, `kind`, `finalScore`, the sealed-panel `score`, `games`, `wins`, `draws`, `losses`), `comparisons[]` (one per challenger: `delta` = primary minus challenger, `interval95` for that pair alone, `simultaneous95` from one band over every pair of the confirmation teams, `verdict` `primary-better`, `challenger-better` or `unresolved`, `confirmed`), `pairs[]` (every pair under the same band: `a`, `b`, `delta` = a minus b, `simultaneous95`, `verdict` `a-better`, `b-better` or `unresolved`), `outcome` (`challenger-confirmed`, `not-confirmed`, `incomplete`), `summary`, `method`. The screening-selected primary stays `table.rows[].primary` whatever the outcome. The per-fixture scores stay in the run's `checkpoint.json`; `neural-report-core.js` validates the block.
+
 ## Previous champions in a report
 
 A run started with `--champions` (the launcher adds the published v1 and v3 primaries and every completed

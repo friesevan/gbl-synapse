@@ -21,6 +21,8 @@ There are about 1.65 billion ways to pick a lead and two bench Pokémon from the
 
 ![The neural network: each team is turned into 366 numbers, squeezed into 16, and two teams are compared through a strength difference plus a counter term](docs/teams-model.svg)
 
+**A second exam when the first one is unclear.** If another team clearly beats the chosen primary on the final exam, picking it now would just be picking the best-looking of several noisy results. So the run plays the primary and that challenger again on a third, sealed set of opponents (256 by default), and the tab says whether the advantage held up, did not, or could not be tested in the time left. "Did not" is not proof they are equal: 256 opponents only reveal differences of about 5 points. The primary stays the primary either way. A team may also be required to have played a minimum number of battles (64 is recommended) before it can lead the search or be tested, and when time is left the final exam can keep growing, 64 opponents at a time.
+
 ## What the score means
 
 A team's score is the share of battles it wins, with a draw counting as half, against opponent teams drawn from the modelled meta, with both sides played by the same computer controller. It is not a prediction of your win rate: real opponents have other movesets, other IVs and other habits, and the controller is simpler than a good player. What the score is good for is comparing teams under the same assumptions, and finding candidates worth trying.
@@ -32,7 +34,7 @@ A team's score is the share of battles it wins, with a draw counting as half, ag
 - **Teams:** every team the search evaluated, with its training score (noisy, from the search itself), its screening score and its fresh-test score (the trustworthy ones). You can search teams the same way as the rankings, for example `melmetal&cramorant&@counter` or `lead:melmetal`.
 - **Battles and replays:** click a team, then a battle, and the site replays it with the same engine and the same random seed, checks that it gets the saved result, and graphs all six Pokémon's HP.
 - **Compare Teams:** two teams on the same opponents, with the difference, an interval, and which battles changed.
-- **Search Performance:** how much better the model's picks were than random picks each round, how its prediction error fell, and how the primary team did against the baselines.
+- **Search Performance:** how much better the model's picks were than random picks each round, how its prediction error fell, how the primary team did against the baselines, and, when a challenger needed a second exam, whether its advantage held up.
 - **Import Report:** load the result of your own overnight run.
 
 ## How good is it
