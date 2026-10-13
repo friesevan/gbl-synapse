@@ -350,6 +350,8 @@ Ten sampled videos that gave no battle went from 0 to 55 battles. All 9 labelled
 | 9KDK30i9hOI (288×640) | ko | 0 | 3, 3 + 3 | 3, 7 + 6, 1 full team | **5 battles**, 12 + 14 species, 2 full teams |
 | 6qkOGaSvDIk (phone mock-up frame) | ja | 0 | 2 | — | 2 |
 
+**Re-analysis at harvest scale (2026-10-13).** 125 videos were requeued for these changes (CJK search ran out 34, Korean 33, screen never located 38, wrong mid-battle flags 15, 16:9 HP bars 6) and analysed in a 6-hour harvest together with 51 earlier requests; 116 finished. Battles 341 → 515, opponent species 775 → 1,298, full opponent teams 173 → 343, results 181 → 341; 29 videos went from no battle to some (Korean 288×640 sets 0 → 5 each, Japanese uploads 0 → 3–7, the Npoke and Spanish screen-locate cases 0 → 4–11). The second pass ran on 21 videos. Four Korean 5-game sets lost a battle (6–7 → 5–6), a split battle rejoined: their full teams held or rose. 60 requests were still waiting for their download at the end.
+
 Not recoverable from nameplates: uploads whose crop cuts the names off the phone's top (K7vaQKc1Gxs: only the ball row is in the frame; te5W8Jrc-Mk: the names are cut in half). The species are still in the "X used Y!" and send-out banners, which read well in every language; using banner species when no nameplate reads is listed under gaps.
 
 **Battles lost in the 2026-10-12 re-analysis (checked 2026-10-13).** Against the previous results of the requeued videos:

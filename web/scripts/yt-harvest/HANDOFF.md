@@ -486,3 +486,7 @@ Details: `includes/meta/README.md` §6 *At harvest scale, and the language searc
   PokeDeeGO videos (aspect 0.567, 16:9) differ only in HP/aura evidence from the 0.55 cutoff: score.cjs output
   identical, battle structure, species, teams and results identical, labelled Shadow Feraligatr 0.425 → 0.597 and
   non-Shadow Marowak 0.014 → 0.009, fast-move picks unchanged. parity.cjs 7/7 identical. 236 Node and 141 Python tests pass.
+- **Requeued and re-analysed (2026-10-13 10:57–16:57, 8 workers):** 125 requests written for these fixes (reason
+  "re-analyse with 2026-10-13 extractor fixes: …") plus the 51 pending; 116 finished: battles 341 → 515, opponent
+  species 775 → 1,298, full teams 173 → 343, results 181 → 341, 29 videos 0 → some; second pass on 21. 60 `reprocess`
+  rows remain (downloads): the next harvester start continues them. The new battles' questions are in Validate.
