@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 640" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>Meta Extractor architecture: from a recording to battle data, review questions and the observed meta</title>
+<style>
+.box{fill:var(--sunken,#f3f6f9);stroke:var(--line,#c9d3dc);stroke-width:1.3}
+.acc{fill:var(--accent-tint,#e4f1fb);stroke:var(--accent-line,#86b7e0)}
+.out{fill:var(--panel,#ffffff);stroke:var(--line,#c9d3dc)}
+.t{font-size:13.5px;font-weight:700;fill:var(--text,#1d2b36)}
+.s{font-size:11.5px;fill:var(--text-2,#3d4f5e)}
+.m{font-size:10.5px;fill:var(--muted,#6b7a88)}
+.lane{font-size:11px;font-weight:700;letter-spacing:.12em;fill:var(--accent,#2f7fc1)}
+.a{stroke:var(--text-2,#3d4f5e);stroke-width:1.5;fill:none;marker-end:url(#meta-arch-arrow)}
+.d{stroke-dasharray:5 4}
+</style>
+<defs><marker id="meta-arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-2,#3d4f5e)"/></marker></defs>
+
+<text x="20" y="26" class="lane">1 · SOURCES</text>
+<rect x="20" y="36" width="200" height="74" rx="10" class="box"/>
+<text x="32" y="58" class="t">Your own recording</text>
+<text x="32" y="76" class="s">Analyze &amp; review (browser)</text>
+<text x="32" y="92" class="m">MP4 / MOV / WebM · stays on device</text>
+<rect x="20" y="122" width="200" height="74" rx="10" class="box"/>
+<text x="32" y="144" class="t">YouTube harvest</text>
+<text x="32" y="162" class="s">scripts/yt-harvest (Python, local)</text>
+<text x="32" y="178" class="m">discover · download · probe · extract</text>
+
+<text x="260" y="26" class="lane">2 · DECODE &amp; NORMALISE</text>
+<rect x="260" y="36" width="268" height="74" rx="10" class="box"/>
+<text x="272" y="58" class="t">Browser: video element seeks</text>
+<text x="272" y="76" class="s">keyframes (~1/s) · 2 fps when needed</text>
+<text x="272" y="92" class="m">mp4index.js · Canvas crops</text>
+<rect x="260" y="122" width="268" height="74" rx="10" class="box"/>
+<text x="272" y="144" class="t">Node: ffmpeg stream, one decode</text>
+<text x="272" y="162" class="s">10 fps · HUD every 5th · 20-min chunks</text>
+<text x="272" y="178" class="m">run-node.cjs · run-batch.cjs · probe.cjs</text>
+<rect x="260" y="208" width="268" height="56" rx="10" class="acc"/>
+<text x="272" y="230" class="t">Phone screen found, scaled to 886 px</text>
+<text x="272" y="248" class="s">screen.js · nameplate offset calibrated (core.js)</text>
+
+<text x="544" y="26" class="lane">3 · FRAME READERS</text>
+<rect x="544" y="36" width="290" height="88" rx="10" class="box"/>
+<text x="556" y="58" class="t">Nameplates (HUD), every sample</text>
+<text x="556" y="76" class="s">Poké Balls · shields · type icons · name &amp; CP</text>
+<text x="556" y="92" class="s">fingerprints → OCR once per distinct name</text>
+<text x="556" y="108" class="m">core.js readHud · NameCache · Tesseract</text>
+<rect x="544" y="136" width="290" height="72" rx="10" class="box"/>
+<text x="556" y="158" class="t">Mid-screen text, when needed</text>
+<text x="556" y="176" class="s">YOU WIN / GOOD EFFORT · “X used Y!” · “Go, X!”</text>
+<text x="556" y="192" class="m">Surrender dialog · fade to black · 10 languages</text>
+<rect x="544" y="220" width="290" height="88" rx="10" class="box"/>
+<text x="556" y="242" class="t">Dense pass, every frame of a battle</text>
+<text x="556" y="260" class="s">HP bars (fill, trail, outline) · damage steps</text>
+<text x="556" y="276" class="s">Shadow aura purple · focus shots · effect text</text>
+<text x="556" y="292" class="m">hp.js · aura.js · 10 readings / s per matchup</text>
+
+<text x="870" y="26" class="lane">4 · BATTLE MODEL</text>
+<rect x="870" y="36" width="290" height="100" rx="10" class="acc"/>
+<text x="882" y="58" class="t">Battle tracker (state machine)</text>
+<text x="882" y="76" class="s">boundaries from balls &amp; shields · reveals · lead</text>
+<text x="882" y="92" class="s">events: moves, switches, shields, faints</text>
+<text x="882" y="108" class="s">result: screen → timeline rules → question</text>
+<text x="882" y="124" class="m">core.js HudTracker · inferResult</text>
+<rect x="870" y="148" width="290" height="130" rx="10" class="acc"/>
+<text x="882" y="170" class="t">Inference per Pokémon</text>
+<text x="882" y="188" class="s">fast move: damage, cadence, energy, effect text,</text>
+<text x="882" y="204" class="s">priors — over every level/IV pair that fits both CPs</text>
+<text x="882" y="220" class="s">form: icon confusion model · rankings · legal moves</text>
+<text x="882" y="236" class="s">Shadow: logistic classifier on aura, damage, rates</text>
+<text x="882" y="252" class="s">game data as of the battle date</text>
+<text x="882" y="268" class="m">combat.js · shadow-model.js · questions.js</text>
+
+<text x="20" y="346" class="lane">5 · PEOPLE IN THE LOOP</text>
+<rect x="20" y="356" width="290" height="96" rx="10" class="out"/>
+<text x="32" y="378" class="t">Review questions → Validate tab</text>
+<text x="32" y="396" class="s">asked only below confidence thresholds:</text>
+<text x="32" y="412" class="s">fast move &lt; 85% · Shadow 15–85% · open form · result</text>
+<text x="32" y="428" class="m">clip of the moment, evidence in words, model’s guess</text>
+<text x="32" y="444" class="m">validation.js · validation-policy.js</text>
+<rect x="20" y="468" width="290" height="96" rx="10" class="out"/>
+<text x="32" y="490" class="t">Learning loop (offline, no video)</text>
+<text x="32" y="508" class="s">answers → species priors, evidence settings,</text>
+<text x="32" y="524" class="s">Shadow classifier · held out by video</text>
+<text x="32" y="540" class="s">gates: ≥95% right, ≥30 answers, ≥5 videos → resolve</text>
+<text x="32" y="556" class="m">feedback.py · learning-loop.cjs · refit.cjs</text>
+
+<text x="350" y="346" class="lane">6 · OUTPUTS</text>
+<rect x="350" y="356" width="270" height="96" rx="10" class="out"/>
+<text x="362" y="378" class="t">Battle summaries</text>
+<text x="362" y="396" class="s">teams, lead, result, moves, shields, faints,</text>
+<text x="362" y="412" class="s">HP timeline at every half-second turn</text>
+<text x="362" y="428" class="m">no frames, no video, no trainer names</text>
+<text x="362" y="444" class="m">timeline.js graph · results/&lt;video&gt;.json</text>
+<rect x="350" y="468" width="270" height="96" rx="10" class="out"/>
+<text x="362" y="490" class="t">Observed meta</text>
+<text x="362" y="508" class="s">League › Cup › Period · complete vs partial teams</text>
+<text x="362" y="524" class="s">appearance rates with intervals · dedup</text>
+<text x="362" y="540" class="s">human answers override detections</text>
+<text x="362" y="556" class="m">observed.py · observed-core.js · observed.js</text>
+
+<rect x="660" y="356" width="270" height="96" rx="10" class="out"/>
+<text x="672" y="378" class="t">Model performance view</text>
+<text x="672" y="396" class="s">held-out accuracy per refit, calibration,</text>
+<text x="672" y="412" class="s">resolution gates, open / answered / resolved</text>
+<text x="672" y="428" class="m">metrics-history.json · validation-metrics.js</text>
+<rect x="660" y="468" width="270" height="96" rx="10" class="out"/>
+<text x="672" y="490" class="t">Usage export → Team Rankings</text>
+<text x="672" y="508" class="s">complete Great League opponent teams,</text>
+<text x="672" y="524" class="s">dated, deduplicated, creator-capped</text>
+<text x="672" y="540" class="s">= the opponent meta the neural search faces</text>
+<text x="672" y="556" class="m">usage_export.py · training/team-search/meta.cjs</text>
+
+<rect x="970" y="356" width="190" height="208" rx="10" class="box"/>
+<text x="982" y="378" class="t">Benchmarks</text>
+<text x="982" y="396" class="s">9 labelled recordings</text>
+<text x="982" y="412" class="s">(3 phones, 6 CC videos)</text>
+<text x="982" y="428" class="s">human answers on 37+ videos</text>
+<text x="982" y="446" class="s">score.cjs · parity.cjs</text>
+<text x="982" y="462" class="s">movefit-eval · shadow-cv</text>
+<text x="982" y="480" class="s">every change: identical</text>
+<text x="982" y="496" class="s">battles on the benchmark,</text>
+<text x="982" y="512" class="s">held-out numbers before/after</text>
+<text x="982" y="540" class="m">tests/meta-benchmark/</text>
+
+<path class="a" d="M220 73 L260 73"/>
+<path class="a" d="M220 159 L260 159"/>
+<path class="a" d="M375 110 L375 122"/>
+<path class="a" d="M375 196 L375 208"/>
+<path class="a" d="M528 236 L544 236"/>
+<path class="a" d="M528 236 C538 236 536 80 544 80"/>
+<path class="a" d="M528 236 C538 236 536 172 544 172"/>
+<path class="a" d="M834 80 L870 86"/>
+<path class="a" d="M834 172 L870 110"/>
+<path class="a" d="M834 264 L870 213"/>
+<path class="a" d="M1015 136 L1015 148"/>
+<path class="a d" d="M1015 278 C1015 330 250 300 250 356"/>
+<path class="a d" d="M1015 278 C1015 330 485 300 485 356"/>
+<path class="a" d="M165 452 L165 468"/>
+<path class="a" d="M310 516 L336 516 L336 326 L1015 326 L1015 282" style="stroke-dasharray:5 4"/>
+<path class="a" d="M485 452 L485 468"/>
+<path class="a" d="M620 516 L660 516"/>
+<text x="600" y="596" class="m" text-anchor="middle">Solid arrows: data flow for one recording. Dashed: the feedback loop (answers refit the models, which re-derive every saved result).</text>
+<text x="600" y="616" class="m" text-anchor="middle">Everything runs on the contributor’s machine; a hosted copy of the site sees only summaries and questions, never footage.</text>
+</svg>

@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 420" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>The pairwise matchup network: each team is encoded to 16 hidden units; a scalar strength and an antisymmetric interaction term give the probability that team A beats team B</title>
+<style>
+.box{fill:var(--sunken,#f3f6f9);stroke:var(--line,#c9d3dc);stroke-width:1.3}
+.acc{fill:var(--accent-tint,#e4f1fb);stroke:var(--accent-line,#86b7e0)}
+.t{font-size:13.5px;font-weight:700;fill:var(--text,#1d2b36)}
+.s{font-size:11.5px;fill:var(--text-2,#3d4f5e)}
+.m{font-size:10.5px;fill:var(--muted,#6b7a88)}
+.f{font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--text,#1d2b36)}
+.a{stroke:var(--text-2,#3d4f5e);stroke-width:1.5;fill:none;marker-end:url(#teams-model-arrow)}
+</style>
+<defs><marker id="teams-model-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-2,#3d4f5e)"/></marker></defs>
+
+<rect x="20" y="40" width="250" height="140" rx="10" class="box"/>
+<text x="32" y="62" class="t">Team A → x(A), 366 numbers</text>
+<text x="32" y="82" class="s">per member (lead first, bench canonical):</text>
+<text x="32" y="98" class="s">typing · stats · CP/level · published score</text>
+<text x="32" y="114" class="s">&amp; weight · fast move damage/energy/turns</text>
+<text x="32" y="130" class="s">charged coverage, cost, power, buff chances</text>
+<text x="32" y="146" class="s">Shadow · scout profile vs 24 opponents</text>
+<text x="32" y="166" class="m">+ team best/worst coverage per type (36)</text>
+
+<rect x="20" y="230" width="250" height="140" rx="10" class="box"/>
+<text x="32" y="252" class="t">Team B → x(B), 366 numbers</text>
+<text x="32" y="272" class="s">the opponent fixture: three species with</text>
+<text x="32" y="288" class="s">their recommended movesets, encoded the</text>
+<text x="32" y="304" class="s">same way</text>
+<text x="32" y="330" class="m">the same W, b are applied to both teams</text>
+<text x="32" y="346" class="m">(shared encoder), so A and B are comparable</text>
+
+<rect x="330" y="40" width="200" height="140" rx="10" class="acc"/>
+<text x="342" y="62" class="t">Encoder (shared)</text>
+<text x="342" y="88" class="f">h(A) = tanh(W x(A) + b)</text>
+<text x="342" y="110" class="s">16 hidden units</text>
+<text x="342" y="130" class="f">s(A) = vᵀ h(A) + c</text>
+<text x="342" y="152" class="s">scalar “strength” of the team</text>
+<rect x="330" y="230" width="200" height="140" rx="10" class="acc"/>
+<text x="342" y="252" class="t">Encoder (shared)</text>
+<text x="342" y="278" class="f">h(B) = tanh(W x(B) + b)</text>
+<text x="342" y="320" class="f">s(B) = vᵀ h(B) + c</text>
+
+<rect x="590" y="110" width="300" height="200" rx="10" class="acc"/>
+<text x="602" y="132" class="t">Matchup head</text>
+<text x="602" y="160" class="f">P(A beats B) = σ( s(A) − s(B)</text>
+<text x="602" y="182" class="f">                + h(A)ᵀ K h(B) )</text>
+<text x="602" y="210" class="f">K = −Kᵀ  (16 × 16, antisymmetric)</text>
+<text x="602" y="236" class="s">s(A) − s(B): general strength difference</text>
+<text x="602" y="252" class="s">h(A)ᵀKh(B): counter relationships; it can</text>
+<text x="602" y="268" class="s">represent A &gt; B &gt; C &gt; A, which a single</text>
+<text x="602" y="284" class="s">strength number cannot</text>
+<text x="602" y="302" class="m">swapping A and B gives 1 − P exactly; A vs A = 0.5</text>
+
+<rect x="920" y="40" width="250" height="130" rx="10" class="box"/>
+<text x="932" y="62" class="t">Training</text>
+<text x="932" y="82" class="s">target y = 1 / ½ / 0 from one seeded</text>
+<text x="932" y="98" class="s">3-v-3 battle · binary cross-entropy</text>
+<text x="932" y="114" class="s">Adam, 6 epochs, batches of 64,</text>
+<text x="932" y="130" class="s">tiny L2 · gradients checked numerically</text>
+<text x="932" y="150" class="m">12 bootstrapped copies, ≤ 48,000 fixtures</text>
+
+<rect x="920" y="200" width="250" height="170" rx="10" class="box"/>
+<text x="932" y="222" class="t">Inference: a team’s score</text>
+<text x="932" y="242" class="s">average P(A beats R) over 256 fixed</text>
+<text x="932" y="258" class="s">reference opponents R from the meta,</text>
+<text x="932" y="274" class="s">then average over the 12 networks</text>
+<text x="932" y="296" class="s">disagreement across networks = spread,</text>
+<text x="932" y="312" class="s">used to favour uncertain-but-promising</text>
+<text x="932" y="328" class="s">candidates (not a confidence interval)</text>
+<text x="932" y="350" class="m">held-out team MSE 0.004 vs 0.017 constant</text>
+
+<path class="a" d="M270 110 L330 110"/>
+<path class="a" d="M270 300 L330 300"/>
+<path class="a" d="M530 110 C560 110 560 170 590 170"/>
+<path class="a" d="M530 300 C560 300 560 250 590 250"/>
+<path class="a" d="M890 210 L930 110"/>
+<path class="a" d="M890 230 L930 270"/>
+<text x="600" y="400" class="m" text-anchor="middle">Why pairwise: a network that regressed a team’s average score did not beat predicting the mean; learning individual battle outcomes with a counter term did (pilot, October 2026).</text>
+</svg>
