@@ -34,6 +34,15 @@ videos, the same six Pokemon with the same result, faints and shields is one bat
 Human answers (feedback.json, labels/) override detections throughout; the catalog in observed.py
 applies them. Free-LLM resolutions are not human answers and are ignored.
 
+Stratification by date: --since YYYY-MM-DD and --until YYYY-MM-DD (inclusive) keep only teams dated
+inside the window (the same date rule 7 uses: recording date, else upload date). The window is applied
+after the repeated-battle rule, so which copy of a duplicated battle is kept does not depend on it, and
+before the creator cap, so the cap is computed on the window's own creators. Dropped teams are counted as
+"date-range" in the quality report. Stratifying by rating is not possible from this catalog: no battle
+or video record carries the opponent's rating or a rank bracket (the result screen is not read for it, and
+the only rating information is free text in some video titles, e.g. "2864 ELO", which is the creator's own
+rating at that moment, not the opponent's). The `rank` text in the file says so.
+
 Only opponents are written: a creator's own team is one player's choice and repeats across their
 battles. --include-creator-teams adds each creator team once per video.
 
@@ -90,7 +99,29 @@ REASONS = {
     'species-clause': 'Two members share a Pokedex number',
     'no-date': 'No recording or upload date',
     'duplicate': 'Repeated battle (split or re-uploaded)',
+    'date-range': 'Outside the --since/--until window',
 }
+
+
+def day(text):
+    """A strict YYYY-MM-DD date string (empty or None means no bound). Raises ValueError otherwise."""
+    if text in (None, ''):
+        return None
+    text = str(text)
+    if len(text) != 10:
+        raise ValueError('%r is not a YYYY-MM-DD date' % text)
+    try:
+        return dt.date.fromisoformat(text).isoformat()
+    except ValueError:
+        raise ValueError('%r is not a YYYY-MM-DD date' % text) from None
+
+
+def in_window(collected, since, until):
+    """Whether a team's date is inside the inclusive [since, until] window. No bounds keep everything; a team with no date
+    cannot be placed in a bounded window."""
+    if not since and not until:
+        return True
+    return bool(collected) and (not since or collected[:10] >= since) and (not until or collected[:10] <= until)
 
 
 def result_from(b):
@@ -307,8 +338,12 @@ def dedupe(entries):
 
 
 def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None, cups=DEFAULT_CUPS,
-          include_creator_teams=False, max_creator_share=DEFAULT_MAX_CREATOR_SHARE, today=None, prior_samples=20000):
+          include_creator_teams=False, max_creator_share=DEFAULT_MAX_CREATOR_SHARE, today=None, prior_samples=20000,
+          since=None, until=None):
     work, web_root = Path(work), Path(web_root)
+    since, until = day(since), day(until)
+    if since and until and since > until:
+        raise ValueError('--since %s is after --until %s' % (since, until))
     pool, pool_hash = load_pool(pool_path)
     catalog = ObservedCatalog(work, web_root)
     if registry:
@@ -382,6 +417,12 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
     kept, dropped = dedupe(entries)
     reasons['duplicate'] += len(dropped)
     gl_reasons['duplicate'] += len(dropped)
+    # The window comes after the repeated-battle rule (a battle's duplicates are judged on all dates) and before the creator cap.
+    outside = [e for e in kept if not in_window(e['collectedAt'], since, until)]
+    if outside:
+        kept = [e for e in kept if in_window(e['collectedAt'], since, until)]
+        reasons['date-range'] += len(outside)
+        gl_reasons['date-range'] += len(outside)
     for e in kept:
         notes.update(e['notes'])
         leads['reviewer-confirmed' if e['leadConfirmed'] else 'first seen at battle start'] += 1
@@ -450,7 +491,7 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
         'source': ('Observed opponents in %d harvested YouTube GBL videos by %d creators (%s, 1,500 CP), %s to %s. '
                    'Detections with human answers applied; top-tier players\' opponents, not average-player usage.'
                    % (len({e['videoId'] for e in rows_in}), len(per_creator), cup_text, first, last)),
-        'cp': 1500, 'cup': 'all', 'collectedAt': last,
+        'cp': 1500, 'cup': 'all', 'collectedAt': last, **({'window': {'since': since, 'until': until}} if since or until else {}),
         'rank': 'Opponents of top-tier YouTube creators (high-rated players; rating not measured); biased above the average ladder',
         'generatedAt': generated, 'generator': 'web/scripts/yt-harvest/usage_export.py',
         'creators': len(per_creator), 'dateRange': {'from': first, 'to': last},
@@ -466,7 +507,7 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
         'battles': all_battles, 'greatLeagueBattles': gl_battles,
         'eligibleTeams': len(kept), 'creatorTeams': len(creator_rows), 'rows': len(teams),
         'distinctTeams': len(distinct), 'creators': len(per_creator), 'dateRange': {'from': first, 'to': last},
-        'videos': len({e['videoId'] for e in rows_in}),
+        'videos': len({e['videoId'] for e in rows_in}), 'window': {'since': since, 'until': until},
         'weightedTotal': total_weight, 'creatorCapK': k, 'maxCreatorShare': {'before': max_share_before, 'after': max_share_after},
         'exclusions': {r: {'count': reasons[r], 'share': reasons[r] / all_battles if all_battles else 0, 'label': REASONS[r]}
                        for r in REASONS if reasons[r]},
@@ -516,7 +557,9 @@ def markdown(report):
              '| Creator teams (opt-in) | %d |' % r['creatorTeams'],
              '| Distinct opponent teams (lead + bench) | %d |' % r['distinctTeams'],
              '| Videos / creators | %d / %d |' % (r['videos'], r['creators']),
-             '| Date range | %s to %s |' % (r['dateRange']['from'], r['dateRange']['to']),
+             '| Date range | %s to %s%s |' % (r['dateRange']['from'], r['dateRange']['to'],
+                                               ' (window %s to %s)' % (r['window']['since'] or 'start', r['window']['until'] or 'end')
+                                               if r.get('window') and (r['window']['since'] or r['window']['until']) else ''),
              '| Largest creator share, before / after the cap | %s / %s |' % (pct(r['maxCreatorShare']['before']), pct(r['maxCreatorShare']['after'])),
              '', '## Exclusions (share of all battles)', '', '| Reason | Battles | Share |', '| --- | ---: | ---: |']
     lines += ['| %s | %d | %s |' % (v['label'], v['count'], pct(v['share'])) for v in r['exclusions'].values()]
@@ -569,11 +612,19 @@ def main(argv=None):
     ap.add_argument('--cups', default=','.join(DEFAULT_CUPS), help='1,500 CP cup IDs to include (default great,mega)')
     ap.add_argument('--include-creator-teams', action='store_true', help='Also write each creator team once per video')
     ap.add_argument('--max-creator-share', type=float, default=DEFAULT_MAX_CREATOR_SHARE, help='Largest weight share of one channel')
+    ap.add_argument('--since', help='Keep only teams dated on or after this day (YYYY-MM-DD; recording date, else upload date)')
+    ap.add_argument('--until', help='Keep only teams dated on or before this day (YYYY-MM-DD)')
     args = ap.parse_args(argv)
+    try:
+        since, until = day(args.since), day(args.until)
+    except ValueError as e:
+        ap.error(str(e))
+    if since and until and since > until:
+        ap.error('--since %s is after --until %s' % (since, until))
     if not 0 < args.max_creator_share <= 1:
         ap.error('--max-creator-share must be in (0, 1]')
     usage, report = build(args.work, args.web_root, args.pool, args.registry, tuple(c for c in args.cups.split(',') if c),
-                          args.include_creator_teams, args.max_creator_share)
+                          args.include_creator_teams, args.max_creator_share, since=since, until=until)
     out = Path(args.out) if args.out else Path(args.work) / 'usage' / 'observed-gl-opponents.json'
     if not usage['teams']:
         print(markdown(report))

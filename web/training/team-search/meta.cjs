@@ -56,18 +56,19 @@ function dateValue(value,label) {
  return date;
 }
 
-function loadUsage(file,species,{halfLifeDays=0,asOf=''}={}) {
+function loadUsage(file,species,{halfLifeDays=0,asOf='',excludeCreator=''}={}) {
  if (!file) return null;
  const raw=fs.readFileSync(file,'utf8');
  if (Buffer.byteLength(raw)>10*1024*1024) throw Error('Usage file exceeds 10 MB');
  const data=JSON.parse(raw), map=new Map(species.map(p=>[p.speciesId,p]));
  if (data.cp!==1500 || data.cup!=='all' || typeof data.source!=='string' || !data.source.trim() || !Array.isArray(data.teams) || !data.teams.length || data.teams.length>100000) throw Error('Usage file needs source, cp:1500, cup:"all", and nonempty teams (at most 100,000 rows)');
  const at=halfLifeDays?dateValue(asOf,'usage-as-of'):null;
- const combined=new Map(); let rawCount=0, weightedCount=0;
+ const combined=new Map(), creatorWeight=new Map(); let rawCount=0, weightedCount=0;
  // Optional row.weight in (0, 1] down-weights each appearance, e.g. to cap one
  // reporter's (YouTube creator's) influence; count stays the raw appearances.
  let squareSum=0, first=null, last=null; const creators=new Set();
  for (const row of data.teams) {
+  if (excludeCreator && row.creator===excludeCreator) continue; // leave-one-creator-out meta (sensitivity panel)
   if (!Array.isArray(row.members) || row.members.length!==3 || !Number.isInteger(row.count) || row.count<=0) throw Error('Usage row needs three lead-first species IDs and a positive integer appearance count');
   if (row.weight!==undefined && !(typeof row.weight==='number' && Number.isFinite(row.weight) && row.weight>0 && row.weight<=1)) throw Error('Usage row weight must be a number in (0, 1]');
   const team=row.members.map(id=>{if (!map.has(id)) throw Error('Observed opponent outside prepared pool: '+id); return map.get(id);});
@@ -80,32 +81,35 @@ function loadUsage(file,species,{halfLifeDays=0,asOf=''}={}) {
   const w=(row.weight??1)*Math.pow(.5,age/(halfLifeDays||1)), count=row.count*w;
   rawCount+=row.count; weightedCount+=count; squareSum+=row.count*w*w;
   if (typeof collectedAt==='string' && /^\d{4}-\d{2}-\d{2}/.test(collectedAt)) { const day=collectedAt.slice(0,10); if (!first||day<first) first=day; if (!last||day>last) last=day; }
-  if (typeof row.creator==='string' && row.creator) creators.add(row.creator);
+  if (typeof row.creator==='string' && row.creator) { creators.add(row.creator); creatorWeight.set(row.creator,(creatorWeight.get(row.creator)||0)+count); }
   const canonical=[team[0],...team.slice(1).sort((a,b)=>a.speciesId.localeCompare(b.speciesId))], key=canonical.map(p=>p.speciesId).join('|');
   const entry=combined.get(key)||{team:canonical,count:0,rawCount:0}; entry.count+=count; entry.rawCount+=row.count; combined.set(key,entry);
  }
+ if (excludeCreator && !(weightedCount>0)) throw Error('Excluding creator '+excludeCreator+' leaves no observed teams');
  if (!(weightedCount>0) || !Number.isFinite(weightedCount) || !Number.isSafeInteger(rawCount)) throw Error('Usage appearance counts exceed supported range or decay to zero');
  return {rows:[...combined.values()],source:data.source,collectedAt:data.collectedAt||null,rank:data.rank||null,total:rawCount,weightedCount,effectiveObservations:weightedCount*weightedCount/squareSum,halfLifeDays,asOf:halfLifeDays?asOf:null,hash:crypto.createHash('sha256').update(raw).digest('hex'),
-  distinctTeams:combined.size,dateRange:first?{from:first,to:last}:null,creators:creators.size||(Number.isInteger(data.creators)&&data.creators>0?data.creators:null),creatorWeighted:data.teams.some(row=>row.weight!==undefined&&row.weight<1)};
+  distinctTeams:combined.size,dateRange:first?{from:first,to:last}:null,creators:creators.size||(Number.isInteger(data.creators)&&data.creators>0?data.creators:null),creatorWeighted:data.teams.some(row=>row.weight!==undefined&&row.weight<1),
+  topCreator:[...creatorWeight].sort((x,y)=>y[1]-x[1]||(x[0]<y[0]?-1:1)).map(([creator,weight])=>({creator,share:weight/weightedCount}))[0]||null};
 }
 
-function createMeta(species,{mode='hybrid',usageFile='',weightPower=1.25,halfLifeDays=0,asOf='',priorStrength=500}={}) {
+function createMeta(species,{mode='hybrid',usageFile='',weightPower=1.25,halfLifeDays=0,asOf='',priorStrength=500,excludeCreator=''}={}) {
  if (!Number.isFinite(weightPower) || weightPower<.25 || weightPower>3) throw Error('meta weight power must be between .25 and 3');
  if (!Number.isFinite(halfLifeDays) || halfLifeDays<0 || !Number.isFinite(priorStrength) || priorStrength<0) throw Error('Usage half-life and prior strength must be finite and nonnegative');
  if (halfLifeDays && !usageFile) throw Error('Usage half-life requires --usage-file');
- if (!['hybrid','independent','observed'].includes(mode)) throw Error('meta must be hybrid, independent or observed');
+ if (!['hybrid','independent','observed','coherent'].includes(mode)) throw Error('meta must be hybrid, independent, observed or coherent');
+ if (excludeCreator && !usageFile) throw Error('Excluding a creator requires --usage-file');
  if (species.some(p=>!Number.isFinite(p.weight)||p.weight<0) || new Set(species.map(p=>p.speciesId)).size!==species.length) throw Error('Meta species need unique IDs and finite nonnegative weights');
  if (new Set(species.filter(p=>p.weight>0).map(p=>p.dex)).size<3) throw Error('Meta needs three positive-weight distinct species');
  if (!typeMap) typeMap=new Map(require('../../includes/pro/data/gamemaster.json').pokemon.map(p=>[p.speciesId,p.types]));
  species=species.map(p=>({...p,originalWeight:p.weight,weight:p.weight**weightPower,types:p.types||typeMap.get(p.speciesId)||[]}));
- const observed=loadUsage(usageFile,species,{halfLifeDays,asOf});
+ const observed=loadUsage(usageFile,species,{halfLifeDays,asOf,excludeCreator});
  if (mode==='observed' && !observed) throw Error('Observed meta requires --usage-file');
  // Decayed counts govern both the posterior probabilities AND trust in the
  // observation source: a large stale archive must not dominate current play.
  const observedShare=observed?Math.min(.8,observed.weightedCount/(observed.weightedCount+priorStrength)):0;
- const description={version:'meta-v3-recency',mode,weightPower,observedShare:mode==='observed'?1:mode==='independent'?0:observedShare,source:observed?.source||'Synthetic PvPoke prior',usageHash:observed?.hash||null,observedCount:observed?.total||0,weightedObservations:observed?.weightedCount||0,effectiveObservations:observed?.effectiveObservations||0,usageHalfLifeDays:halfLifeDays,usageAsOf:halfLifeDays?asOf:null,usagePriorStrength:priorStrength,collectedAt:observed?.collectedAt||null,rank:observed?.rank||null,
-  ...(observed?{distinctTeams:observed.distinctTeams,dateRange:observed.dateRange,creators:observed.creators,creatorWeighted:observed.creatorWeighted}:{}),
-  proportions:mode==='observed'?{observed:1}:mode==='independent'?{independent:1}:observed?{observed:observedShare,independent:(1-observedShare)/2,coherent:(1-observedShare)/2}:{independent:.5,coherent:.5},movesets:'Published recommended movesets; observed moves are not inferred as fact'};
+ const description={version:'meta-v3-recency',mode,weightPower,observedShare:mode==='observed'?1:mode==='independent'||mode==='coherent'?0:observedShare,source:observed?.source||'Synthetic PvPoke prior',usageHash:observed?.hash||null,observedCount:observed?.total||0,weightedObservations:observed?.weightedCount||0,effectiveObservations:observed?.effectiveObservations||0,usageHalfLifeDays:halfLifeDays,usageAsOf:halfLifeDays?asOf:null,usagePriorStrength:priorStrength,collectedAt:observed?.collectedAt||null,rank:observed?.rank||null,
+  ...(observed?{distinctTeams:observed.distinctTeams,dateRange:observed.dateRange,creators:observed.creators,creatorWeighted:observed.creatorWeighted}:{}),...(excludeCreator?{excludedCreator:excludeCreator}:{}),
+  proportions:mode==='observed'?{observed:1}:mode==='independent'?{independent:1}:mode==='coherent'?{coherent:1}:observed?{observed:observedShare,independent:(1-observedShare)/2,coherent:(1-observedShare)/2}:{independent:.5,coherent:.5},movesets:'Published recommended movesets; observed moves are not inferred as fact'};
  const firstDraw=sampler(species,species.map(p=>p.weight)), observedDraw=observed?sampler(observed.rows,observed.rows.map(p=>p.count)):null;
  function fixtures(n,seed) {
   if (!Number.isInteger(n)||n<0||!Number.isInteger(seed)||seed<0||seed>0xffffffff) throw Error('Fixture count must be nonnegative and seed unsigned 32-bit');

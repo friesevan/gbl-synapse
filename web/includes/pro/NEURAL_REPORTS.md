@@ -35,6 +35,34 @@ inspected and replayed like any other tested team. The validator in `neural-repo
 present; reports without it are unchanged and remain valid. See
 [the evaluation protocol](../../training/team-search/EVALUATION_PROTOCOL.md) for how to read the comparison.
 
+## Meta sensitivity in a report
+
+A run started with `--sensitivity-fixtures N` (default 128; 0 disables) re-simulates its final-tested finalists, after the
+final test, under alternative opponent metas on sealed panels of their own. The report carries it as the optional top-level
+field `sensitivity` beside `finalPanel` (`null` or absent when the run had none; schema stays 1):
+
+- `requestedFixtures`, `fixtures` (the common completed prefix, equal on every meta), `complete`, `groups` (`finalists`, or
+  `all` when baseline and previous-champion teams were included), `resamples`, `seed`, `method`;
+- `metas[]`: `id` (`independent-1.25`, `coherent`, `observed`, `observed-without-top-creator`, `independent-1.0`,
+  `independent-1.5`; the observed ones need a usage file), `label`, `mode`, `weightPower`, `observedShare`, `seed` (derived from
+  the validation seed, distinct from every other panel), `fixtures`, `components` (fixtures drawn per meta component), and for
+  observed metas `observedCount`, `distinctTeams`, `creators`; the leave-one-creator-out meta carries the removed creator's
+  weight share and a short hash, never the name;
+- `teams[]`: `team` (three indexes into `table.variants`, lead first), `kind` (`finalist`, or a baseline group), `primary`,
+  `finalScore` (the run meta's final-panel score, for reference only), `scores[]` (mean per meta, in `metas` order),
+  `standardErrors[]`, `ranks[]` (1 = best among the listed teams, per meta), `mean`, `min` and `minMeta`, `max` and `maxMeta`,
+  `spread` (max minus min), `spreadInterval95` (bootstrap over fixtures within each meta), `noiseSpread` (the median spread
+  that fixture noise alone would give if the team scored the same under every meta) and `meanMinusSpread` (recorded for study;
+  it is not used for selection);
+- `summary.topByMeta[]`: the index in `teams` of the best team on each meta.
+
+Mean, min and spread are over the alternative metas only. The spread of a team measured on 128 fixtures per meta contains
+roughly 7 to 9 points of fixture noise (4 to 5 at 512), so read it against `noiseSpread`. Scores under different metas are not comparable as
+strength. The primary stays the screening winner. The validator in `neural-report-core.js` checks the block when present;
+`neural-portable.js` shows it as a table in Search Performance and as one line under each finalist's bar
+("across 6 metas: min 62.5%, spread 14.1 points"). `training/team-search/sensitivity.cjs` re-runs the panel for a finished
+run or report; see its header and [the evaluation protocol](../../training/team-search/EVALUATION_PROTOCOL.md).
+
 The following v3 instructions are historical.
 
 # Neural team search v3: run, import and transfer
