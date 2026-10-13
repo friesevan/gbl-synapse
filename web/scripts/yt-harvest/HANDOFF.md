@@ -458,3 +458,31 @@ Details: `includes/meta/README.md` §6, *Battles lost in the 2026-10-12 re-analy
   after the previous one (20 battles, 18 full teams; 8 confirmed by replay): 36cfA5qVVrI 5d9UzKXX_XQ Baiai1zZWj8
   C3njE-P31NQ N51EETBZm94 WQGHOO5AjNI _T8lKPVFesk a-mnQk662RQ eK-nGuYVh5E maw_a7oKYMM miczjE9kUI0 nqByV0SN4VU s93qk0PwYTc
   u2jAMngLVBw xe-lOmy2x24. khxysRLr8AE and Mxwep4-3rVI keep theirs (their HUD never reads fresh). Nothing was requeued.
+
+## Status 2026-10-13 (language search, 16:9 HP bars, requeue path; review of the 2026-10-11/12 fixes)
+
+Details: `includes/meta/README.md` §6 *At harvest scale, and the language search*, §3 *Why the cutoff is 0.55*,
+§10 gaps. Takes effect on the next harvester start.
+
+- **The 2026-10-11/12 fixes at scale** (the 286 requeued videos re-analysed on 2026-10-12): Japanese-titled 0 → 409
+  battles (45 of 74 videos gained), Korean 1 → 92, Chinese 0 → 38; Latin-script results read 6 → 351; wide screens
+  (≥ 0.6) have hits on your bar in 66% of matchups (old code 26%; phones 78%). Lost battles on Spanish videos were
+  correct merges or the screen locate (entries above).
+- **Language search** (`core.js` NameLanguage, matchJamo; `run-node.cjs`): 36 analyses had spent the CJK budget with
+  English never naming 3 species, 16 of them 288×640 uploads of one Korean channel (first exact match at plate 53–79).
+  Letterless plates are free, the budget is 200 plates while English has named nothing, weak models drop out after 20
+  tries; Korean names match by jamo after the switch (Mega X/Y from the English read); a language decided > 45 s after
+  the first nameplate triggers a second pass with it preset (`NAME_LANGUAGE`, `LATE_LANGUAGE`). 99komx6lfIw 0 → 5
+  battles, 9KDK30i9hOI 0 → 5 (2 full teams), 6qkOGaSvDIk 0 → 2.
+- **16:9 HP bars** (`hp.js`): the wide rule starts at aspect 0.55 (was 0.6); 7 videos at 0.56–0.58: your bar 43% → 72%
+  of matchups, opponent unchanged; phones and ≥ 0.6 identical. Open decision (README gaps): phones still count a
+  centred cutscene bar as the opponent's (false hits in 14 matchups on 5 phone videos); changing it needs a re-extract
+  and refit.
+- **Requeue path** (`harvest.py`): a re-analysis now runs the probe for its screen box (the whole video is still
+  analysed); run-node's own 16-seek search had missed `_bnPdUKMYpw`.
+- **Not recoverable from nameplates**: uploads whose crop cuts the names off the phone's top (K7vaQKc1Gxs,
+  te5W8Jrc-Mk); species would have to come from banners (README gaps).
+- **Labelled benchmark** (9 recordings, session start c4f1538 → main with all of the above): 7 byte-identical; the two
+  PokeDeeGO videos (aspect 0.567, 16:9) differ only in HP/aura evidence from the 0.55 cutoff: score.cjs output
+  identical, battle structure, species, teams and results identical, labelled Shadow Feraligatr 0.425 → 0.597 and
+  non-Shadow Marowak 0.014 → 0.009, fast-move picks unchanged. parity.cjs 7/7 identical. 236 Node and 141 Python tests pass.
