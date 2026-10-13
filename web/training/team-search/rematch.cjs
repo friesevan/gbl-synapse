@@ -66,7 +66,7 @@ function buildPanel(pool, opts, seed) {
  };
 }
 
-async function defaultPlay(jobs, { workers, log }) {
+async function defaultPlay(jobs, { workers, log, label = 'rematch' }) {
  const { BattlePool, availableCores } = require('../pool.cjs'), { BattleRunner } = require('../runner.cjs');
  if (workers > availableCores()) throw Error('workers exceeds the available cores');
  const pool = new BattlePool(workers, () => new BattleRunner({ workerFile: path.join(__dirname, '../battle-worker-v4.cjs'), heapMb: 192 }));
@@ -75,7 +75,7 @@ async function defaultPlay(jobs, { workers, log }) {
   return await pool.map(jobs, { onResult: result => {
    if (result.timedOut) throw Error('Battle timeout: no fabricated draw accepted');
    if (!Number.isFinite(result.score) || result.score < 0 || result.score > 1) throw Error('Invalid battle score');
-   if (++done && Date.now() - last > 10000) { last = Date.now(); log('[rematch] ' + done + '/' + jobs.length + ' battles'); }
+   if (++done && Date.now() - last > 10000) { last = Date.now(); log('[' + label + '] ' + done + '/' + jobs.length + ' battles'); }
   } });
  } finally { await pool.close(); }
 }
@@ -145,4 +145,4 @@ async function main(argv) {
  console.log('\n' + formatTable(result) + '\n\nSaved ' + out);
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => { console.error(e.message || e); process.exitCode = 1; });
-module.exports = { parseArgs, panelSeed, buildPanel, rematch, formatTable, DEFAULTS };
+module.exports = { parseArgs, panelSeed, buildPanel, defaultPlay, rematch, formatTable, DEFAULTS };

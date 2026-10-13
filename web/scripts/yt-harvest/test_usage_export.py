@@ -1,5 +1,7 @@
 """Eligibility rules of usage_export.py on a synthetic harvest (no real data)."""
+import contextlib
 import datetime as dt
+import io
 import json
 from pathlib import Path
 import shutil
@@ -164,6 +166,77 @@ class UsageExportTests(unittest.TestCase):
                          sorted([['azumarill', 'medicham', 'registeel'], ['azumarill', 'medicham', 'registeel'],
                                  ['lanturn', 'azumarill', 'skarmory']]))
         self.assertEqual(report['creatorTeams'], 3)
+
+    def test_date_window_keeps_inclusive_bounds_and_counts_the_rest(self):
+        full_usage, full = self.build()
+        self.assertNotIn('window', full_usage)
+        self.assertEqual(full['window'], {'since': None, 'until': None})
+        self.assertNotIn('date-range', full['exclusions'])
+        # Five teams: three dated 2026-10-05 (Channel A) and two dated 2026-10-08 (Channel B).
+        usage, report = self.build(since='2026-10-06')
+        self.assertEqual(report['eligibleTeams'], 2)
+        self.assertEqual(report['exclusions']['date-range']['count'], 3)
+        self.assertEqual(report['dateRange'], {'from': '2026-10-08', 'to': '2026-10-08'})
+        self.assertEqual(usage['dateRange'], {'from': '2026-10-08', 'to': '2026-10-08'})
+        self.assertEqual(usage['window'], {'since': '2026-10-06', 'until': None})
+        self.assertEqual(report['window'], {'since': '2026-10-06', 'until': None})
+        self.assertEqual(report['creators'], 1)
+        self.assertEqual({t['collectedAt'] for t in usage['teams']}, {'2026-10-08'})
+        # Both bounds are inclusive.
+        usage, report = self.build(since='2026-10-05', until='2026-10-05')
+        self.assertEqual(report['eligibleTeams'], 3)
+        self.assertEqual({t['collectedAt'] for t in usage['teams']}, {'2026-10-05'})
+        self.assertEqual(report['exclusions']['date-range']['count'], 2)
+        usage, report = self.build(until='2026-10-07')
+        self.assertEqual(report['eligibleTeams'], 3)
+        usage, report = self.build(since='2026-10-05', until='2026-10-08')
+        self.assertEqual(report['eligibleTeams'], 5)
+        self.assertNotIn('date-range', report['exclusions'])
+        # Everything outside the window: nothing to write, and the report says why.
+        usage, report = self.build(since='2026-11-01')
+        self.assertEqual(usage['teams'], [])
+        self.assertEqual(report['exclusions']['date-range']['count'], 5)
+
+    def test_date_window_does_not_change_which_duplicate_is_kept(self):
+        # vreup (uploaded 2026-10-07) re-uploads vgreat's first battle (2026-10-05). The window starts after the original:
+        # the re-upload is still a duplicate and must not come back as a fresh observation.
+        _, full = self.build()
+        self.assertEqual(full['exclusions']['duplicate']['count'], 2)
+        _, report = self.build(since='2026-10-06')
+        self.assertEqual(report['exclusions']['duplicate']['count'], 2)
+        self.assertEqual(report['eligibleTeams'], 2)
+
+    def test_date_window_validation(self):
+        self.assertEqual(ue.day('2026-10-05'), '2026-10-05')
+        self.assertIsNone(ue.day(None))
+        self.assertIsNone(ue.day(''))
+        for bad in ('20261005', '2026-13-01', '2026-02-30', 'yesterday', '2026-10-5', '2026-10-05T00:00'):
+            with self.assertRaises(ValueError, msg=bad):
+                ue.day(bad)
+        with self.assertRaises(ValueError):
+            self.build(since='2026-10-08', until='2026-10-05')
+        self.assertTrue(ue.in_window('2026-10-05', None, None))
+        self.assertTrue(ue.in_window('2026-10-05', '2026-10-05', '2026-10-05'))
+        self.assertFalse(ue.in_window('2026-10-04', '2026-10-05', None))
+        self.assertFalse(ue.in_window('2026-10-06', None, '2026-10-05'))
+        self.assertFalse(ue.in_window(None, '2026-10-05', None))
+
+    def test_date_window_on_the_command_line(self):
+        out = Path(self.tmp.name) / 'usage-window.json'
+        base = ['--work', str(self.work), '--web-root', str(self.web), '--pool', str(self.pool), '--out', str(out)]
+        for bad in (['--since', '2026-10-08', '--until', '2026-10-05'], ['--since', '10/08/2026']):
+            with contextlib.redirect_stderr(io.StringIO()) as complaint, self.assertRaises(SystemExit) as stopped:
+                ue.main(base + bad)
+            self.assertEqual(stopped.exception.code, 2)
+            self.assertIn('error', complaint.getvalue())
+        self.assertFalse(out.exists())
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            ue.main(base + ['--since', '2026-10-06', '--until', '2026-10-31'])
+        written = json.loads(out.read_text())
+        self.assertEqual(written['window'], {'since': '2026-10-06', 'until': '2026-10-31'})
+        self.assertEqual({t['collectedAt'] for t in written['teams']}, {'2026-10-08'})
+        self.assertIn('window 2026-10-06 to 2026-10-31', printed.getvalue())
+        self.assertIn('Outside the --since/--until window', printed.getvalue())
 
     def test_creator_cap(self):
         k, w = ue.creator_cap({'A': 30, 'B': 5, 'C': 5, 'D': 5, 'E': 5, 'F': 5, 'G': 5, 'H': 5, 'I': 5, 'J': 5, 'K': 5}, .10)

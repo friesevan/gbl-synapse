@@ -27,6 +27,13 @@ function validate(d){
  }
  // Optional (added with the previous-champions baseline group); older reports simply lack it.
  if(d.champions!=null){const c=d.champions,ok=i=>Number.isInteger(i)&&table.variants[i];if(!Array.isArray(c.teams)||c.teams.length>500||c.teams.some(t=>!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||typeof t.label!=='string'||t.label.length>200)||c.skipped!=null&&(!Array.isArray(c.skipped)||c.skipped.length>500||c.skipped.some(x=>!x||typeof x.label!=='string'||typeof x.detail!=='string')))fail('invalid previous champions');if(c.comparisons!=null&&(!Array.isArray(c.comparisons.entries)||c.comparisons.entries.length>500||c.comparisons.entries.some(e=>!Array.isArray(e.team)||e.team.length!==3||!e.team.every(ok)||!Number.isFinite(e.score)||!Number.isFinite(e.delta)||!Array.isArray(e.interval95)||e.interval95.length!==2||!e.interval95.every(Number.isFinite)||typeof e.verdict!=='string')))fail('invalid champion comparisons');}
+ // Optional (added with the meta-sensitivity panel, training/team-search/sensitivity.cjs); older reports simply lack it.
+ if(d.sensitivity!=null){
+  const s=d.sensitivity,ok=i=>Number.isInteger(i)&&table.variants[i],unit=v=>Number.isFinite(v)&&v>=0&&v<=1,optional=v=>v==null||unit(v);
+  const meta=m=>m&&typeof m.id==='string'&&m.id.length<=80&&typeof m.label==='string'&&m.label.length<=300&&Number.isInteger(m.fixtures)&&m.fixtures>=1&&Number.isInteger(m.seed)&&m.seed>=0&&m.seed<=0xffffffff;
+  const rowOk=t=>t&&typeof t.kind==='string'&&Array.isArray(t.team)&&t.team.length===3&&t.team.every(ok)&&Array.isArray(t.scores)&&t.scores.length===s.metas.length&&t.scores.every(unit)&&unit(t.mean)&&unit(t.min)&&unit(t.max)&&unit(t.spread)&&t.min<=t.mean+1e-9&&t.mean<=t.max+1e-9&&optional(t.finalScore)&&optional(t.noiseSpread)&&(t.spreadInterval95==null||Array.isArray(t.spreadInterval95)&&t.spreadInterval95.length===2&&t.spreadInterval95.every(unit))&&(t.ranks==null||Array.isArray(t.ranks)&&t.ranks.length===s.metas.length&&t.ranks.every(Number.isInteger));
+  if(typeof s!=='object'||!Array.isArray(s.metas)||!s.metas.length||s.metas.length>32||!s.metas.every(meta)||new Set(s.metas.map(m=>m.id)).size!==s.metas.length||!Number.isInteger(s.fixtures)||s.fixtures<1||!Array.isArray(s.teams)||s.teams.length>500||!s.teams.every(rowOk))fail('invalid sensitivity panel');
+ }
  return d;
 }
 async function verifySnapshot(d){const raw=JSON.stringify([d.snapshot.published,d.snapshot.overrides,d.snapshot.gameMaster]),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==d.dataHash)throw Error('The report’s pinned data failed its integrity check');return d;}
