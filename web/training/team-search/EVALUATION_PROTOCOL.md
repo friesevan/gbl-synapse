@@ -33,6 +33,7 @@ When it does not suffice:
 | `rematch.cjs` | Which of these teams is best on one fresh panel, under the current engine and a chosen meta, whatever assumptions each run was made under? | `node training/team-search/rematch.cjs RUN_A RUN_B [--finalists] --fixtures 512 --workers 12 --meta hybrid [--usage-file F --usage-half-life-days N --usage-as-of D --usage-prior-strength N] --out FILE.json`; `--print FILE.json` reprints a saved result |
 | `compare-history.cjs` | At the same number of battles, did the search itself propose better teams, predict better and label more teams? | `node training/team-search/compare-history.cjs RUN_A RUN_B --labels old,new --json FILE.json` |
 | Finalist comparison in every run | Which finalists can be told apart from the primary? | `recommendations.json` (`finalistComparisons`), `report.html` |
+| Sealed confirmation test (`--confirmation-opponents`, default 256) | When the final panel puts a challenger clearly above the primary, does that advantage reappear on a new sealed panel? | `recommendations.json` (`confirmation`), `report.html`, the Search Performance tab; `node training/team-search/audit-selection.cjs RUN_DIR` shows retrospectively which comparisons would have triggered it |
 
 Sources for the first two are run directories, `recommendations.json`, portable reports (`.pvpteams.json.gz`, validated with `neural-report-core.js`) and the published v1 archive. Only compositions (species and moveset) are read, and charged-move order is ignored when mapping a composition into the pool. A source whose primary was not final-tested (a stopped run, an incomplete archive) has no champion and is skipped with a reason.
 
@@ -112,7 +113,7 @@ The fixtures needed before a true difference of a given size is just resolved ha
 
 **Conditional inference.** Intervals are conditional on this meta, this controller, the pinned engine and these particular teams. They are not human win rates and say nothing about other metas; that is what the sensitivity checks in section 3c are for. A draw counts as half a win. Neural predictions, training scores and the best training score are selection-biased and are never evidence of strength; the sealed panels are.
 
-**Winner's curse.** The primary is fixed by screening before the final test. If another finalist scores higher on the final panel, the primary stays the primary; choosing it afterwards needs its own fresh panel (a rematch).
+**Winner's curse.** The primary is fixed by screening before the final test. If another finalist scores higher on the final panel, the primary stays the primary; choosing it afterwards needs its own fresh panel. Since 2026-10-13 the run supplies that panel itself, the `confirmation` step: whenever `finalistComparisons` shows a finalist `challenger-better` (a simultaneous band entirely on its side), or `championComparisons` shows a previous champion `challenger-better`, the primary and every such challenger play a new sealed panel (256 fixtures by default, a seed derived from the validation seed and guarded against every other panel, checked against absorbed evidence, never used for training) and are compared with a paired bootstrap and a simultaneous band over every pair. Read the outcome this way: `challenger-confirmed` means the challenger is better on fresh opponents and its confirmation-panel score is an unbiased estimate of its strength (its final-panel score is not); `not-confirmed` means the primary was ahead or the two were unresolved, which is not proof of equality, because 256 fixtures resolve only about 5.5 points for one comparison at a paired sd of 0.45 (use more fixtures for smaller gaps); `incomplete` means the time ran out. The screening-selected primary stays the run's primary endpoint in every case; adopting a confirmed challenger is a decision for the reader, and the next run can carry it as a previous champion. A longer final panel (`--validation-opponents-max`, steps of 64 fixtures while time remains) tightens the final comparisons without a new look: it extends the same fixture list, so the first 512 fixtures keep their scores. A challenger that only the longer panel resolves joins the same sealed confirmation panel.
 
 ## 5. A worked example (exploratory)
 
@@ -128,7 +129,7 @@ Under the observed meta the v1 primary is clearly below both others (simultaneou
 
 ## 6. Checklist before writing "improved"
 
-1. Which class is this change, and are the assumptions really unchanged (hashes, meta description, pool hash)?
+1. Which class is this change, and are the assumptions really unchanged (hashes, meta description, pool hash)? Did the report's `confirmation` block say a challenger was confirmed, and does the claim name the confirmation panel's score rather than the final panel's?
 2. Was the comparison planned before the run, on a panel that no decision had used?
 3. Are both teams on identical fixtures, with at least 512 of them (or the number the target effect needs)?
 4. Does the simultaneous band exclude zero? If not, the word is "tied".

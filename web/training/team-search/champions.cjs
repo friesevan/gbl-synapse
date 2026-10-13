@@ -67,7 +67,7 @@ function extractCompositions(data, kind, scope = 'primary') {
   primary = data.rows[0].validation ? { members: data.rows[0].team.map(member), finalScore: scoreOf(data.rows[0].validation.score) } : null;
   others = tested.filter(r => r !== data.rows[0]).sort((a, b) => b.validation.score - a.validation.score).map(r => ({ members: r.team.map(member), finalScore: scoreOf(r.validation.score) }));
   if (!primary) note = 'the first recommended team was not final-tested; a training leader is not a champion';
-  const seeds = data.rows.flatMap(r => [r.validation?.fixtureSeed, r.screen?.fixtureSeed]).concat((data.baselineResults || []).map(b => b.fixtureSeed));
+  const seeds = data.rows.flatMap(r => [r.validation?.fixtureSeed, r.screen?.fixtureSeed]).concat((data.baselineResults || []).map(b => b.fixtureSeed), data.confirmation?.seed);
   info = { engineVersion: data.version || null, poolHash: data.poolHash || null, finalPanel: data.finalPanel || null, usedSeeds: [...new Set(seeds.filter(Number.isInteger))] };
  } else {
   const tested = data.teams.filter(t => t.validation);

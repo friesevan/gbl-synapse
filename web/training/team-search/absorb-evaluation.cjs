@@ -10,7 +10,8 @@ const { fixtures, teamKey, validTeam, atomic } = require('./common.cjs');
 function absorb(state, pool) {
   if (state.config.poolHash !== pool.hash) throw Error('Checkpoint/pool mismatch');
   const factor = E.factor(state);
-  const rows = [...(state.screenResults || []), ...(state.validations || []), ...(state.baselineResults || [])];
+  // A finished run's sealed confirmation panel (confirmation.cjs) is evaluation evidence too: its seed becomes used.
+  const rows = [...(state.screenResults || []), ...(state.validations || []), ...(state.baselineResults || []), ...require('./confirmation.cjs').evidenceRows(state)];
   if (!rows.length) throw Error('No completed evaluation fixtures to absorb');
   if (state.runtime?.phase && !['finished', 'stopped', 'failed'].includes(state.runtime.phase)) {
     throw Error('Use a finished or stopped experiment snapshot');
@@ -49,7 +50,7 @@ function absorb(state, pool) {
   output.battles = output.observations.length * factor;
   output.models = []; output.pending = null; output.history = []; output.runtime = null;
   output.validations = []; output.screenResults = []; output.finalistTeams = [];
-  output.baselineResults = []; output.comparisons = {}; output.champions = null; output.championComparisons = null;
+  output.baselineResults = []; output.comparisons = {}; output.champions = null; output.championComparisons = null; output.confirmation = null;
   output.evaluationEvidence = { fixtureSeeds: [...seeds], addedFixtures: added, duplicates,
     requiresFreshValidationSeed: true, note: 'Earlier pilot evaluation is now training data; use a new final test.' };
   return output;
