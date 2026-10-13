@@ -10072,13 +10072,15 @@ function isolateTeamScenarioScouting(ai,options){
   }finally{Math.random=oldRandom;}
  };
 }
-function prepareTeamLookaheadSwitch(teams,state,choices){teams.forEach((team,i)=>{
- if(choices[i]===state[i].active)return;
- const outgoing=team[state[i].active];
+function prepareTeamLookaheadOutgoing(outgoing){
  if(outgoing.hp>0){outgoing.statBuffs=[0,0];outgoing.startStatBuffs=[0,0];
   if(outgoing.formChange?.resetOnSwitch&&outgoing.activeFormId!==outgoing.originalFormId){outgoing.changeForm(outgoing.originalFormId);outgoing.startFormId=outgoing.originalFormId;}
   outgoing.statBuffs=outgoing.nativeStatBuffs.slice();
  }
+}
+function prepareTeamLookaheadSwitch(teams,state,choices){teams.forEach((team,i)=>{
+ if(choices[i]===state[i].active)return;
+ prepareTeamLookaheadOutgoing(team[state[i].active]);
  const incoming=team[choices[i]];incoming.startCooldown=0;incoming.cooldown=0;
  });}
 function teamLookaheadElapsed(b){
@@ -10104,8 +10106,25 @@ function installTeamLookahead(battle, players, options) {
  const action=battle.getTurnAction;
  battle.getTurnAction=function(p,opponent){const a=action.call(battle,p,opponent);if(a?.type==='charged'&&p.stats.atk===opponent.stats.atk){const combatKey=q=>identity(q)+'@'+players[q.index].getTeam().map(identity).join('::'),ids=[combatKey(p),combatKey(opponent)].sort(),winner=seeded(ids.join('::')+':cmp:'+battle.getTurns())()<.5?ids[0]:ids[1];if(combatKey(p)===winner)a.settings.priority+=.001;}return a;};
  const step=battle.step;
- battle.step=function(){snapshot=null;cache=new Map();branchCache=new Map();stateKeys=new WeakMap();foeCache=new Map();return step.call(battle);};
+ battle.step=function(){snapshot=null;cache=new Map();branchCache=new Map();stateKeys=new WeakMap();duelForecasts=new Map();rowKeys=new WeakMap();return step.call(battle);};
  const clone=createTeamLookaheadPokemon;
+ // Optimized forecasts (simulationOptimizations) reuse read-only pieces. Rows
+ // are identified by their complete JSON, the identity the branch cache already
+ // uses for whole states. `finished` holds clones that can never change again:
+ // bench/outgoing clones, and duel members once their duel is over. Duel
+ // forecasts last one step; bench clones (whose rows rarely change while
+ // benched) are kept across steps in a small least-recently-used map.
+ let sharedClones=new Map(),duelForecasts=new Map(),rowKeys=new WeakMap(),finished=new WeakSet(),pressureMemo=new WeakMap(),cloneBattle=null;
+ function forecastBattle(){const b=new Battle();b.simulationOptimizations=options.simulationOptimizations!==false;b.headless=options.simulationOptimizations!==false;b.setCP(options.cp);b.setBattleMode('simulate');b.setBuffChanceModifier(-1);return b;}
+ function rowKey(row){let key=rowKeys.get(row);if(key===undefined){key=JSON.stringify(row);rowKeys.set(row,key);}return key;}
+ function sharedClone(row,i,outgoing){
+  // A bench clone never joins a Battle: it is built from its row in a
+  // configured Battle that never receives Pokemon (as every forecast Battle is
+  // while its clones are built), then only read by terminal().
+  const key=i+(outgoing?':out:':':bench:')+rowKey(row);let p=sharedClones.get(key);
+  if(p)sharedClones.delete(key);else{p=clone(row,i,cloneBattle||(cloneBattle=forecastBattle()));if(outgoing)prepareTeamLookaheadOutgoing(p);finished.add(p);if(sharedClones.size>=64)sharedClones.delete(sharedClones.keys().next().value);}
+  sharedClones.set(key,p);return p;
+ }
  function resource(p){return Math.max(0,p.hp/p.stats.hp)+.18*Math.max(0,p.hp/p.stats.hp)*p.energy/100;}
  // Value the whole surviving roster, not merely the immediate duel. A coverage
  // term rewards preserving counters, but is only a terminal heuristic.
@@ -10113,9 +10132,12 @@ function installTeamLookahead(battle, players, options) {
   const live=teams.map(t=>t.filter(p=>p.hp>0)), totals=live.map(t=>t.reduce((s,p)=>s+resource(p),0));
   if(!live[0].length||!live[1].length)return !live[0].length?(!live[1].length?0:-10):10;
   function pressure(a,b){
+   // Finished clones are never mutated again, so their pressure is a pure
+   // function of the pair (weakly held, like the clones themselves).
+   let memo=null;if(optimized&&finished.has(a)&&finished.has(b)){memo=pressureMemo.get(a);if(!memo)pressureMemo.set(a,memo=new WeakMap());const hit=memo.get(b);if(hit!==undefined)return hit;}
    const fast=DamageCalculator.damage(a,b,a.fastMove),dt=a.fastMove.cooldown/500;
    const charged=a.chargedMoves.reduce((best,m)=>Math.max(best,DamageCalculator.damage(a,b,m)/Math.max(1,m.energy)),0);
-   return (fast+charged*a.fastMove.energyGain)/dt/Math.max(1,b.stats.hp);
+   const value=(fast+charged*a.fastMove.energyGain)/dt/Math.max(1,b.stats.hp);if(memo)memo.set(b,value);return value;
   }
   function coverage(a,b){return b.reduce((sum,q)=>sum+resource(q)*Math.max(...a.map(p=>Math.tanh(Math.log(Math.max(.0001,pressure(p,q))/Math.max(.0001,pressure(q,p)))))),0)/b.length;}
   const alignment=coverage(live[0],live[1])-coverage(live[1],live[0]);
@@ -10131,6 +10153,7 @@ function installTeamLookahead(battle, players, options) {
   // branch forecast rather than simulating it again for the opposing decision.
   if(branchCache.has(branchKey)){stats.branchCacheHits++;return branchCache.get(branchKey);}
   stats.branches++;
+  if(optimized)return forecastBranch(state,choices,branchKey);
   const b=new Battle();b.simulationOptimizations=options.simulationOptimizations!==false;b.headless=options.simulationOptimizations!==false;b.setCP(options.cp);b.setBattleMode('simulate');b.setBuffChanceModifier(-1);
   const teams=state.map((s,i)=>s.team.map(p=>clone(p,i,b)));prepareTeamLookaheadSwitch(teams,state,choices);const duel=choices.map((c,i)=>teams[i][c]);
   duel.forEach((p,i)=>{p.startingShields=state[i].shields;if(choices[i]!==state[i].active)p.startCooldown=0;b.setNewPokemon(p,i,false);});
@@ -10143,6 +10166,29 @@ function installTeamLookahead(battle, players, options) {
   // Every clone is restored when created. Resetting benches here would restore
   // a switched-out Pokémon's old buffs/form, reversing the switch transition.
   const value=terminal(teams,shields,choices,lock);branchCache.set(branchKey,value);return value;
+ }
+ // Same forecast as rollout() above, assembled from reusable pieces. The duel
+ // Battle only ever holds the two duel members, so its outcome is a function of
+ // their rows, whether each one is switching in, and the shield counts. Belief
+ // worlds that imagine the same duel (typically the revealed active opponent
+ // staying in) simulate it once per step; terminal() then values each world's
+ // own bench. Branch values, statistics and decisions are unchanged.
+ function forecastBranch(state,choices,branchKey){
+  const incoming=choices.map((c,i)=>c!==state[i].active);
+  const duelKey=choices.map((c,i)=>rowKey(state[i].team[c])).join('\n')+'\n'+incoming.join(',')+'\n'+state.map(s=>s.shields).join(',');
+  let forecast=duelForecasts.get(duelKey);
+  if(!forecast){
+   const b=forecastBattle(),duel=choices.map((c,i)=>clone(state[i].team[c],i,b));
+   duel.forEach((p,i)=>{if(incoming[i]){p.startCooldown=0;p.cooldown=0;}});
+   duel.forEach((p,i)=>{p.startingShields=state[i].shields;if(incoming[i])p.startCooldown=0;b.setNewPokemon(p,i,false);});
+   b.start();
+   for(let n=0;n<horizon&&duel.every(p=>p.hp>0);n++)b.step();
+   forecast={duel,elapsed:teamLookaheadElapsed(b),shields:duel.map(p=>p.shields)};
+   duel.forEach(p=>finished.add(p));duelForecasts.set(duelKey,forecast);
+  }
+  const teams=state.map((s,i)=>s.team.map((p,j)=>j===choices[i]?forecast.duel[i]:sharedClone(p,i,j===s.active&&incoming[i])));
+  const lock=state.map((s,i)=>!incoming[i]?Math.max(0,s.timer-forecast.elapsed):Math.max(0,45000-forecast.elapsed));
+  const value=terminal(teams,forecast.shields,choices,lock);branchCache.set(branchKey,value);return value;
  }
  function worlds(i){
   observe(i);const views=knowledge[i].hypotheses(1-i,battle,battle.getTurns(),seeded(JSON.stringify(knowledge[i].view())+':belief'),options.beliefSamples||3);
@@ -10172,11 +10218,20 @@ function installTeamLookahead(battle, players, options) {
  }
  function foe(i){
   observe(i);const row=knowledge[i].activeGuess(1-i,battle,battle.getTurns()),shields=players[1-i].getShields();
-  const key=optimized?i+':'+shields+':'+JSON.stringify(row):null;
-  if(optimized&&foeCache.has(key))return foeCache.get(key);
-  const p=clone(row,1-i,battle);p.shields=shields;
+  if(optimized){
+   // decideAction, decideShield and DamageCalculator.damage read this guess's
+   // typing, stats, stages, form, tags, level and moves, and its hp and energy.
+   // HP, energy and cooldown reach a clone only as start values that reset()
+   // copies; nothing else prepared from the row depends on them. One clone per
+   // remaining row content is reused across steps, with those three values set
+   // exactly as reset() sets them. Only these synchronous checks read it.
+   const {hp,energy,cooldown,...fixed}=row,key=i+':'+shields+':'+JSON.stringify(fixed);
+   let p=foeCache.get(key);
+   if(p)foeCache.delete(key);else{p=clone(row,1-i,battle);p.shields=shields;if(foeCache.size>=16)foeCache.delete(foeCache.keys().next().value);}
+   foeCache.set(key,p);p.startHp=p.hp=hp;p.startEnergy=p.energy=energy;p.startCooldown=p.cooldown=cooldown;return p;
+  }
   // Damage checks only read this isolated guess; never give it to Battle.
-  if(optimized){if(foeCache.size>=16)foeCache.delete(foeCache.keys().next().value);foeCache.set(key,p);}return p;
+  const p=clone(row,1-i,battle);p.shields=shields;return p;
  }
  players.forEach((player,i)=>{
   const ai=player.getAI();

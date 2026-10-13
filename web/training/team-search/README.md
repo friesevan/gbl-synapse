@@ -94,7 +94,15 @@ A separate, independently generated 2,048-lineup bank from the same meta serves 
 
 ### Engine
 
-Every battle runs PvPoke's own `Battle.step` state machine (vendor files pinned at commit `f627e89`, MIT) inside a fresh VM context per encounter, with a virtual scheduler that advances timers without waiting for animations. Headless mode skips animation objects and detailed timeline events while keeping the compact charged events the switch clock needs; traced replays reconstruct the full timeline. Caches of type tables, move metadata and public stat templates are bounded or weakly referenced and never hold hidden live opponent state. The optimised path was verified against the baseline on every outcome, turn count, remaining Pokémon, charged count and planner statistic across 1,536 battles, with frozen pre-optimisation reference tests comparing public observations, every HP sample and every traced event. It is 1.33× faster (12.24 → 16.25 battles/s on 12 workers for the benchmark fixture).
+Every battle runs PvPoke's own `Battle.step` state machine (vendor files pinned at commit `f627e89`, MIT) inside a fresh VM context per encounter, with a virtual scheduler that advances timers without waiting for animations. Headless mode skips animation objects and detailed timeline events while keeping the compact charged events the switch clock needs; traced replays reconstruct the full timeline. Caches of type tables, move metadata and public stat templates are bounded or weakly referenced and never hold hidden live opponent state. The optimised path was verified against the baseline on every outcome, turn count, remaining Pokémon, charged count and planner statistic across 1,536 battles, with frozen pre-optimisation reference tests comparing public observations, every HP sample and every traced event. It is 1.33× faster (12.24 → 16.25 battles/s on 12 workers for the benchmark fixture). Forecast reuse (2026-10-13) goes further on the same optimised path:
+
+- each duel forecast is simulated once per step and shared by the belief worlds that imagine it;
+- bench and outgoing clones are built once per captured row and only read afterwards;
+- guessed-opponent clones are kept across steps, with only HP, energy and cooldown copied in;
+- the VM global is an ordinary one (`DONT_CONTEXTIFY`) instead of an interceptor-backed sandbox;
+- the per-encounter Game Master is re-parsed instead of cloned.
+
+These changes were verified event for event against the baseline path on 108 search-shaped fixtures and reproduce 192 stored outcomes of the 2026-10-12 run. At smoke scale they ran 1.9–2.0× the previous optimised path's battles per second (4 workers, shared machine); the 12-worker figure is pending ([findings](findings/speed-forecast.md)).
 
 ### Side and bench invariance (v2)
 
@@ -194,7 +202,8 @@ Lessons recorded from these runs:
 
 | What | Measurement | Where |
 | --- | --- | --- |
-| Full-battle throughput, 12 workers (v4, 24-turn forecasts, 3 belief worlds) | 16.25 battles/s optimised vs 12.24 baseline (1.33×), 192 battles | [PERFORMANCE.md](PERFORMANCE.md) |
+| Full-battle throughput, 12 workers (v4, 24-turn forecasts, 3 belief worlds) | 16.25 battles/s optimised vs 12.24 baseline (1.33×), 192 battles (2026-10-10, before forecast reuse) | [PERFORMANCE.md](PERFORMANCE.md) |
+| Forecast reuse (2026-10-13), 4 workers, shared machine, smoke scale | previous → new optimised path 9.19 → 18.07 battles/s (1.97×) on 192 search-shaped fixtures, 14.93 → 28.34 (1.90×) on the benchmark fixture; baseline → optimised now 2.7×; outcomes identical; 12-worker run pending | [findings/speed-forecast.md](findings/speed-forecast.md) |
 | v1 overnight throughput | 22.7 battles/s with 11.56 cores busy (cheaper controller) | [NEXT_RUN_AUDIT.md](../next/NEXT_RUN_AUDIT.md) |
 | Neural fit (366 inputs, 16 hidden, 4,096 fixtures, 3 epochs) | 382 → 293 ms (1.30×) by caching repeated feature vectors' activations within a minibatch and reusing buffers; serialized models byte-identical | PERFORMANCE.md |
 | Full ensemble fit in a run (48,000 fixtures, 12 models on 12 workers) | about 19–25 s per round | run telemetry |
@@ -203,9 +212,9 @@ Lessons recorded from these runs:
 | Pool preparation | 18.4 M 1-v-1 simulations, chunked and cached | section 3 |
 | Memory | workers recycled every 8 battles (or at heap pressure) with 128–192 MB old-space limits; peak sampled RSS 1.4–5.5 GB for the process tree | PERFORMANCE.md, run telemetry |
 
-**Where the time goes.** A profile of the simulator attributed about 15% to type-effectiveness tables, 6% each to move creation, Pokémon construction, garbage collection and move resetting, 4% to move initialisation and 5% to damage; the dominant cost in v4 is repeated forecast preparation, since every switching decision creates duels and prepares six Pokémon per imagined lineup. The implemented fixes share immutable ordered type tables, cache normalised move metadata and public stat templates, prepare only selected attacks for forecast Pokémon, reuse damage-only opponent guesses within a turn and identical branches across both controllers (branch cache), and run forecasts headlessly.
+**Where the time goes.** A profile of the simulator attributed about 15% to type-effectiveness tables, 6% each to move creation, Pokémon construction, garbage collection and move resetting, 4% to move initialisation and 5% to damage; the dominant cost in v4 is repeated forecast preparation, since every switching decision creates duels and prepares six Pokémon per imagined lineup. The implemented fixes share immutable ordered type tables, cache normalised move metadata and public stat templates, prepare only selected attacks for forecast Pokémon, reuse damage-only opponent guesses within a turn and identical branches across both controllers (branch cache), and run forecasts headlessly. A 2026-10-13 profile of 48 search-shaped battles still put 62% of the time in forecast branches and 29% in building forecast Pokémon (six per branch, plus one per guessed-opponent check). Global name lookups in the contextified VM cost about 350 ns each. Forecast reuse cut the forecast Pokémon built by 73% and duel simulations by 33%. The largest remaining costs are PvPoke's own AI and state machine inside forecast duels (about 13%), building the two fresh duel members (11%), garbage collection (12%), belief-world construction (6%) and per-encounter VM setup (6–9%).
 
-**Measured and rejected:** longer worker lifetimes (8 vs 24 or 32 battles: no gain, more memory); caching compiled simulator scripts across contexts (no gain); larger heaps; transporting the public prior once per worker; flattened inference reference data (slower than reusable scratch buffers); fewer forecast worlds or shorter horizons (they change decisions, so they are not transparent optimisations). The GPU and Neural Engine are not used: the branching simulator is not a tensor workload and the network is tiny.
+**Measured and rejected:** longer worker lifetimes (8 vs 24 or 32 battles: no gain, more memory); caching compiled simulator scripts across contexts (no gain); larger heaps; transporting the public prior once per worker; flattened inference reference data (slower than reusable scratch buffers); fewer forecast worlds or shorter horizons (they change decisions, so they are not transparent optimisations); exact recycling of forecast Pokémon from a learned layout (exact, but 0.92× because a restore copies about as much state as a build); skipping repeated resets (PvPoke's move-preference reset is not idempotent). The GPU and Neural Engine are not used: the branching simulator is not a tensor workload and the network is tiny.
 
 ## 11. The viewer
 
@@ -237,7 +246,7 @@ The report contract (`format: "pvp-team-report"`, schema 1, engine versions v1�
 
 | Gap | Evidence | What would close it |
 | --- | --- | --- |
-| **Forecast preparation dominates** | every switch decision builds duels for every imagined lineup; branch caching and headless mode recovered 1.33× | pool forecast state; an array-based combat state instead of Pokémon objects (a larger rewrite needing full timing and form parity) |
+| **Forecast preparation dominates** | partly addressed: branch caching and headless mode recovered 1.33×. Forecast reuse (2026-10-13) shares duel forecasts across belief worlds and reuses bench and guessed-opponent clones (73% fewer forecast Pokémon built), with an ordinary VM global, for 1.9–2.0× more battles per second at smoke scale and identical outcomes. Forecasts still spend most of their time in PvPoke's AI and in building fresh duel members | the 12-worker benchmark ([findings](findings/speed-forecast.md)); an array-based combat state instead of Pokémon objects (a larger rewrite needing full timing and form parity); exact pooling of forecast state did not pay (a restore copies as much as a build) |
 | **Battles per label** | 864 per round after staged acquisition | adaptive prefix length by observed variance; share fixtures across rounds for retests |
 | **Fitting and inference are already small** | 20–25 s per fit, 1.5 s per inference round against hours of simulation | no action needed until the simulator is several times faster |
 | **Pool preparation** | 18.4 M simulations, cached | unchanged data snapshot reuses the pool; a new snapshot pays once |
@@ -253,6 +262,7 @@ node training/team-search/audit-model.cjs --checkpoint CHECKPOINT.json --pool PO
 node training/team-search/audit-exploration.cjs --checkpoint FILE --pool FILE --out FILE
 node training/team-search/benchmark-acquisition.cjs --checkpoint FILE --pool FILE --out FILE
 node training/benchmark-simulator-speed.cjs 192 3 12 training/simulator-speed-results.json
+node training/benchmark-simulator-speed.cjs 192 3 12 OUT.json --fixtures search --pool POOL.json [--usage-file FILE --usage-half-life-days 30 --usage-as-of DATE --usage-prior-strength N]
 node training/team-search/benchmark-neural-speed.cjs
 node training/team-search/export-report.cjs training/runs/<run>
 node training/next/controller-check.cjs 128

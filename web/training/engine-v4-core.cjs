@@ -1,7 +1,10 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const base=path.resolve(__dirname,'../includes/pro');
-const data=JSON.parse(fs.readFileSync(path.join(base,'data/gamemaster.json')));
+// Every encounter gets its own fresh Game Master. `data` is the parse of this
+// text and is never mutated, so parsing the text again yields exactly the
+// structure structuredClone(data) would, at about half the cost.
+const gameMasterText=fs.readFileSync(path.join(base,'data/gamemaster.json'),'utf8'),data=JSON.parse(gameMasterText);
 const archetypes=JSON.parse(fs.readFileSync(path.join(__dirname,'vendor/aiArchetypes.json')));
 const {random,defaults}=require('./utils.cjs');
 // Compile once per worker, rather than rereading/parsing the simulator for every
@@ -12,14 +15,19 @@ function play(teamA,teamB,policyA=defaults,policyB=defaults,{seed=1,cp=1500,look
  let time=0,id=0,result=null,events=0,lastPhase='',timeouts=0;const timers=new Map(),rng=random(seed);
  const schedule=(fn,delay,repeat)=>{const key=++id;timers.set(key,{fn,at:time+delay,repeat});return key;};
  const math=Object.create(Math);math.random=rng;
- const context=vm.createContext({console:{log(){}},Math:math,host:'localhost',webRoot:'',siteVersion:'training',settings:{colorblindMode:false,hardMovesetLinks:false},
+ const globals={console:{log(){}},Math:math,host:'localhost',webRoot:'',siteVersion:'training',settings:{colorblindMode:false,hardMovesetLinks:false},
  $:{ajax(){},getJSON(url,cb){if(url.includes('aiArchetypes'))cb(archetypes);},each(items,cb){for(let i=0;i<items.length;i++)if(cb(i,items[i])===false)break;}},
- setTimeout:(fn,ms)=>schedule(fn,ms,0),setInterval:(fn,ms)=>schedule(fn,ms,ms),clearTimeout:key=>timers.delete(key),clearInterval:key=>timers.delete(key)});
+ setTimeout:(fn,ms)=>schedule(fn,ms,0),setInterval:(fn,ms)=>schedule(fn,ms,ms),clearTimeout:key=>timers.delete(key),clearInterval:key=>timers.delete(key)};
+ // A contextified sandbox resolves every global name (Math, Pokemon, ...)
+ // through interceptors, which made each lookup cost hundreds of nanoseconds.
+ // The optimized path installs the same globals on an ordinary context global
+ // (Node 20.18+; older Node falls back to a contextified empty sandbox).
+ const context=simulationOptimizations?Object.assign(vm.createContext(vm.constants?.DONT_CONTEXTIFY),globals):vm.createContext(globals);
  const load=f=>runFile(f,context);
  for(const f of ['GameMaster','DamageCalculator','ActionLogic','TimelineEvent','TimelineAction','DecisionOption','Battle','Pokemon'])load(path.join(base,'vendor/'+f+'.js'));
  load(path.join(__dirname,'vendor/TrainingAI.js'));load(path.join(__dirname,'vendor/Player.js'));
  load(path.join(__dirname,'next/lookahead-v4.js'));load(path.join(__dirname,'next/observations.js'));
- context.input={simulationOptimizations,trace,beliefRoster,beliefTeams,beliefSamples,plannerTeams,neutralPriority,lookahead,horizon,interval,audit,seed,data:structuredClone(data),teams:[teamA,teamB],policies:[policyA,policyB],cp};
+ context.input={simulationOptimizations,trace,beliefRoster,beliefTeams,beliefSamples,plannerTeams,neutralPriority,lookahead,horizon,interval,audit,seed,data:simulationOptimizations?JSON.parse(gameMasterText):structuredClone(data),teams:[teamA,teamB],policies:[policyA,policyB],cp};
  vm.runInContext(`
  var gm=GameMaster.getInstance();gm.data=input.data;gm.originalData=gm.data;gm.createSearchMaps();gm.rankings={};
  installTeamSimulationSafety(input);
