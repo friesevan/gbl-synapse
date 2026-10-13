@@ -163,3 +163,4 @@ training/team-search/docs/teams-architecture.svg
 training/team-search/docs/teams-controller.svg
 training/team-search/docs/teams-model.svg
 training/team-search/docs/ui-team-rankings.jpg
+training/team-search/findings/mechanics-fidelity.md

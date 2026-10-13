@@ -51,6 +51,7 @@ On a 12-core laptop the simulator plays about 16 full battles per second with th
 - Know the real meta. The observed teams are a small, top-tier-player sample, and opponents always run PvPoke's recommended movesets.
 - Play like a strong human. The controller sees the right information now, but its switching, baiting and shielding are simple rules with a short lookahead.
 - Try movesets outside the five scouted per Pokémon, or other IV builds.
+- Prove that the game's rarer rules match the simulator's. Damage and move timing were checked against real battle footage (the middle half of 222 measured charged attacks landed within about 7% of the formula, with no bias), and the simulator's behaviour is now pinned so any change is noticed. But tie-breaks when both players throw a charged move at once, whether the Shadow bonus counts in them, the length of the switch cooldown and when stat changes land have not been checked against the game itself. A [findings note](findings/mechanics-fidelity.md) says how to check them.
 
 The [technical reference](README.md#12-gaps-and-improvement-areas) lists what would address each of these, and what would make it faster.
 
