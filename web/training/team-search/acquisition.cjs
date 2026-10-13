@@ -44,4 +44,68 @@ function sourceDiagnostics(pending,n){
  const grouped=new Map();for(const team of pending.teams){const source=pending.sources?.[teamKey(team)]||'initial',group=grouped.get(source)||{source,teams:0,sum:0};group.teams++;group.sum+=candidateScores(pending,team,n).reduce((a,b)=>a+b,0)/n;grouped.set(source,group);}
  return [...grouped.values()].map(group=>({source:group.source,teams:group.teams,meanScore:group.sum/group.teams,fixturesPerTeam:n,panel:'common acquisition prefix'}));
 }
-module.exports={opponentFixtureKey,fixtureKey,uniqueFixtures,canonicalObservations,candidateScores,stageComplete,promotionPriority,promoteCandidates,missingFixtures,sourceDiagnostics};
+
+// ---- Adaptive prefix length (opt-in: --acquisition adaptive) ----
+// Staged acquisition gives every candidate a fixed common prefix and then promotes a fixed
+// fraction. The adaptive rule keeps the common prefix, then extends candidates by `step`
+// fixtures at a time and stops a candidate as soon as it cannot plausibly belong to the
+// k best any more. All decisions are made on completed levels (every active candidate has
+// exactly `level` fixtures), so they are pure functions of the recorded scores: resuming an
+// interrupted round reproduces the uninterrupted run.
+function prefixScores(pending,team){
+ // Contiguous finite fixtures from index 0. A hole ends the prefix, so a partly
+ // dispatched level is never mistaken for a completed one.
+ const out=[];for(const score of pending.scores[teamKey(team)]||[]){if(!Number.isFinite(score))break;out.push(score);}return out;
+}
+function shrunkPosterior(scores){
+ if(!scores.length||scores.some(s=>!Number.isFinite(s)||s<0||s>1))throw Error('Adaptive acquisition requires finite scores');
+ // Same shrinkage as promotionPriority: eight pseudo-fixtures toward 0.5.
+ const n=scores.length,mean=(scores.reduce((a,b)=>a+b,0)+4)/(n+8);
+ return {mean,sd:Math.sqrt(mean*(1-mean)/(n+9))};
+}
+const DEFAULT_MARGIN=1.28;
+function pessimisticScore(scores,margin=DEFAULT_MARGIN){
+ // Shrunk mean minus `margin` posterior standard deviations (1.28 by default). A search heuristic, not a confidence bound.
+ const {mean,sd}=shrunkPosterior(scores);return mean-margin*sd;
+}
+function adaptiveContinuation(pending,{active=pending.teams,full,fraction=.5,margin=DEFAULT_MARGIN}={}){
+ if(!Number.isInteger(full)||full<1)throw Error('Adaptive acquisition needs the full fixture count');
+ if(!Number.isFinite(fraction)||fraction<=0||fraction>1)throw Error('Promotion fraction must be in (0, 1]');
+ if(!Number.isFinite(margin)||margin<0)throw Error('acquisition-margin must be a non-negative number');
+ const all=pending.teams,k=Math.min(all.length,Math.max(1,Math.ceil(all.length*fraction)));
+ // At the default margin the optimistic score is exactly promotionPriority; another margin moves both sides of the band.
+ const rows=all.map(team=>{const scores=prefixScores(pending,team);return {team,key:teamKey(team),count:scores.length,pessimistic:pessimisticScore(scores,margin),optimistic:promotionPriority(scores,pending.predictions?.[teamKey(team)])+(margin-DEFAULT_MARGIN)*shrunkPosterior(scores).sd};});
+ // The k-th best pessimistic score over every candidate, including those already stopped.
+ const threshold=rows.map(r=>r.pessimistic).sort((a,b)=>b-a)[k-1],live=new Set(active.map(teamKey));
+ // The top k by pessimistic score always satisfy optimistic >= pessimistic >= threshold.
+ return {k,threshold,extend:rows.filter(r=>live.has(r.key)&&r.count<full&&r.optimistic>=threshold).map(r=>r.team)};
+}
+function adaptiveNext(pending,{active=pending.teams,level,step,full,fraction=.5,margin=DEFAULT_MARGIN}){
+ if(!Number.isInteger(step)||step<1)throw Error('acquisition-step must be a positive integer');
+ const decision=adaptiveContinuation(pending,{active,full,fraction,margin});
+ return decision.extend.length?{level:Math.min(level+step,full),active:decision.extend,threshold:decision.threshold,k:decision.k}:null;
+}
+// Drives one round from its (resumable) pending record. `evaluate(teams, n)` plays the
+// missing fixtures of `teams` up to n and returns whether every one completed; the search
+// dispatches battles, the offline audit copies recorded outcomes. Stage, level and the
+// active list live in `pending`, so a stopped round continues exactly where it stopped.
+async function runAdaptive(pending,{prefix,full,step,fraction=.5,margin=DEFAULT_MARGIN,evaluate}){
+ const advance=(active,level)=>{
+  const next=adaptiveNext(pending,{active,level,step,full,fraction,margin});
+  if(!next){pending.promoted=pending.teams.filter(team=>prefixScores(pending,team).length>=full);pending.stage='expanding';delete pending.level;delete pending.active;return true;}
+  pending.stage='extending';pending.level=next.level;pending.active=next.active;return false;
+ };
+ if(pending.stage==='screening'){
+  if(!await evaluate(pending.teams,prefix))return false;
+  pending.levels=[{fixtures:prefix,teams:pending.teams.length}];
+  if(advance(pending.teams,prefix))return true;
+ }
+ while(pending.stage==='extending'){
+  if(!await evaluate(pending.active,pending.level))return false;
+  (pending.levels??=[]).push({fixtures:pending.level,teams:pending.active.length});
+  if(advance(pending.active,pending.level))return true;
+ }
+ return true;
+}
+function adaptiveLabeled(pending){return pending.teams.reduce((sum,team)=>sum+prefixScores(pending,team).length,0);}
+module.exports={opponentFixtureKey,fixtureKey,uniqueFixtures,canonicalObservations,candidateScores,stageComplete,promotionPriority,promoteCandidates,missingFixtures,sourceDiagnostics,DEFAULT_MARGIN,prefixScores,pessimisticScore,adaptiveContinuation,adaptiveNext,runAdaptive,adaptiveLabeled};

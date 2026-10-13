@@ -53,3 +53,7 @@ The local-neighborhood and retest changes passed regression and pipeline tests; 
 ## What matters next
 
 The largest unresolved issue is the target distribution: this remains a best-response search against synthetic PvPoke-derived teams. A better acquisition rule cannot correct inaccurate usage assumptions. Obtain observed lead/backline/moves frequencies, evaluate plausible-meta sensitivity, and test diverse information-limited opponent policies. Then consider targeted moves outside the retained five and alternative IV builds. Larger neural layers or more hours should be accepted only after held-out prediction and independent team-selection tests improve, not merely because training loss falls.
+
+## Battles per label: adaptive prefix length and shared retest panel (October 13, 2026)
+
+Two opt-in options reduce the battles spent per useful label without changing the defaults: `--acquisition adaptive` (extend candidates a few fixtures at a time and stop each one when it cannot belong to the best k) and `--retest-panel N` (contenders and the incumbent play a fixed shared panel, so they are compared on identical opponents). An offline replay on recorded outcomes (122 published v1 batches and 362 rounds of the completed v4 run) measures battles spent per batch and how often the true best teams end up fully measured; it is evidence about the acquisition rule, not a new search benchmark. The full write-up, numbers, limits and the full-scale benchmark commands are in [findings/speed-acquisition.md](findings/speed-acquisition.md).

@@ -36,13 +36,13 @@ A team is three ordered Pokémon (the lead matters) from a pool of 300 eligible 
 | --- | --- | --- |
 | Pool preparation | `prepare.cjs`, `prepare-worker.cjs` | exhaustive 1-v-1 scouting, cached in `pool.json.chunks` |
 | Opponent meta | `meta.cjs`, `web/scripts/yt-harvest/usage_export.py`, `../next/usage-template.json` | synthetic priors and observed teams |
-| Search loop | `search.cjs`, `propose.cjs`, `acquisition.cjs`, `budget.cjs`, `common.cjs` | detached by `launch.cjs` / `launch-next.cjs` |
+| Search loop | `search.cjs`, `propose.cjs`, `acquisition.cjs`, `retest-panel.cjs`, `budget.cjs`, `common.cjs` | detached by `launch.cjs` / `launch-next.cjs` |
 | Neural model | `interaction.cjs`, `neural.cjs`, `fit-interaction.cjs`, `interaction-worker.cjs`, `predict.cjs`, `predict-worker.cjs` | plain JavaScript, no dependencies |
 | Battle engine | `../engine-v4.cjs`, `../engine-v4-core.cjs`, `../next/lookahead-v4.js`, `../next/observations.js`, `../battle-worker-v4.cjs`, `../pool.cjs`, `../runner.cjs` | PvPoke vendor code pinned at commit `f627e89` |
 | Evaluation | `evaluation.cjs` | screening, baselines, paired bootstraps |
 | Reports | `report.cjs`, `export-report.cjs`, `evidence.cjs` | `report.html`, `report.pvpteams.json.gz` |
 | Viewer | `web/includes/pro/neural.js`, `neural-portable.js`, `neural-report-core.js`, `team-browser.js`, `team-comparison.js`, `team-replay-v4-*.js` | import, rankings, charts, replay |
-| Audits and tools | `audit-model.cjs`, `audit-exploration.cjs`, `benchmark-acquisition.cjs`, `absorb-evaluation.cjs`, `merge.cjs`, `remap.cjs`, `status.cjs`, `stop.cjs` | read-only diagnostics on frozen checkpoints |
+| Audits and tools | `audit-model.cjs`, `audit-exploration.cjs`, `audit-acquisition-offline.cjs`, `benchmark-acquisition.cjs`, `absorb-evaluation.cjs`, `merge.cjs`, `remap.cjs`, `status.cjs`, `stop.cjs` | read-only diagnostics on frozen checkpoints |
 
 ### Running a search
 
@@ -159,11 +159,18 @@ Each round (`search.cjs`, `propose.cjs`, `acquisition.cjs`):
 4. **Simulate in two stages.** All 24 play the same 8 opponent fixtures; a deterministic optimistic score (mean shrunk toward 0.5 with 8 pseudo-fixtures, plus 1.28 posterior standard deviations, plus the ensemble spread) promotes the top half to the full 64 fixtures. That is 24×8 + 12×56 = 864 battles instead of 1,536, 43.75% fewer, so about 1.78× as many candidate starts per battle budget. The cost is that a strong team can be discarded after a noisy prefix (`--promotion-fraction 1` restores full allocation). Fixtures are dispatched common-prefix first, so comparisons keep matched observations if the process stops early; each result commits independently and the checkpoint is resumable.
 5. **Refit** the ensemble, record the round's proposal-quality diagnostics (mean score of each source on the shared 8-fixture prefix) and held-out errors, checkpoint, and loop.
 
+**Opt-in speed options** (off by default; the defaults, existing checkpoints and tests are unchanged).
+
+- **Adaptive prefix length** (`--acquisition adaptive`, with `--acquisition-step 8`, `--promotion-fraction` and `--acquisition-margin 1.28`). Every candidate still plays the common first prefix, so the proposal-quality diagnostics stay comparable. After it, candidates grow `step` fixtures at a time. After each completed level a candidate gets an optimistic score (the promotion priority: shrunk mean plus 1.28 posterior standard deviations plus the ensemble spread) and a pessimistic score (shrunk mean minus 1.28 posterior standard deviations). It stops when its optimistic score is below the pessimistic score of the current k-th best candidate, k = ceil(fraction × candidates), or when it reaches the full panel. The margin replaces the 1.28 on both sides. Decisions use only completed levels, so they are a function of the recorded scores. The stage, level and active teams are saved in the pending round, so an interrupted round resumes to exactly the uninterrupted result, and fixtures are still dispatched common-prefix first. Each round's `history.jsonl` entry records the size of every level.
+- **Shared retest panel** (`--retest-panel N`). A fixed panel of N opponent fixtures is drawn once from a guarded seed recorded in the checkpoint config, and is checked not to overlap the sealed screening and final fixtures. After each round's acquisition the retested team (source `retest`: the incumbent, a rotating contender or a moveset rival's parent) and the incumbent play the panel fixtures they have not played yet, so contenders accumulate paired evidence on common opponents. Panel scores are kept per team in the checkpoint; the observations are ordinary training labels tagged `retest-panel`. Each round's history entry, and `recommendations.json`, record the incumbent minus each contender on the shared panel (paired whole-fixture bootstrap; `recommendations.json` adds simultaneous bands).
+
 **Training leaders** are ranked by a cautious selection score: shrink the fixture mean toward 0.5 with eight pseudo-fixtures, then subtract 1.28 posterior standard deviations. It reduces the chance that a lucky small sample leads, but it is a heuristic, not a confidence bound, and does not remove multiple-comparison optimism.
 
 **Budget.** Proposals stop at 80% of the wall-clock budget, or earlier once measured throughput shows that screening, final testing and baselines need more time (estimated after 512 battles with a 25% margin). Duration-based runs exclude event-loop suspension gaps over 30 s (a sleeping laptop) and the battle watchdog allows 120 awake seconds.
 
 **Evidence for the acquisition rule.** In the completed v3 run, pure-disagreement exploration proposals averaged 37.4% over 154 rounds, barely above random (34.0%), while neural exploitation proposals averaged 60.5%. A retrospective diagnostic on 757 held-out identities gave 32.9% for disagreement alone versus 60.0% for mean + disagreement. A fresh paired benchmark with the frozen model on 12,000 unseen candidates and a new 128-opponent panel (1,536 battles) gave 35.4% versus 54.2%: **+18.8 points, paired interval 13.6–24.1**. The local neighbourhoods and rotating retests passed regression tests but their independent contribution to final team quality has not been measured.
+
+**Offline replay of the adaptive rule** (`audit-acquisition-offline.cjs`; no new simulation; method, imputation model and caveats in [findings/speed-acquisition.md](findings/speed-acquisition.md)). Both policies were replayed with the production decision functions on 122 published v1 batches (24 teams, all 64 fixtures recorded) and on 362 rounds of the completed v4 run, where the 12 teams the staged run did not promote have their unplayed fixtures imputed (44% of the cells). The staged rule's 864 battles per batch keep the true best three teams fully measured 93.4% (v1) and 88.9% (v4) of the time. The adaptive rule as specified (margin 1.28) keeps them about 100% of the time but spends 1,370 (v1) and 1,272 (v4) battles per batch, so it is a quality rule, not a saving: at equal spend it beats the staged curve by 0.0 to 0.4 points. With margin 0.5 and k = 6 it spends 856 (v1) and 811 (v4) battles and keeps the best three 97.5% and 94.8% of the time, which is +4.6 (interval 2.6 to 7.0) and +8.4 (7.0 to 9.9) points over the staged curve at the same spend. On a homogeneous batch (the run's 24 sealed-screening leaders) neither rule separates the teams and no difference from zero is distinguishable. These are batch-level recall figures on recorded outcomes; whether they give a better final team at equal wall-clock time is the open full-scale benchmark.
 
 ## 8. Evaluation protocol
 
@@ -199,7 +206,7 @@ Lessons recorded from these runs:
 | Neural fit (366 inputs, 16 hidden, 4,096 fixtures, 3 epochs) | 382 → 293 ms (1.30×) by caching repeated feature vectors' activations within a minibatch and reusing buffers; serialized models byte-identical | PERFORMANCE.md |
 | Full ensemble fit in a run (48,000 fixtures, 12 models on 12 workers) | about 19–25 s per round | run telemetry |
 | Candidate inference, 12,000 teams × 256 references × 12 models | 8.4 s → 1.5 s on 12 cores, predictions identical | PILOT_FINDINGS.md |
-| Battles per round | 864 instead of 1,536 (staged acquisition) | section 7 |
+| Battles per round | 864 instead of 1,536 (staged acquisition); opt-in adaptive acquisition 811 to 1,370 depending on its margin (offline replay) | section 7 |
 | Pool preparation | 18.4 M 1-v-1 simulations, chunked and cached | section 3 |
 | Memory | workers recycled every 8 battles (or at heap pressure) with 128–192 MB old-space limits; peak sampled RSS 1.4–5.5 GB for the process tree | PERFORMANCE.md, run telemetry |
 
@@ -238,7 +245,7 @@ The report contract (`format: "pvp-team-report"`, schema 1, engine versions v1�
 | Gap | Evidence | What would close it |
 | --- | --- | --- |
 | **Forecast preparation dominates** | every switch decision builds duels for every imagined lineup; branch caching and headless mode recovered 1.33× | pool forecast state; an array-based combat state instead of Pokémon objects (a larger rewrite needing full timing and form parity) |
-| **Battles per label** | 864 per round after staged acquisition | adaptive prefix length by observed variance; share fixtures across rounds for retests |
+| **Battles per label** | 864 per round after staged acquisition. Since 2026-10-13 two opt-in options exist, both tested and resumable: adaptive prefix length (`--acquisition adaptive`) and a shared retest panel (`--retest-panel N`). Offline replay (section 7): the adaptive rule at its specified margin costs 47 to 59% more battles per batch than staged for about 100% best-three recall; with margin 0.5 and k = 6 it matches staged spend (811 to 856) at +4.6 to +8.4 points of best-three recall. Not measured: the end-to-end effect on the final team, and whether the panel resolves finalist differences | two equal-time full-scale runs, staged against adaptive on the same seeds, and a run with the panel (exact commands in [findings/speed-acquisition.md](findings/speed-acquisition.md)); then make the better setting the default and retire the other |
 | **Fitting and inference are already small** | 20–25 s per fit, 1.5 s per inference round against hours of simulation | no action needed until the simulator is several times faster |
 | **Pool preparation** | 18.4 M simulations, cached | unchanged data snapshot reuses the pool; a new snapshot pays once |
 
@@ -251,6 +258,7 @@ Compatibility rules: resume requires the original algorithm code, settings and p
 ```
 node training/team-search/audit-model.cjs --checkpoint CHECKPOINT.json --pool POOL.json --fold 0 --cap 24000 --ensemble 4 --epochs 6 --repeats 3 --out model-audit.json
 node training/team-search/audit-exploration.cjs --checkpoint FILE --pool FILE --out FILE
+node training/team-search/audit-acquisition-offline.cjs --v4 CHECKPOINT --out FILE   # replays acquisition policies on recorded outcomes (the published v1 fixtures are the default --v1 input)
 node training/team-search/benchmark-acquisition.cjs --checkpoint FILE --pool FILE --out FILE
 node training/benchmark-simulator-speed.cjs 192 3 12 training/simulator-speed-results.json
 node training/team-search/benchmark-neural-speed.cjs
@@ -269,6 +277,7 @@ node training/next/controller-check.cjs 128
 | v6 acquisition | 2026-10-10 | promising exploration (mean + spread), local moveset and lead neighbourhoods, rotating retests; +18.8 points proposal quality in a paired benchmark |
 | v4 | 2026-10-10 | observation-limited controller with belief priors; simulator optimisations (1.33×); staged acquisition (−43.75% battles) |
 | observed meta | 2026-10-11 | harvested YouTube opponent teams as the main opponent distribution, creator-capped and time-decayed |
+| acquisition options | 2026-10-13 | opt-in adaptive prefix length and shared retest panel; offline replay of acquisition policies on recorded outcomes |
 
 ## 15. References
 
