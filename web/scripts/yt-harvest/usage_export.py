@@ -43,6 +43,16 @@ or video record carries the opponent's rating or a rank bracket (the result scre
 the only rating information is free text in some video titles, e.g. "2864 ELO", which is the creator's own
 rating at that moment, not the opponent's). The `rank` text in the file says so.
 
+Observed movesets (optional `movesets` per row, `--no-movesets` omits them): for each member, lead first, the fast
+move (a human answer first, else a model-resolved answer from the learning loop's held-out gate (observed.model_answers),
+else the extractor's top inference when its probability is at least .90, else null) and the charged moves the battle's
+'move' events credit to that Pokemon, in order of first use. Every move must exist in web/includes/pro/data/gamemaster.json,
+be of the right kind (fast or charged) and be legal for the exported species; others are dropped and counted. A member
+whose battle shows three or more distinct charged moves is contradictory (a detection error) and keeps none. Rows with
+different observed movesets are separate rows (same members, date and creator otherwise); a row without any observed
+move carries no `movesets`. The quality report counts members with a fast move (by source), with at least one charged
+move, and how many observed moves differ from the published recommended moveset.
+
 Only opponents are written: a creator's own team is one player's choice and repeats across their
 battles. --include-creator-teams adds each creator team once per video.
 
@@ -85,6 +95,9 @@ BATTLE_FORMS = {'cramorant_gulping': 'cramorant', 'cramorant_gorging': 'cramoran
                 'mimikyu_busted': 'mimikyu', 'darmanitan_zen': 'darmanitan_standard',
                 'darmanitan_galarian_zen': 'darmanitan_galarian_standard'}
 UNKNOWN_IDS = (None, '', 'other', 'none', 'None', 'unknown')
+FAST_CONFIDENCE = .90        # the extractor's top fast-move inference counts as observed from this probability on
+MAX_CHARGED = 2              # a Pokemon in this pool has two charged moves; more distinct moves seen is a detection error
+DEFAULT_GAMEMASTER = WEB / 'includes/pro/data/gamemaster.json'
 REASONS = {
     'rocket': 'Team Rocket battle',
     'championship': 'Championship / tournament video',
@@ -143,7 +156,7 @@ def load_pool(path):
         raise SystemExit('Trainer pool not found or unreadable: %s\nPrepare it first: node training/team-search/prepare.cjs '
                          '--species 300 --movesets 5 --shortlist 10000 --scout-opponents 300 --out training/runs/team-search/pool.json' % path)
     return {p['speciesId']: {'dex': p.get('dex'), 'weight': float(p.get('weight') or 0), 'name': p.get('speciesName') or p['speciesId'],
-                             'rank': p.get('rank')}
+                             'rank': p.get('rank'), 'moveset': list(p['moveset']) if isinstance(p.get('moveset'), list) else None}
             for p in data['species'] if isinstance(p, dict) and p.get('speciesId')}, data.get('hash')
 
 
@@ -259,6 +272,160 @@ def canonical(ids):
     return [ids[0]] + sorted(ids[1:])
 
 
+def canonical_order(ids):
+    """Indices that put a team in canonical order (lead first, bench by species id): the same order as canonical()."""
+    return [0] + sorted(range(1, len(ids)), key=lambda j: ids[j])
+
+
+class MoveBook:
+    """PvPoke move ids and each species' legal move pools from the Game Master (the trainer's meta.cjs checks the same
+    pools): fastMoves and chargedMoves, extraChargedMoves, Return for a Shadow-eligible species that reaches level 25 by
+    1,500 CP, and Frustration for a Shadow species (vendor/Pokemon.js builds the pools the same way)."""
+
+    def __init__(self, data):
+        data = data if isinstance(data, dict) else {}
+        self.fast, self.charged = set(), set()
+        for m in data.get('moves') or []:
+            if not isinstance(m, dict) or not m.get('moveId'):
+                continue
+            if (m.get('energy') or 0) > 0:
+                self.charged.add(m['moveId'])
+            elif (m.get('energyGain') or 0) > 0:
+                self.fast.add(m['moveId'])
+        self.species = {}
+        for p in data.get('pokemon') or []:
+            if not isinstance(p, dict) or not p.get('speciesId'):
+                continue
+            tags = p.get('tags') or []
+            charged = list(p.get('chargedMoves') or []) + list(p.get('extraChargedMoves') or [])
+            if 'shadoweligible' in tags and (p.get('level25CP') or 1e9) <= 1500:
+                charged.append('RETURN')
+            if 'shadow' in tags:
+                charged.append('FRUSTRATION')
+            self.species[p['speciesId']] = {'fast': {m for m in p.get('fastMoves') or [] if m in self.fast},
+                                            'charged': {m for m in charged if m in self.charged}}
+
+    def __bool__(self):
+        return bool(self.species)
+
+    def legal(self, species_id):
+        return self.species.get(species_id)
+
+
+def load_move_book(path):
+    return MoveBook(read(path, None))
+
+
+def member_moves(m, events, side, species_id, book):
+    """(moves or None, notes) for one member of a kept battle. moves = {'fast': id or None, 'fastSource': ..., 'charged': [...]}.
+    notes counts what was dropped: lowConfidenceFast, illegalFast, illegalCharged, conflictingCharged."""
+    notes = collections.Counter()
+    legal = book.legal(species_id)
+    if legal is None:
+        return None, notes
+    fast_id, source, p = m.get('fastMove'), m.get('fastMoveSource'), m.get('fastMoveConfidence')
+    fast = None
+    if fast_id:
+        if source in ('reviewer', 'model') or (p is not None and p >= FAST_CONFIDENCE):
+            if fast_id in legal['fast']:
+                fast = fast_id
+            else:
+                notes['illegalFast'] += 1
+        else:
+            notes['lowConfidenceFast'] += 1
+    seen, illegal = [], set()
+    for e in events or []:
+        if not isinstance(e, dict) or e.get('kind') != 'move' or e.get('side') != side or e.get('actor') != m.get('key'):
+            continue
+        move = e.get('move')
+        if move in legal['charged']:
+            if move not in seen:
+                seen.append(move)
+        elif move:
+            illegal.add(move)
+    notes['illegalCharged'] += len(illegal)
+    if len(seen) > MAX_CHARGED:
+        notes['conflictingCharged'] += 1
+        seen = []
+    if fast is None and not seen:
+        return None, notes
+    out = {'fast': fast, 'charged': seen}
+    if fast:
+        out['fastSource'] = source if source in ('reviewer', 'model') else 'inference'
+    return out, notes
+
+
+def team_moves(battle, side, ids, book):
+    """(per-member moves in the battle's member order, dropped-move counts) for one side of a kept battle; (None, notes)
+    when the move book is empty or no member has an observed move."""
+    notes = collections.Counter()
+    if not book:
+        return None, notes
+    out = []
+    for j, m in enumerate(battle[side]):
+        moves, n = member_moves(m, battle.get('events'), side, ids[j], book)
+        notes.update(n)
+        out.append(moves)
+    return (out if any(x is not None for x in out) else None), notes
+
+
+def movesets_report(kept, pool):
+    """Coverage of observed movesets among the kept opponent battles' members (one count per battle appearance), and how
+    many differ from the published recommended moveset in the pool."""
+    members = fast = charged = both = comparable_fast = diff_fast = comparable_charged = diff_charged = diff_any = teams_diff = 0
+    by_source, dropped = collections.Counter(), collections.Counter()
+    for e in kept:
+        dropped.update(e.get('moveNotes') or {})
+        moves, team_differs = e.get('movesets'), False
+        for i, species_id in enumerate(e['members']):
+            members += 1
+            x = moves[i] if moves else None
+            if x is None:
+                continue
+            rec = (pool.get(species_id) or {}).get('moveset')
+            has_fast, has_charged = bool(x['fast']), bool(x['charged'])
+            fast += has_fast
+            charged += has_charged
+            both += has_fast and has_charged
+            if has_fast:
+                by_source[x.get('fastSource') or 'inference'] += 1
+            differs = False
+            if rec:
+                if has_fast:
+                    comparable_fast += 1
+                    diff_fast += x['fast'] != rec[0]
+                    differs = differs or x['fast'] != rec[0]
+                if has_charged:
+                    comparable_charged += 1
+                    outside = any(c not in rec[1:3] for c in x['charged'])
+                    diff_charged += outside
+                    differs = differs or outside
+            diff_any += differs
+            team_differs = team_differs or differs
+        teams_diff += team_differs
+    share = lambda a, b: a / b if b else None
+    return {'members': members, 'withFast': fast, 'withFastShare': share(fast, members), 'fastBySource': dict(by_source),
+            'withCharged': charged, 'withChargedShare': share(charged, members), 'withFastAndCharged': both,
+            'fastDiffersFromRecommended': {'count': diff_fast, 'of': comparable_fast, 'share': share(diff_fast, comparable_fast)},
+            'chargedOutsideRecommended': {'count': diff_charged, 'of': comparable_charged, 'share': share(diff_charged, comparable_charged)},
+            'membersDifferingFromRecommended': {'count': diff_any, 'share': share(diff_any, members)},
+            'battlesWithMoves': sum(bool(e.get('movesets')) for e in kept), 'battles': len(kept),
+            'teamsWithADifferingMember': teams_diff, 'dropped': dict(dropped), 'fastConfidence': FAST_CONFIDENCE}
+
+
+def moveset_signature(movesets):
+    """A hashable summary of a team's observed movesets (None when no member has any), used to keep rows with
+    different movesets apart."""
+    if not movesets or all(x is None for x in movesets):
+        return None
+    return tuple(None if x is None else (x['fast'], tuple(x['charged'])) for x in movesets)
+
+
+def public_moves(x):
+    """The file's form of one member's moves: {fast, charged} (fastSource is a report detail)."""
+    return None if x is None else {'fast': x['fast'], 'charged': list(x['charged'])}
+
+
 def creator_cap(counts, max_share):
     """K such that min(n, K) / sum(min(n_c, K)) <= max_share for every creator (bisection).
     Returns (K, weights by creator). With too few creators to meet the share, all creators get
@@ -340,8 +507,10 @@ def dedupe(entries):
 
 def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None, cups=DEFAULT_CUPS,
           include_creator_teams=False, max_creator_share=DEFAULT_MAX_CREATOR_SHARE, today=None, prior_samples=20000,
-          since=None, until=None):
+          since=None, until=None, movesets=True, gamemaster=None):
     work, web_root = Path(work), Path(web_root)
+    gm_path = Path(gamemaster) if gamemaster else web_root / 'includes/pro/data/gamemaster.json'
+    book = load_move_book(gm_path if gm_path.exists() else DEFAULT_GAMEMASTER) if movesets else MoveBook(None)
     since, until = day(since), day(until)
     if since and until and since > until:
         raise ValueError('--since %s is after --until %s' % (since, until))
@@ -406,9 +575,14 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
                 reason = 'no-date'
             if reason is None:
                 my_reason, my_ids, _ = side_team(o, 'my', pool, MY_BOUNDARY_FLAG)
+                opp_moves, opp_notes = team_moves(b, 'opponent', ids, book)
+                my_moves, _ = team_moves(b, 'my', my_ids, book) if my_reason is None else (None, None)
                 entries.append({**base, 'members': canonical(ids), 'opponentSet': tuple(sorted(ids)),
+                                'movesets': [opp_moves[j] for j in canonical_order(ids)] if opp_moves else None, 'moveNotes': opp_notes,
                                 'mySet': tuple(sorted(my_ids)) if my_reason is None else None,
-                                'myMembers': canonical(my_ids) if my_reason is None else None, 'notes': info['notes'],
+                                'myMembers': canonical(my_ids) if my_reason is None else None,
+                                'myMovesets': [my_moves[j] for j in canonical_order(my_ids)] if my_moves else None,
+                                'notes': info['notes'],
                                 'reviewedMembers': info['reviewedMembers'], 'leadConfirmed': bool(b.get('leadConfirmed'))})
         if reason:
             reasons[reason] += 1
@@ -434,7 +608,7 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
         key = (e['videoId'], e['mySet'])
         if e['myMembers'] and key not in seen:
             seen.add(key)
-            creator_rows.append({**e, 'members': e['myMembers']})
+            creator_rows.append({**e, 'members': e['myMembers'], 'movesets': e['myMovesets'], 'moveNotes': None})
 
     rows_in = [dict(e, side='opponent') for e in kept] + [dict(e, side='creator') for e in creator_rows]
     per_creator = collections.Counter(e['creator'] for e in rows_in)
@@ -443,9 +617,11 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
 
     grouped = collections.OrderedDict()
     for e in sorted(rows_in, key=lambda e: (e['collectedAt'], e['creator'], e['members'])):
-        key = (tuple(e['members']), e['collectedAt'], e['creator'], e['side'])
+        key = (tuple(e['members']), e['collectedAt'], e['creator'], e['side'], moveset_signature(e.get('movesets')))
         g = grouped.setdefault(key, {'members': list(e['members']), 'count': 0, 'collectedAt': e['collectedAt'],
                                      'creator': channel_name[e['creator']], 'side': e['side'], 'battles': []})
+        if moveset_signature(e.get('movesets')) and 'movesets' not in g:
+            g['movesets'] = [public_moves(x) for x in e['movesets']]
         g['count'] += 1
         g['battles'].append('%s:%d' % (e['videoId'], e['battle']))
         w = round(weights[e['creator']], 6)
@@ -500,6 +676,9 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
         'weighting': ('Per-creator weight min(1, %.3g / n) so no channel exceeds %.0f%% of the total; count is raw appearances.'
                       % (k or 0, max_creator_share * 100)),
         'poolHash': pool_hash,
+        **({'movesets': ('Rows may carry `movesets` per member (lead first): {fast, charged}. fast: a human answer, else a model-resolved '
+                         'answer, else the top inference at p >= %.2f; charged: moves seen in that battle. Others are null or [].'
+                         % FAST_CONFIDENCE)} if book else {}),
         'teams': teams,
     }
     report = {
@@ -525,6 +704,7 @@ def build(work=DEFAULT_WORK, web_root=WEB, pool_path=DEFAULT_POOL, registry=None
         'perCreator': [{'channel': channel_name[c], 'teams': v, 'weight': round(weights[c], 4)} for c, v in per_creator.most_common()],
         'topTeams': top_teams, 'topSpecies': top_species, 'pvpokeTopSpecies': prior_top,
         'trainer': recommend(total_weight, rows_in, weights, last),
+        'movesets': movesets_report(kept, pool) if book else None,
     }
     return usage, report
 
@@ -543,6 +723,27 @@ def recommend(total_weight, rows, weights, as_of, half_life=30, target_share=.75
 
 def pct(x):
     return '—' if x is None else '%.1f%%' % (100 * x)
+
+
+def movesets_markdown(m):
+    if not m:
+        return []
+    f, c, d = m['fastDiffersFromRecommended'], m['chargedOutsideRecommended'], m['membersDifferingFromRecommended']
+    src = ', '.join('%s %d' % kv for kv in sorted(m['fastBySource'].items())) or 'none'
+    lines = ['', '## Observed movesets (opponent members of the eligible teams)', '',
+             '| | Members | Share |', '| --- | ---: | ---: |',
+             '| Opponent members | %d | |' % m['members'],
+             '| With an observed fast move (%s) | %d | %s |' % (src, m['withFast'], pct(m['withFastShare'])),
+             '| With at least one charged move seen | %d | %s |' % (m['withCharged'], pct(m['withChargedShare'])),
+             '| With a fast move and a charged move | %d | %s |' % (m['withFastAndCharged'], pct(m['withFastAndCharged'] / m['members'] if m['members'] else None)),
+             '| Observed fast move differs from the recommended one | %d of %d | %s |' % (f['count'], f['of'], pct(f['share'])),
+             '| A charged move seen outside the recommended pair | %d of %d | %s |' % (c['count'], c['of'], pct(c['share'])),
+             '| Moveset differs from the recommended one (fast or charged) | %d | %s |' % (d['count'], pct(d['share'])),
+             '', 'Battles with any observed move: %d of %d. Teams with at least one member whose moves differ from the recommendation: %d. '
+             'Fast moves count at probability >= %.2f (a human or model-resolved answer always counts). Dropped: %s.'
+             % (m['battlesWithMoves'], m['battles'], m['teamsWithADifferingMember'], m['fastConfidence'],
+                ', '.join('%s %d' % kv for kv in sorted(m['dropped'].items())) or 'nothing')]
+    return lines
 
 
 def markdown(report):
@@ -571,6 +772,7 @@ def markdown(report):
               '', 'Unmapped species (team dropped): ' + (', '.join('%s %d' % kv for kv in r['unmappedSpecies'].items()) or 'none'),
               '', 'Member mapping: %s. Leads: %s. Members with a reviewer answer: %d. Date basis: %s.'
               % (r['memberMapping'], r['leads'], r['reviewedMembers'], r['dateBasis']),
+              *movesets_markdown(r.get('movesets')),
               '', '## Top 20 teams vs the PvPoke prior', '',
               'PvPoke prior = probability of this lead and bench when members are drawn independently by PvPoke weight ^ 1.25 (the independent half of the trainer\'s synthetic prior).',
               '', '| # | Lead | Bench | Teams | Creators | Observed share | PvPoke prior | Ratio |', '| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |']
@@ -615,6 +817,8 @@ def main(argv=None):
     ap.add_argument('--max-creator-share', type=float, default=DEFAULT_MAX_CREATOR_SHARE, help='Largest weight share of one channel')
     ap.add_argument('--since', help='Keep only teams dated on or after this day (YYYY-MM-DD; recording date, else upload date)')
     ap.add_argument('--until', help='Keep only teams dated on or before this day (YYYY-MM-DD)')
+    ap.add_argument('--no-movesets', action='store_true', help='Do not write observed movesets (rows then carry members only)')
+    ap.add_argument('--gamemaster', help='Game Master JSON that validates moves (default web/includes/pro/data/gamemaster.json)')
     args = ap.parse_args(argv)
     try:
         since, until = day(args.since), day(args.until)
@@ -625,7 +829,8 @@ def main(argv=None):
     if not 0 < args.max_creator_share <= 1:
         ap.error('--max-creator-share must be in (0, 1]')
     usage, report = build(args.work, args.web_root, args.pool, args.registry, tuple(c for c in args.cups.split(',') if c),
-                          args.include_creator_teams, args.max_creator_share, since=since, until=until)
+                          args.include_creator_teams, args.max_creator_share, since=since, until=until,
+                          movesets=not args.no_movesets, gamemaster=args.gamemaster)
     out = Path(args.out) if args.out else Path(args.work) / 'usage' / 'observed-gl-opponents.json'
     if not usage['teams']:
         print(markdown(report))

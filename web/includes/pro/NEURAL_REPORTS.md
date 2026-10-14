@@ -95,6 +95,33 @@ after the final test, replayed on N common fixtures once per opponent style whil
 The viewer adds a caption line to the finalists card and a table to Search Performance; `neural-report-core.js`
 validates the block when it is present. The panel never affects selection.
 
+## Opponent movesets in a report
+
+Two optional additions (a report without them is unchanged; schema stays 1).
+
+**Observed-moveset opponents** (a run started with `--observed-moves`). Opponents normally play the pool's recommended
+moveset, so `table.opponents` is the pool's species in order and a matchup names an opponent by its species index. With
+`--observed-moves` an observed team's members that play another moveset get a row of their own, appended after the pool's
+species: the same `speciesId` and `speciesName`, `moveset` = the moves the battle was simulated with, `recommended` = the
+species' recommended moveset. Matchups refer to those rows by index, so the browser replays the moves used. Members without
+an observation keep their species index. `table.opponents` may hold up to 2,000 rows.
+
+**`alternatePanel`** (a run started with `--alternate-panel N`; absent otherwise): the finalists, after the final test,
+replayed on N sealed fixtures of the run's own meta three ways on the same opponent species, order and battle seeds.
+
+- `alternatePanel.reference`: `id` (`run`) and `label`, the arm in which opponents play the movesets the run models;
+- `alternatePanel.levels[]`: `id` (`alternate-1`, `alternate-2`), `rank`, `label`, and what the swap changed: `members`,
+  `changedMembers`, `changedMemberShare`, `changedFixtures`, `changedFixtureShare`. Level k gives every opponent member its
+  k-th best scouted moveset other than the recommended one (a species with fewer alternates repeats its last);
+- `alternatePanel.requestedFixtures`, `fixtures` (completed whole fixtures), `complete`, `exploratory` (fewer than 256),
+  `seed`, `method`;
+- `alternatePanel.teams[]` (primary first): `team` (indexes into `table.variants`), `primary`, `finalScore`, `scores`
+  per arm id, `deltas[]` (`level`, `delta` = arm minus run, `interval95` = a paired band simultaneous over the arms,
+  `verdict` `higher` / `lower` / `unresolved`), `worstLevel`, `worstDelta`, `bandRadius`.
+
+The viewer adds a caption line to the finalists card (`neural-portable.js` `alternatePanelCaption`); `neural-report-core.js`
+validates the block when it is present. The panel never affects selection.
+
 The following v3 instructions are historical.
 
 # Neural team search v3: run, import and transfer

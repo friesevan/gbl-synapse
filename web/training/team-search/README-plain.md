@@ -45,6 +45,8 @@ Two cautions. First, scores from different versions of the simulator or differen
 
 **How much does the score depend on the assumed opponents?** After the exams, each finalist is also played against several other plausible opponent mixes: popular Pokémon only, teams whose members cover each other's weaknesses only, only the teams seen in videos, the video teams without the biggest creator, and different popularity weightings. Under each finalist in Search Performance there is a line such as "across 6 metas: min 62.5%, spread 14.1 points", and a table shows every score. The spread is the gap between a team's best and worst score across those mixes: a small spread means the team does not hang on one guess about the opponents, a large one means it is tuned to one. The table also shows how big a spread luck alone would produce with that many battles (roughly 7 to 9 points at 128 battles per mix), because a spread no bigger than that cannot be told from luck. It is a way to read the result, not a way to choose the team: the primary team is still the one the screening picked.
 
+**Do the opponents' moves matter?** By default every opponent plays PvPoke's recommended moves. A run can instead let the opponents seen in videos use the moves the Meta Extractor saw them use (about three quarters of the videos' Pokémon have a fast move read, under half a charged move, and only about 7% differ from the recommendation, so it is a small change), and can finish by replaying its finalists against each opponent Pokémon's next-best moves. The tab then says whether a finalist's score barely moves when the opponents carry something else, or drops. That is a stress test, not a prediction: it changes every opponent Pokémon at once.
+
 ## How fast is it
 
 On a 12-core laptop the simulator plays about 16 full battles per second with the current controller; an eight-hour run completes roughly 300 search rounds and about 300,000 battles before the exams begin. Fitting the network takes about 20 seconds per round and scoring 12,000 candidates about 1.5 seconds, so nearly all the time goes to battles. The graphics card is not used: the battle engine is branching game logic, not matrix maths.
@@ -56,7 +58,7 @@ Two overnight runs can differ by luck alone, so "the new score is higher" is not
 ## What it cannot do yet
 
 - Promise the *best* team. It has looked at a few thousand of 1.65 billion teams; it finds strong teams under its assumptions.
-- Know the real meta. The observed teams are a small, top-tier-player sample, and opponents always run PvPoke's recommended movesets.
+- Know the real meta. The observed teams are a small, top-tier-player sample, and opponents run PvPoke's recommended movesets unless a run asks for the observed ones.
 - Play like a strong human. The controller sees the right information now, but its switching, baiting and shielding are simple rules with a short lookahead.
 - Try movesets outside the five scouted per Pokémon, or other IV builds.
 - Prove that the game's rarer rules match the simulator's. Damage and move timing were checked against real battle footage (the middle half of 222 measured charged attacks landed within about 7% of the formula, with no bias), and the simulator's behaviour is now pinned so any change is noticed. But tie-breaks when both players throw a charged move at once, whether the Shadow bonus counts in them, the length of the switch cooldown and when stat changes land have not been checked against the game itself. A [findings note](findings/mechanics-fidelity.md) says how to check them.
