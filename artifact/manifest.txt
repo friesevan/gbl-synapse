@@ -164,4 +164,12 @@ training/team-search/docs/teams-architecture.svg
 training/team-search/docs/teams-controller.svg
 training/team-search/docs/teams-model.svg
 training/team-search/docs/ui-team-rankings.jpg
+training/team-search/findings/controller.md
+training/team-search/findings/improvement-metrics.md
 training/team-search/findings/mechanics-fidelity.md
+training/team-search/findings/meta-sensitivity.md
+training/team-search/findings/opponent-movesets.md
+training/team-search/findings/selection-protocol.md
+training/team-search/findings/speed-acquisition.md
+training/team-search/findings/speed-forecast.md
+training/team-search/findings/surrogate-eval.md

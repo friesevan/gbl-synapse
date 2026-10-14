@@ -55,8 +55,20 @@ function validate(d){
   if(!Array.isArray(a.levels)||!a.levels.length||a.levels.length>8||a.levels.some(l=>!l||!name(l.id)||l.id===a.reference.id||typeof l.label!=='string'||l.label.length>100||!Number.isInteger(l.rank)||l.rank<1||!share(l.changedMemberShare)||!share(l.changedFixtureShare))||new Set(a.levels.map(l=>l.id)).size!==a.levels.length)fail('invalid alternate panel levels');
   if(!Array.isArray(a.teams)||a.teams.length>64||a.teams.some(t=>!t||!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||!score(t.scores?.[a.reference.id])||!a.levels.every(l=>score(t.scores?.[l.id]))||!Array.isArray(t.deltas)||t.deltas.length!==a.levels.length||t.deltas.some(v=>!v||!a.levels.some(l=>l.id===v.level)||!Number.isFinite(v.delta)||!band(v.interval95)||!['higher','lower','unresolved'].includes(v.verdict))||!Number.isFinite(t.worstDelta)||!name(t.worstLevel)))fail('invalid alternate panel teams');
  }
+ // Optional (added with the uncertainty-calibration read-out, training/team-search/calibration.cjs): on diagnostics and on each history round; older reports lack it.
+ if(d.diagnostics?.uncertaintyCalibration!=null&&!calibrationOk(d.diagnostics.uncertaintyCalibration))fail('invalid uncertainty calibration');
+ if(Array.isArray(d.history)){if(d.history.length>100000)fail('too many history rounds');for(const h of d.history)if(h?.diagnostics?.uncertaintyCalibration!=null&&!calibrationOk(h.diagnostics.uncertaintyCalibration))fail('invalid uncertainty calibration');}
  return d;
 }
+// Held-out spread-versus-error read-out: counts and shares are bounded, correlations lie in [-1, 1], and null means "not computable".
+function calibrationOk(c,nested=false){
+ const num=(k,lo,hi)=>c[k]==null||Number.isFinite(c[k])&&c[k]>=lo&&c[k]<=hi;
+ if(!c||typeof c!=='object'||!Number.isSafeInteger(c.teams)||c.teams<0||c.teams>1e7)return false;
+ if(!['k80','k90','medianSpread','medianAbsResidual'].every(k=>num(k,0,1e9))||!['coverage80','coverage90','coverage1'].every(k=>num(k,0,1))||!num('spearman',-1-1e-9,1+1e-9))return false;
+ if(c.wellMeasured==null)return true;
+ return !nested&&Number.isSafeInteger(c.wellMeasured.minFixtures)&&c.wellMeasured.minFixtures>=1&&calibrationOk(c.wellMeasured,true);
+}
+function validateCalibration(c){if(!calibrationOk(c))throw Error('Invalid neural report: invalid uncertainty calibration');return c;}
 async function verifySnapshot(d){const raw=JSON.stringify([d.snapshot.published,d.snapshot.overrides,d.snapshot.gameMaster]),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==d.dataHash)throw Error('The report’s pinned data failed its integrity check');return d;}
 async function readFile(file){
  if(file.size>128*1024*1024)throw Error('Report exceeds 128 MB');
@@ -65,5 +77,5 @@ async function readFile(file){
  try {for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>256*1024*1024){await reader.cancel();throw Error('Expanded report exceeds 256 MB');}chunks.push(value);}}finally{reader.releaseLock();}
  const bytes=new Uint8Array(size);let offset=0;chunks.forEach(c=>{bytes.set(c,offset);offset+=c.length;});return verifySnapshot(validate(JSON.parse(new TextDecoder().decode(bytes))));
 }
-const api={validate,verifySnapshot,readFile};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.NeuralReportCore=api;
+const api={validate,validateCalibration,verifySnapshot,readFile};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.NeuralReportCore=api;
 })(globalThis);
