@@ -161,3 +161,7 @@ Run from `web/` of the main checkout on an idle machine.
 ## Tests
 
 `node --test training/*.test.cjs training/next/*.test.cjs training/team-search/*.test.cjs`: 245 tests, all pass (228 s under load average 35 to 45); `python3 -I -m unittest discover -s web/scripts/yt-harvest -p 'test_*.py'`: 145 tests pass; `node --test tests/docs.test.cjs`: 15 pass. New: 13 tests in `sensitivity.test.cjs` (meta modes, seeds, catalog, plan and overlap checks, budget, statistics, prefix assembly, team lists, wording, the standalone tool end to end with a deterministic fake battle, refusals, launcher flags), 3 in `search-sensitivity.test.cjs` (the real search loop), 3 in `sensitivity-viewer.test.cjs` (viewer table, lines, validation), and 4 in `test_usage_export.py` (window bounds, duplicate rule, validation, command line). `tests/docs.test.cjs` and the Python suite pass.
+
+## Full-scale results (2026-10-14)
+
+Eight finalists × six metas × 512 fixtures (`training/runs/full-scale/sensitivity-512.json`, about 6 minutes at 12 workers after forecast reuse). Spreads 2.4 (primary), 4.0, 5.9, 4.2, 4.3, 4.1, 4.5, 6.8 points; fixture-noise floor 4.0; simultaneous half-width per meta ±6 points; best team per meta: finalist 2 on independent-1.25, observed and independent-1.5, finalist 3 on coherent, observed-without-top-creator and independent-1.0; mean − spread order: t2 80.8 > t1 80.4 > t4 80.1. No finalist depends strongly on the meta; no pair resolved.

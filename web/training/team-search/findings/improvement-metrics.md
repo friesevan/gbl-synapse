@@ -113,3 +113,7 @@ node training/team-search/rematch.cjs training/runs/RUN_A training/runs/RUN_B --
 # Matched-battle history comparison
 node training/team-search/compare-history.cjs training/runs/RUN_A training/runs/RUN_B --labels old,new --json training/runs/history-A-vs-B.json
 ```
+
+## Full-scale results (2026-10-14)
+
+512-fixture rematch of the v1 and v3 finalists and the v4 finalists under the observed meta (`rematch-512.json`, seed 237547096): v4 finalists 76.1–83.6%, all resolved above the v1 primary (57.1%); v3 primary 64.4% unresolved against it; v1 finalist 5 (Melmetal / Guzzlord / Stunfisk) 68.7% resolved above the v1 primary; simultaneous half-width 10.3 over 276 pairs. Scores from different runs are only comparable this way.

@@ -190,3 +190,7 @@ node training/team-search/launch-next.cjs --hours 8 --out training/runs/team-sea
 ```
 
 Compare the overnight runs by their panels and by a `rematch.cjs` of all three primaries under the default controller, never by their own final scores. A panel at 256 fixtures per style costs about 12,000 battles for eight finalists, minutes on 12 idle workers; the training budget reserves it.
+
+## Full-scale results (2026-10-14)
+
+Both-rosters A/B at 512 fixtures (`controller-ab-weighted-512.json`, `controller-ab-continuation8-512.json`; load average 18 from another session, timings only): weighted replies 50.1% (49.4–50.8), 59/1,024 battles changed, time ratio 1.01; continuation 8: 52.5% (50.4–54.6), 726/1,024 changed, time ratio 1.12. Policy panel at 256 (`policy-panel-256.json`): min style = default for finalists 1 and 5, weighted for 3, 4, 6 and 7, always-shield for 2, eager-switches for 8; never-shield +11.9 to +21.5 (all resolved), no-voluntary-switches +1.2 to +12.1 (resolved for 1, 3 and 5). The primary scored 73.8% under the default style on this panel against 84.4% for finalist 2.

@@ -182,3 +182,7 @@ node training/team-search/alternate-panel.cjs training/runs/team-search-v4-obser
 ```
 
 Start B only after A has finished (each uses every core). `--alternate-panel 64` is a quick pass (1,536 battles; exploratory); 256 (6,144 battles, about seven minutes) is the size to read. The A/B pair is a search comparison (equal budget, same seeds), so judge it as section 8 and EVALUATION_PROTOCOL.md describe: the sealed panels differ in movesets, and the rematch under the observed movesets is the paired answer.
+
+## Full-scale results (2026-10-14)
+
+Alternate-moveset panel at 256 fixtures (`alternate-panel-256.json`): per-finalist deltas on alternate-1 −6.6, −4.7, −0.8, +1.2, +3.5, +3.7, +4.3, +8.6 (the +8.6 resolved higher) and on alternate-2 −4.1 to +5.1 (none resolved). Alternate opponent movesets do not hurt the finalists beyond noise.

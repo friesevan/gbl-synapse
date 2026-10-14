@@ -125,3 +125,7 @@ The first command is the one behind the earlier 12-worker figures (12.24 baselin
 - `web/training/simulator-fixtures.cjs`: `searchFixtures()`, search-shaped fixtures (in-git by default, or from a pool and usage file).
 - `web/training/benchmark-simulator-speed.cjs`: `--fixtures search`, `--pool` and `--usage-*` flags; records the load average.
 - `web/training/forecast-reuse.test.cjs`: the identity tests.
+
+## Full-scale results (2026-10-14)
+
+Idle machine, 12 workers, median of 3: optimised 50.2 battles/s vs baseline 18.2 (2.76×); search-shaped 50.0 vs 19.3 (2.60×). Files: `training/simulator-speed-results.json`, `training/simulator-speed-search.json`.

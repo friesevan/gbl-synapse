@@ -170,3 +170,7 @@ node training/team-search/audit-selection.cjs training/runs/team-search-v4-selec
 ```
 
 `launch-next.cjs` passes unknown-to-it flags through to `launch.cjs` and the later flag wins, so the three new flags need no other change. Budget: at 14 battles/s the final test is about 27 minutes, the sealed panel about 1 minute, and the extension to 1,024 about 12 minutes; all fit inside the 20% reserve of an 8-hour run, and the extension only uses the time that is left.
+
+## Full-scale results (2026-10-14)
+
+Audit (`audit-selection.json`): min-lead 64 changes nothing (screened teams' fixtures 64–3,976; leader never below; 4,303 of 8,477 teams below 64). Rematch of the eight finalists on 1,024 fresh fixtures (`rematch-finalists-1024.json`, seed 20261015): t4 Shadow Talonflame / Umbreon / Carbink 84.3% (+4.7, simultaneous +0.1 to +9.2, resolved), t3 83.3%, t7 82.8%, t2 82.6%, t6 81.3%, t5 79.9%, primary 79.6%, t8 79.4%; band half-width 4.5 over 28 pairs. The run's confirmation test was not available when it ran; it would have fired on this evidence.

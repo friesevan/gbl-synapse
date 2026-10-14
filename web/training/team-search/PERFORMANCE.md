@@ -1,3 +1,9 @@
+# Full-scale measurement after forecast reuse — 2026-10-14
+
+Idle machine (load average 1.8), 12 workers, `node training/benchmark-simulator-speed.cjs 192 3 12 …`, median of three alternating runs after a warm-up. Baseline path (`simulationOptimizations:false`, unchanged code): 18.2 battles/s. Optimised path with forecast reuse: **50.2 battles/s** (2.76×). Search-shaped fixtures with the observed meta (`--fixtures search`): 19.3 → 50.0 (2.60×). Peak worker heap 58–80 MB, 15–19 recycles per run, no timeouts. The previous optimised figure on the same command was 16.25 (2026-10-10); the baseline path also measured faster than then (18.2 vs 12.24), so the paired ratio is the figure to quote.
+
+---
+
 # Simulator and team-search performance
 
 ## Forecast reuse — 2026-10-13

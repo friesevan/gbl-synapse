@@ -1,95 +1,108 @@
 {
-  "createdAt": "2026-10-11T03:32:20.618Z",
+  "createdAt": "2026-10-14T03:34:27.468Z",
   "node": "v20.18.1",
   "workers": 12,
   "battlesPerRun": 192,
   "repeats": 3,
+  "fixtures": {
+    "kind": "legacy"
+  },
+  "loadAverage": [
+    2.1494140625,
+    1.966796875,
+    2.04638671875
+  ],
   "measurements": [
     {
       "warmup": true,
       "repetition": 0,
       "optimized": false,
-      "seconds": 17.7219895,
-      "battlesPerSecond": 10.83399806776773,
-      "peakRssMB": 1329,
-      "peakWorkerHeapMB": 65.03662872314453,
-      "recycles": 18
+      "seconds": 9.931214082999999,
+      "battlesPerSecond": 19.332983701223473,
+      "peakRssMB": 1337.125,
+      "peakWorkerHeapMB": 61.838218688964844,
+      "recycles": 14
     },
     {
       "warmup": true,
       "repetition": 0,
       "optimized": true,
-      "seconds": 11.596705625000002,
-      "battlesPerSecond": 16.556426127269223,
-      "peakRssMB": 1376.796875,
-      "peakWorkerHeapMB": 68.76868438720703,
+      "seconds": 3.8244435830000003,
+      "battlesPerSecond": 50.203381441801746,
+      "peakRssMB": 1337.28125,
+      "peakWorkerHeapMB": 67.46097564697266,
+      "recycles": 19
+    },
+    {
+      "warmup": false,
+      "repetition": 1,
+      "optimized": true,
+      "seconds": 3.6845447920000023,
+      "battlesPerSecond": 52.109557852811655,
+      "peakRssMB": 1275.5625,
+      "peakWorkerHeapMB": 65.78638458251953,
+      "recycles": 17
+    },
+    {
+      "warmup": false,
+      "repetition": 1,
+      "optimized": false,
+      "seconds": 10.474071,
+      "battlesPerSecond": 18.330981334764676,
+      "peakRssMB": 1367.046875,
+      "peakWorkerHeapMB": 58.146751403808594,
       "recycles": 15
     },
     {
       "warmup": false,
-      "repetition": 1,
-      "optimized": true,
-      "seconds": 10.596787832999999,
-      "battlesPerSecond": 18.11869814002343,
-      "peakRssMB": 1444.953125,
-      "peakWorkerHeapMB": 72.73470306396484,
-      "recycles": 17
-    },
-    {
-      "warmup": false,
-      "repetition": 1,
-      "optimized": false,
-      "seconds": 15.045274167000004,
-      "battlesPerSecond": 12.761482301274965,
-      "peakRssMB": 1353.78125,
-      "peakWorkerHeapMB": 66.97573852539062,
-      "recycles": 17
-    },
-    {
-      "warmup": false,
       "repetition": 2,
       "optimized": false,
-      "seconds": 15.682441291000004,
-      "battlesPerSecond": 12.242991791729958,
-      "peakRssMB": 1381.40625,
-      "peakWorkerHeapMB": 60.873268127441406,
-      "recycles": 16
+      "seconds": 10.548367541,
+      "battlesPerSecond": 18.201868607035486,
+      "peakRssMB": 1369.109375,
+      "peakWorkerHeapMB": 64.75232696533203,
+      "recycles": 15
     },
     {
       "warmup": false,
       "repetition": 2,
       "optimized": true,
-      "seconds": 12.241592917000002,
-      "battlesPerSecond": 15.684233359317806,
-      "peakRssMB": 1417.671875,
-      "peakWorkerHeapMB": 68.90208435058594,
-      "recycles": 16
-    },
-    {
-      "warmup": false,
-      "repetition": 3,
-      "optimized": true,
-      "seconds": 11.812101875000007,
-      "battlesPerSecond": 16.254516091362436,
-      "peakRssMB": 1414.328125,
-      "peakWorkerHeapMB": 65.239501953125,
+      "seconds": 3.8440668749999967,
+      "battlesPerSecond": 49.94710192184161,
+      "peakRssMB": 1350.75,
+      "peakWorkerHeapMB": 69.6568374633789,
       "recycles": 17
     },
     {
       "warmup": false,
       "repetition": 3,
+      "optimized": true,
+      "seconds": 3.8277606250000025,
+      "battlesPerSecond": 50.159876442116826,
+      "peakRssMB": 1312.46875,
+      "peakWorkerHeapMB": 76.72046661376953,
+      "recycles": 15
+    },
+    {
+      "warmup": false,
+      "repetition": 3,
       "optimized": false,
-      "seconds": 16.160613209000005,
-      "battlesPerSecond": 11.88073729114891,
-      "peakRssMB": 1383.453125,
-      "peakWorkerHeapMB": 63.793739318847656,
-      "recycles": 18
+      "seconds": 10.693254999999997,
+      "battlesPerSecond": 17.95524374944767,
+      "peakRssMB": 1392.546875,
+      "peakWorkerHeapMB": 65.99510955810547,
+      "recycles": 17
     }
   ],
   "warning": "Paired full-battle benchmark, including worker startup/recycling. Frozen-reference event parity is tested separately. Hardware load affects throughput; no neural-quality gain is implied.",
-  "baselineMedianSeconds": 15.682441291000004,
-  "optimizedMedianSeconds": 11.812101875000007,
-  "speedup": 1.3276588245646157,
-  "baselineBattlesPerSecond": 12.242991791729958,
-  "optimizedBattlesPerSecond": 16.254516091362436
+  "baselineMedianSeconds": 10.548367541,
+  "optimizedMedianSeconds": 3.8277606250000025,
+  "speedup": 2.755754231888519,
+  "baselineBattlesPerSecond": 18.201868607035486,
+  "optimizedBattlesPerSecond": 50.159876442116826,
+  "loadAverageAfter": [
+    15.87646484375,
+    5.955078125,
+    3.53173828125
+  ]
 }

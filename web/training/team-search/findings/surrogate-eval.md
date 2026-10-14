@@ -225,3 +225,7 @@ Hunks in files other agents also edit:
 - **`neural-portable.js`: three small hunks**: `calibrationCaption` and `calibrated` after the `caption` helper; the held-out error chart's `caption(graph(...))` call wrapped as `calibrated(caption(graph(...)),history)`; `calibrationCaption` added to the exported object.
 - **`neural-report-core.js`: two small hunks**: four validation lines before `return d;` in `validate`, with `calibrationOk` and `validateCalibration` after it; `validateCalibration` added to the exported object.
 - `export-report.cjs`, `report.cjs`, `common.cjs`: **not changed**. The portable report already carries `history` and `diagnostics` as they are; `search-calibration.test.cjs` checks that the field arrives and validates.
+
+## Full-scale results (2026-10-14)
+
+Two folds, 12 models, cap 48,000, 3 repeats, empirical reference panel (`audit-model-fold0.json`, `audit-model-fold1.json`, 23 minutes each). hidden=32,epochs=9 vs base: per-fixture MSE −3.1%/−2.9% (candidate), −1.5%/−2.0% (opponent), −1.3%/−1.5% (block), all ✓; team MSE −4.0%/−2.7% (candidate), −0.1%/−1.8% (opponent), −0.2%/−2.4% (block), none beyond seed noise; rank correlation +0.006/+0.009 (candidate), +0.004/+0.016 (opponent). Decision rule not met: defaults stay. Calibration of base: k90 5.0/4.9 (candidate), 5.2/5.3 (opponent); teams with 64+ fixtures k90 2.8/2.5; noise-aware k90 1.77/1.70 with ±1 covering 0.655/0.684; Spearman(spread, |residual|) 0.20 overall, 0.04 for well-measured teams.
