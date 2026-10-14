@@ -490,3 +490,14 @@ Details: `includes/meta/README.md` §6 *At harvest scale, and the language searc
   "re-analyse with 2026-10-13 extractor fixes: …") plus the 51 pending; 116 finished: battles 341 → 515, opponent
   species 775 → 1,298, full teams 173 → 343, results 181 → 341, 29 videos 0 → some; second pass on 21. 60 `reprocess`
   rows remain (downloads): the next harvester start continues them. The new battles' questions are in Validate.
+- **Phone HP series and the `knockout` result rule** (merged from a measured experiment; README §3 *Centred bars on
+  phones*, §4): phone HP series no longer follow a centred cutscene bar (it did in 696 of 4,830 labelled phone
+  matchups); the aura keeps the phone rule (skipping it there cost Shadow log-loss). A new result rule reads the final
+  knockout from the centred bar (74/77 against read result screens); it asks with its guess until ≥ 30 owner answers
+  promote it. Old results gain it only when re-analysed.
+- **Labelled videos re-extracted and refit 61** (2026-10-14 01:50): all current results backed up to
+  `results-backup-2026-10-13-phonebars/`; `reextract-labelled.cjs` installed 104 videos (16 not installed: battle
+  structure changed since they were labelled, so their labels need remapping first: 8g40gbvbAE4 gQL86xSuffg vPjKop__xf0
+  GT2HaKrxyDc cVMJbsB5l9c tPEBKgLqMuA KC_-Hc-Uj7U glOZKkCcUq0 u3bK2DIXDSM YwlLsjFhjGc Aw-3ZxU19TE 6XaqQ19ad80 tETcuI22o4Y
+  RdVQ_zzDwPE l8IDt433dcU PwxEzXhu0HY). Held out by video, refit 60 → 61: fast moves 169 → 171/197 (log-loss 0.322 →
+  0.316), forms 25/31 (0.302 → 0.299), Shadow 321/395 (log-loss 0.421 → 0.405, AUC 0.888 → 0.896).
