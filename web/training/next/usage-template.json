@@ -6,6 +6,16 @@
   "rank": "Replace with your rating range",
   "teams": [
     { "members": ["melmetal", "jumpluff", "cramorant"], "count": 1 },
-    { "members": ["cramorant", "jumpluff", "melmetal"], "count": 1 }
-  ]
+    { "members": ["cramorant", "jumpluff", "melmetal"], "count": 1 },
+    {
+      "members": ["melmetal", "cramorant", "jumpluff"],
+      "count": 1,
+      "movesets": [
+        { "fast": "THUNDER_SHOCK", "charged": ["ROCK_SLIDE"] },
+        { "fast": null, "charged": [] },
+        null
+      ]
+    }
+  ],
+  "optional": "A row may carry `movesets`: three entries, lead first, in the order of `members`. Each is null or {fast: PvPoke move id or null, charged: up to two PvPoke move ids}. They are read only with --observed-moves; every move must be legal for the species, and missing slots come from the recommended moveset. Other keys on a row (weight, creator, collectedAt) are described in web/training/team-search/README.md section 4."
 }

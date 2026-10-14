@@ -18,9 +18,9 @@ async function audit({checkpoint,pool:poolFile,cap=24000,hidden=16,epochs=6,ense
  const raw=fs.readFileSync(checkpoint,'utf8'),state=JSON.parse(raw),pool=JSON.parse(fs.readFileSync(poolFile,'utf8'));
  if(state.config.poolHash!==pool.hash)throw Error('Checkpoint pool mismatch');
  const {training,test}=splitByTeam(state.observations,fold);if(!training.length||!test.length)throw Error('Need training and held-out candidate identities');
- const species=new Map(pool.species.map(s=>[s.speciesId,s])),own=new Map(),foes=new Map();
+ const species=new Map(pool.species.map(s=>[s.speciesId,s])),own=new Map(),foes=new Map(),resolve=require('./observed-moves.cjs').rowResolver(species,pool.variants); // tagged ids: observed-moveset opponents
  const a=team=>{const k=teamKey(team);if(!own.has(k))own.set(k,features(team,pool.variants));return own.get(k);};
- const b=ids=>{const key=ids.join(',');if(!foes.has(key))foes.set(key,features([0,1,2],ids.map(id=>species.get(id))));return foes.get(key);};
+ const b=ids=>{const key=ids.join(',');if(!foes.has(key))foes.set(key,features([0,1,2],ids.map(resolve)));return foes.get(key);};
  const sample=sampleFixtures(training,cap,random(seed)).map(row=>({a:a(row.team),b:b(row.opponent),y:row.score,key:teamKey(row.team)}));
  const heldout=test.map(row=>({a:a(row.team),b:b(row.opponent),y:row.score,key:teamKey(row.team)}));
  const opponents=fixtures(pool.species,referenceOpponents,seed+9311).map(c=>b(c.team.map(s=>s.speciesId)));

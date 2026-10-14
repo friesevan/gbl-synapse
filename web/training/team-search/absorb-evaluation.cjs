@@ -31,7 +31,7 @@ function absorb(state, pool) {
     if(!panel || panel.length < row.pairs.length) throw Error('Modern evaluation requires the original sealed fixture panel');
     const cases = panel.slice(0,row.pairs.length);
     cases.forEach((c, i) => {
-      const o = { team: row.team, opponent: c.team.map(p => p.speciesId), score: row.pairs[i],
+      const o = { team: row.team, opponent: require('./observed-moves.cjs').opponentIds(c.team), score: row.pairs[i],
         seed: c.seed, round: state.round, source: 'earlier-pilot-' + row.kind };
       const existing = observations.get(key(o));
       if (existing) {

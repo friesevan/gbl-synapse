@@ -1,10 +1,12 @@
 'use strict';
-const {digest,teamKey}=require('./common.cjs');
+const {digest,teamKey}=require('./common.cjs');const {memberId}=require('./observed-moves.cjs');
 
-// Opponents have one pinned recommended moveset per species in this search.
+// Opponents play their pinned recommended moveset, except observed-moveset members (--observed-moves, observed-moves.cjs):
+// those are identified as "speciesId@FAST/CHARGED/CHARGED", so fixtures with different movesets never collide, and a fixture
+// without observed moves keeps exactly the identity it always had.
 // v4 canonicalizes backline order. Preserve the lead and seed, while collapsing
 // equivalent bench permutations; stored opponent rows retain their original order.
-function opponentIdentity(opponent){const ids=opponent.map(p=>typeof p==='string'?p:p.speciesId);return [ids[0],...ids.slice(1).sort()];}
+function opponentIdentity(opponent){const ids=opponent.map(p=>typeof p==='string'?p:p.observedMoveset?memberId(p):p.speciesId);return [ids[0],...ids.slice(1).sort()];}
 function opponentFixtureKey(opponent,seed){return digest([opponentIdentity(opponent),seed]);}
 function fixtureKey(team,opponent,seed){return digest([teamKey(team),opponentIdentity(opponent),seed]);}
 function uniqueFixtures(cases){const seen=new Set();return cases.filter(c=>{const k=opponentFixtureKey(c.team,c.seed);if(seen.has(k))return false;seen.add(k);return true;});}

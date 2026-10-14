@@ -24,11 +24,12 @@ const NUMBERS = new Set(Object.keys(DEFAULTS).filter(k => typeof DEFAULTS[k] ===
 
 // Positional sources first or last, flags anywhere. --finalists and --help take no value.
 function parseArgs(argv) {
- const opts = { ...DEFAULTS, finalists: false, help: false }, sources = [];
+ const opts = { ...DEFAULTS, finalists: false, observedMoves: false, help: false }, sources = [];
  for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--help') { opts.help = true; continue; }
   if (a === '--finalists') { opts.finalists = true; continue; }
+  if (a === '--observed-moves') { opts.observedMoves = true; continue; } // observed opponent movesets (needs --usage-file; README section 4)
   if (!a.startsWith('--')) { sources.push(a); continue; }
   const key = a.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
   if (!(key in DEFAULTS) || argv[i + 1] === undefined) throw Error('Unknown argument ' + a);
@@ -55,7 +56,7 @@ function panelSeed(requested, usedSeeds) {
 }
 
 function buildPanel(pool, opts, seed) {
- const meta = createMeta(pool.species, { mode: opts.meta, usageFile: opts.usageFile, weightPower: opts.metaWeightPower, halfLifeDays: opts.usageHalfLifeDays, asOf: opts.usageAsOf, priorStrength: opts.usagePriorStrength });
+ const meta = createMeta(pool.species, { mode: opts.meta, usageFile: opts.usageFile, weightPower: opts.metaWeightPower, halfLifeDays: opts.usageHalfLifeDays, asOf: opts.usageAsOf, priorStrength: opts.usagePriorStrength, observedMoves: !!opts.observedMoves, variants: pool.variants });
  const beliefSeed = guardedSeed((seed + 620001) >>> 0, [seed]);
  const cases = meta.fixtures(opts.fixtures, seed), components = {};
  for (const c of cases) components[c.component] = (components[c.component] || 0) + 1;
@@ -138,7 +139,7 @@ function formatTable(result) {
 async function main(argv) {
  const { opts, sources } = parseArgs(argv);
  if (opts.print) { console.log(formatTable(JSON.parse(fs.readFileSync(path.resolve(opts.print), 'utf8')))); return; }
- if (opts.help) { console.log('node training/team-search/rematch.cjs RUN_OR_REPORT RUN_OR_REPORT [...] [--finalists] [--pool FILE] [--meta hybrid|independent|observed] [--usage-file JSON] [--usage-half-life-days N] [--usage-as-of YYYY-MM-DD] [--usage-prior-strength 500] [--meta-weight-power 1.25] [--fixtures 512] [--seed N] [--workers 4] [--belief-samples 3] [--lookahead-turns 24] [--decision-interval 4] [--bootstrap 5000] [--out FILE.json] | --print SAVED.json'); return; }
+ if (opts.help) { console.log('node training/team-search/rematch.cjs RUN_OR_REPORT RUN_OR_REPORT [...] [--finalists] [--pool FILE] [--meta hybrid|independent|observed] [--usage-file JSON] [--usage-half-life-days N] [--usage-as-of YYYY-MM-DD] [--usage-prior-strength 500] [--meta-weight-power 1.25] [--observed-moves] [--fixtures 512] [--seed N] [--workers 4] [--belief-samples 3] [--lookahead-turns 24] [--decision-interval 4] [--bootstrap 5000] [--out FILE.json] | --print SAVED.json'); return; }
  const result = await rematch(opts, sources);
  const out = path.resolve(opts.out || path.join('training/runs', 'rematch-' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + '.json'));
  atomic(out, result);
