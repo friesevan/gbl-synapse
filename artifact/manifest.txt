@@ -110,6 +110,7 @@ includes/pro/data/team-teams/9.json
 includes/pro/data/team-teams/index.json
 includes/pro/data/team-v2-overnight.pvpteams.json.gz
 includes/pro/data/team-v3-refined.pvpteams.json.gz
+includes/pro/data/team-v4-observed.pvpteams.json.gz
 includes/pro/detail.js
 includes/pro/neural-portable.js
 includes/pro/neural-report-core.js

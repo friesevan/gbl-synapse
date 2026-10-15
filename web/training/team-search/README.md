@@ -260,7 +260,7 @@ Lessons recorded from these runs:
 
 ## 11. The viewer
 
-The Team Rankings tab loads the published v1 archive by default and can import any `report.pvpteams.json.gz` (data only; the report never carries executable code). It shows:
+The Team Rankings tab opens the completed v4 observed-meta run (2026-10-12, bundled as `includes/pro/data/team-v4-observed.pvpteams.json.gz`) by default; the v1 archive and the v3 and v2 reports stay selectable and can import any `report.pvpteams.json.gz` (data only; the report never carries executable code). It shows:
 
 - **Teams:** every evaluated team with training score, cautious selection score, screening score and fresh-test score; 500 per page; search with the rankings syntax where each AND term may match a different member (`melmetal&cramorant&@counter`), `lead:` scopes a predicate to the lead, negation excludes teams; Lead and alphabetical Backline columns; Min, Max and Average published rank; an Alternate Moveset badge against the published recommendation.
 - **Battles:** each team's paired battle list by stage; clicking a fixture reruns both orientations in a Web Worker with the report's engine version, seed, controller and belief priors, verifies the replay against the stored score, and graphs all six Pokémon's HP with attack, shield, switch and faint markers. Replay is allowed only when the report's mechanics and data hashes match the installed adapter.
