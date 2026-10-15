@@ -852,3 +852,34 @@ class MegaVariantRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
+
+
+class FocusCupTest(unittest.TestCase):
+    """--focus-cup: queries first, claim queries take matching rows first (or only)."""
+    SCHEDULE = {"cups": {"little": {"name": "Little Cup"}}}
+
+    def test_queries_and_terms(self):
+        q = H.focus_queries("little", self.SCHEDULE, now_year=2026)
+        self.assertEqual(q[0], "pokemon go little cup")
+        self.assertIn("little cup 2026 pokemon go", q)
+        self.assertIn("リトルカップ", H.focus_terms("little", self.SCHEDULE))
+
+    def test_claims_order_and_restrict(self):
+        import sqlite3
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        db.execute("CREATE TABLE videos(id TEXT, title TEXT, channel_id TEXT, duration REAL, meta TEXT, meta_status TEXT, "
+                   "dl_status TEXT, attempts INTEGER DEFAULT 0, allowed INTEGER, rel_label TEXT, upload_date TEXT, "
+                   "approx_ts INTEGER, rel_score REAL, league TEXT)")
+        rows = [("new-gl", "Great League set", '{"leagueId": "great"}', "20261014"),
+                ("old-lc", "LITTLE CUP team", '{"leagueId": "little"}', "20250101"),
+                ("new-lc", "Pokemon go set", '{"leagueId": "little"}', "20261013"),
+                ("new-lc-title", "Little Cup Great League Edition", '{"leagueId": "great"}', "20261014")]
+        for vid, title, league, up in rows:
+            db.execute("INSERT INTO videos(id,title,league,upload_date,allowed,rel_score) VALUES(?,?,?,?,1,1)", (vid, title, league, up))
+        expr, args = H.focus_sql("little", self.SCHEDULE, "2026-10-13")
+        order = [r["id"] for r in db.execute(*H.focused(H.DL_CLAIM, expr, args, False))]
+        self.assertEqual(order[:2], ["new-lc-title", "new-lc"])
+        only = [r["id"] for r in db.execute(*H.focused(H.DL_CLAIM, expr, args, True))]
+        self.assertEqual(sorted(only), ["new-lc", "new-lc-title"])
+

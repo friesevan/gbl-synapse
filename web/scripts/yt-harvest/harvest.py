@@ -126,6 +126,47 @@ def build_queries(schedule, now_year=None):
     return out
 
 
+# Cup focus (--focus-cup): one format's queries are searched first, and the download and analysis queues
+# take that format's videos first (or only, with --focus-only). A video matches when its league guess is
+# the cup, or its title names the cup; --focus-since limits matches to uploads from that date on (the
+# cup's period), so last season's videos of the same cup wait their turn.
+FOCUS_TERMS = {"little": ["little cup", "little league", "copa little", "copa pequena", "petite coupe",
+                          "リトルカップ", "リトル", "리틀컵", "리틀", "500 cp", "500cp"]}
+
+
+def focus_terms(cup_id, schedule):
+    name = (schedule.get("cups", {}).get(cup_id) or {}).get("name") or cup_id
+    terms = [re.sub(r"\s*\(.*?\)", "", name).strip().lower()] + FOCUS_TERMS.get(cup_id, [])
+    return list(dict.fromkeys(t for t in terms if t))
+
+
+def focus_queries(cup_id, schedule, now_year=None):
+    now_year = now_year or dt.date.today().year
+    name = focus_terms(cup_id, schedule)[0]
+    q = [t.format(name) for t in TEMPLATES] + [f"{name} {now_year} pokemon go", f"{name} season pokemon go",
+                                               f"{name} gbl battles {now_year}", f"best {name} team pokemon go"]
+    q += [f"pokemon go {t}" for t in FOCUS_TERMS.get(cup_id, [])[2:]]
+    return list(dict.fromkeys(q))
+
+
+def focus_sql(cup_id, schedule, since=None):
+    """SQL boolean expression and its parameters: does a videos row belong to the focused cup?"""
+    terms = focus_terms(cup_id, schedule)
+    expr = "(json_extract(league, '$.leagueId') = ? OR " + " OR ".join(["lower(title) LIKE ?"] * len(terms)) + ")"
+    args = [cup_id] + [f"%{t}%" for t in terms]
+    if since:
+        expr = ("(" + expr + " AND COALESCE(upload_date, strftime('%Y%m%d', approx_ts, 'unixepoch'), '0') >= ?)")
+        args.append(since.replace("-", ""))
+    return expr, tuple(args)
+
+
+def focused(sql, expr, args, only):
+    """A claim query with focus: matching rows first, or only matching rows."""
+    head, order = sql.split("ORDER BY ", 1)
+    where = head + ("AND " + expr + " " if only else "")
+    return where + "ORDER BY " + expr + " DESC, " + order, args + (args if only else ())
+
+
 def search_url(query, by_date):
     u = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(query)
     return u + "&sp=CAI%253D" if by_date else u     # CAI= : sort by upload date
@@ -311,6 +352,15 @@ class Harvester:
         names = sorted({p["speciesName"].lower() for p in gm.values() if len(p["speciesName"]) >= 5}, key=len, reverse=True)
         self.species_re = re.compile(r"(?<!\w)(" + "|".join(re.escape(n) for n in names) + r")(?!\w)", re.I)
         self.queries = build_queries(self.schedule)[: a.max_queries or None]
+        self.dl_claim, self.x_claim = (DL_CLAIM, ()), (X_CLAIM, ())
+        if getattr(a, "focus_cup", None):
+            fq = focus_queries(a.focus_cup, self.schedule)
+            self.queries = list(dict.fromkeys(fq + ([] if a.focus_only else self.queries)))
+            expr, args = focus_sql(a.focus_cup, self.schedule, a.focus_since)
+            self.dl_claim = focused(DL_CLAIM, expr, args, a.focus_only)
+            self.x_claim = focused(X_CLAIM, expr, args, a.focus_only)
+            log.info("focus: cup %s since %s%s · %d queries", a.focus_cup, a.focus_since or "any date",
+                     " (only)" if a.focus_only else "", len(self.queries))
         self.ytdlp = None
         self.api_key = None if a.no_api else ytapi.api_key()
         self.api_off_until = 0.0
@@ -745,7 +795,7 @@ class Harvester:
                 self.stop.wait(5)
                 continue
             try:
-                row = self._claim(DL_CLAIM, (), "dl_status", "working")
+                row = self._claim(*self.dl_claim, "dl_status", "working")
                 if not row:
                     self.stop.wait(10)
                     continue
@@ -834,7 +884,7 @@ class Harvester:
     # batch). Measured alone, one worker analyses 5-8x real time using about two cores.
     def extract_worker(self):
         while self.alive():
-            row = self._claim(X_CLAIM, (), "x_status", lambda row: "reworking" if row["x_status"] == "done" else "working")
+            row = self._claim(*self.x_claim, "x_status", lambda row: "reworking" if row["x_status"] == "done" else "working")
             if not row:
                 self.stop.wait(10)
                 continue
@@ -1533,6 +1583,9 @@ def parse(argv=None):
     ap.add_argument("--stop-after-downloads", action="store_true", help="end the run once --max-downloads are done (smoke tests)")
     ap.add_argument("--max-duration-min", type=float, default=180)
     ap.add_argument("--max-queries", type=int, default=None)
+    ap.add_argument("--focus-cup", default=None, help="format id from the GBL schedule (e.g. little): its queries first, its videos downloaded and analysed first")
+    ap.add_argument("--focus-since", default=None, help="YYYY-MM-DD: only uploads from this date on count as the focused cup")
+    ap.add_argument("--focus-only", action="store_true", help="with --focus-cup: search, download and analyse only that cup's videos")
     ap.add_argument("--search-limit", type=int, default=150, help="results per date-sorted query (relevance: 2x)")
     ap.add_argument("--channel-limit", type=int, default=3000)
     ap.add_argument("--enrich-workers", type=int, default=4)
