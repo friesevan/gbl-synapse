@@ -1,0 +1,2427 @@
+{
+ "createdAt": "2026-10-13",
+ "noise": {
+  "sigma": 0.013,
+  "rel": 0.15
+ },
+ "inputs": {
+  "fastLabels": 197,
+  "benchmarkFastLabels": 38,
+  "answerFastLabels": 159,
+  "unjoined": 0,
+  "videos": 21
+ },
+ "skipped": {
+  "no measured hits": 103
+ },
+ "perVideo": {
+  "1p_u7XyvWwU": {
+   "date": "20261008",
+   "gameData": "2026-10-01.json",
+   "labels": 8,
+   "fast": {
+    "cases": 13,
+    "all": {
+     "matchups": 13,
+     "hits": 39,
+     "inside": 0.385,
+     "insideBand": 0.923,
+     "ratioToRangeCentre": {
+      "n": 39,
+      "median": 0.999,
+      "q1": 0.918,
+      "q3": 1.306
+     },
+     "ratioToEngineDefault": {
+      "n": 39,
+      "median": 1.134,
+      "q1": 1.009,
+      "q3": 1.386
+     }
+    },
+    "first12s": {
+     "matchups": 13,
+     "hits": 39,
+     "inside": 0.385,
+     "insideBand": 0.923,
+     "ratioToRangeCentre": {
+      "n": 39,
+      "median": 0.999,
+      "q1": 0.918,
+      "q3": 1.306
+     },
+     "ratioToEngineDefault": {
+      "n": 39,
+      "median": 1.134,
+      "q1": 1.009,
+      "q3": 1.386
+     }
+    },
+    "timing": {
+     "gaps": 26,
+     "scored": 14,
+     "withinTolerance": 1,
+     "otherDurations": 0,
+     "lift": null,
+     "plausibleGaps": 14,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 12,
+     "verdicts": {
+      "better": 2,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 14
+     }
+    }
+   },
+   "charged": {
+    "hits": 15,
+    "inside": 0.6,
+    "insideBand": 0.867,
+    "ratioToRangeCentre": {
+     "n": 15,
+     "median": 0.923,
+     "q1": 0.904,
+     "q3": 0.961
+    },
+    "ratioToEngineDefault": {
+     "n": 15,
+     "median": 1.005,
+     "q1": 0.988,
+     "q3": 1.037
+    }
+   }
+  },
+  "2xvzDbWx-RE": {
+   "date": "20250428",
+   "gameData": "2025-04-16.json",
+   "labels": 12,
+   "fast": {
+    "cases": 19,
+    "all": {
+     "matchups": 19,
+     "hits": 53,
+     "inside": 0.189,
+     "insideBand": 0.887,
+     "ratioToRangeCentre": {
+      "n": 53,
+      "median": 0.801,
+      "q1": 0.607,
+      "q3": 0.975
+     },
+     "ratioToEngineDefault": {
+      "n": 53,
+      "median": 0.88,
+      "q1": 0.691,
+      "q3": 1.064
+     }
+    },
+    "first12s": {
+     "matchups": 18,
+     "hits": 52,
+     "inside": 0.192,
+     "insideBand": 0.904,
+     "ratioToRangeCentre": {
+      "n": 52,
+      "median": 0.792,
+      "q1": 0.6,
+      "q3": 0.973
+     },
+     "ratioToEngineDefault": {
+      "n": 52,
+      "median": 0.865,
+      "q1": 0.684,
+      "q3": 1.057
+     }
+    },
+    "timing": {
+     "gaps": 34,
+     "scored": 34,
+     "withinTolerance": 0.441,
+     "otherDurations": 0.108,
+     "lift": 4.09,
+     "plausibleGaps": 16,
+     "withinTolerancePlausible": 0.938,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 4,
+      "tied": 1,
+      "worse": 1
+     },
+     "multiples": {
+      "1": 15
+     }
+    }
+   },
+   "charged": {
+    "hits": 17,
+    "inside": 0.588,
+    "insideBand": 0.882,
+    "ratioToRangeCentre": {
+     "n": 17,
+     "median": 0.943,
+     "q1": 0.865,
+     "q3": 1.046
+    },
+    "ratioToEngineDefault": {
+     "n": 17,
+     "median": 1.038,
+     "q1": 0.925,
+     "q3": 1.117
+    }
+   }
+  },
+  "Mv4o3HC29iU": {
+   "date": "20261009",
+   "gameData": "2026-10-01.json",
+   "labels": 6,
+   "fast": {
+    "cases": 9,
+    "all": {
+     "matchups": 9,
+     "hits": 37,
+     "inside": 0.162,
+     "insideBand": 0.973,
+     "ratioToRangeCentre": {
+      "n": 37,
+      "median": 1.1,
+      "q1": 1.036,
+      "q3": 1.37
+     },
+     "ratioToEngineDefault": {
+      "n": 37,
+      "median": 1.104,
+      "q1": 1.04,
+      "q3": 1.472
+     }
+    },
+    "first12s": {
+     "matchups": 9,
+     "hits": 37,
+     "inside": 0.162,
+     "insideBand": 0.973,
+     "ratioToRangeCentre": {
+      "n": 37,
+      "median": 1.1,
+      "q1": 1.036,
+      "q3": 1.37
+     },
+     "ratioToEngineDefault": {
+      "n": 37,
+      "median": 1.104,
+      "q1": 1.04,
+      "q3": 1.472
+     }
+    },
+    "timing": {
+     "gaps": 27,
+     "scored": 4,
+     "withinTolerance": 0.5,
+     "otherDurations": 0.167,
+     "lift": 3,
+     "plausibleGaps": 4,
+     "withinTolerancePlausible": 0.5,
+     "oneTurnGapsNotScored": 23,
+     "verdicts": {
+      "better": 0,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 2
+     }
+    }
+   },
+   "charged": {
+    "hits": 13,
+    "inside": 0.769,
+    "insideBand": 0.846,
+    "ratioToRangeCentre": {
+     "n": 13,
+     "median": 0.986,
+     "q1": 0.977,
+     "q3": 0.997
+    },
+    "ratioToEngineDefault": {
+     "n": 13,
+     "median": 1.004,
+     "q1": 0.976,
+     "q3": 1.012
+    }
+   }
+  },
+  "cyu1yFuGtZA": {
+   "date": "20250418",
+   "gameData": "2025-04-16.json",
+   "labels": 12,
+   "fast": {
+    "cases": 19,
+    "all": {
+     "matchups": 19,
+     "hits": 53,
+     "inside": 0.226,
+     "insideBand": 0.868,
+     "ratioToRangeCentre": {
+      "n": 53,
+      "median": 0.876,
+      "q1": 0.677,
+      "q3": 1.087
+     },
+     "ratioToEngineDefault": {
+      "n": 53,
+      "median": 0.907,
+      "q1": 0.68,
+      "q3": 1.111
+     }
+    },
+    "first12s": {
+     "matchups": 18,
+     "hits": 52,
+     "inside": 0.231,
+     "insideBand": 0.865,
+     "ratioToRangeCentre": {
+      "n": 52,
+      "median": 0.876,
+      "q1": 0.672,
+      "q3": 1.088
+     },
+     "ratioToEngineDefault": {
+      "n": 52,
+      "median": 0.918,
+      "q1": 0.68,
+      "q3": 1.113
+     }
+    },
+    "timing": {
+     "gaps": 34,
+     "scored": 34,
+     "withinTolerance": 0.559,
+     "otherDurations": 0.088,
+     "lift": 6.33,
+     "plausibleGaps": 22,
+     "withinTolerancePlausible": 0.864,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 5,
+      "tied": 0,
+      "worse": 1
+     },
+     "multiples": {
+      "1": 17,
+      "2": 2
+     }
+    }
+   },
+   "charged": {
+    "hits": 17,
+    "inside": 0.412,
+    "insideBand": 0.941,
+    "ratioToRangeCentre": {
+     "n": 17,
+     "median": 1.023,
+     "q1": 0.944,
+     "q3": 1.128
+    },
+    "ratioToEngineDefault": {
+     "n": 17,
+     "median": 1.094,
+     "q1": 1.011,
+     "q3": 1.204
+    }
+   }
+  },
+  "oqxO3iZePPU": {
+   "date": "20260920",
+   "gameData": "2026-09-16.json",
+   "labels": 6,
+   "fast": {
+    "cases": 13,
+    "all": {
+     "matchups": 13,
+     "hits": 35,
+     "inside": 0.429,
+     "insideBand": 0.886,
+     "ratioToRangeCentre": {
+      "n": 35,
+      "median": 0.92,
+      "q1": 0.823,
+      "q3": 1.018
+     },
+     "ratioToEngineDefault": {
+      "n": 35,
+      "median": 1.016,
+      "q1": 0.916,
+      "q3": 1.152
+     }
+    },
+    "first12s": {
+     "matchups": 13,
+     "hits": 35,
+     "inside": 0.429,
+     "insideBand": 0.886,
+     "ratioToRangeCentre": {
+      "n": 35,
+      "median": 0.92,
+      "q1": 0.823,
+      "q3": 1.018
+     },
+     "ratioToEngineDefault": {
+      "n": 35,
+      "median": 1.016,
+      "q1": 0.916,
+      "q3": 1.152
+     }
+    },
+    "timing": {
+     "gaps": 18,
+     "scored": 18,
+     "withinTolerance": 0.056,
+     "otherDurations": 0.167,
+     "lift": 0.33,
+     "plausibleGaps": 1,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 0,
+      "tied": 1,
+      "worse": 2
+     },
+     "multiples": {
+      "1": 1
+     }
+    }
+   },
+   "charged": {
+    "hits": 8,
+    "inside": 0.75,
+    "insideBand": 0.75,
+    "ratioToRangeCentre": {
+     "n": 8,
+     "median": 0.962,
+     "q1": 0.878,
+     "q3": 0.989
+    },
+    "ratioToEngineDefault": {
+     "n": 8,
+     "median": 1.048,
+     "q1": 0.932,
+     "q3": 1.08
+    }
+   }
+  },
+  "_LSkr79Bo_c": {
+   "date": "20261009",
+   "gameData": "2026-10-01.json",
+   "labels": 2,
+   "fast": {
+    "cases": 2,
+    "all": {
+     "matchups": 2,
+     "hits": 7,
+     "inside": 0.143,
+     "insideBand": 0.857,
+     "ratioToRangeCentre": {
+      "n": 7,
+      "median": 0.984,
+      "q1": 0.775,
+      "q3": 1.327
+     },
+     "ratioToEngineDefault": {
+      "n": 7,
+      "median": 1.013,
+      "q1": 0.798,
+      "q3": 1.459
+     }
+    },
+    "first12s": {
+     "matchups": 2,
+     "hits": 7,
+     "inside": 0.143,
+     "insideBand": 0.857,
+     "ratioToRangeCentre": {
+      "n": 7,
+      "median": 0.984,
+      "q1": 0.775,
+      "q3": 1.327
+     },
+     "ratioToEngineDefault": {
+      "n": 7,
+      "median": 1.013,
+      "q1": 0.798,
+      "q3": 1.459
+     }
+    },
+    "timing": {
+     "gaps": 3,
+     "scored": 3,
+     "withinTolerance": 0,
+     "otherDurations": 0.222,
+     "lift": null,
+     "plausibleGaps": 0,
+     "withinTolerancePlausible": null,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 0,
+      "tied": 0,
+      "worse": 1
+     },
+     "multiples": {}
+    }
+   },
+   "charged": {
+    "hits": 2,
+    "inside": 0.5,
+    "insideBand": 0.5,
+    "ratioToRangeCentre": {
+     "n": 2,
+     "median": 0.592,
+     "q1": 0.355,
+     "q3": 0.828
+    },
+    "ratioToEngineDefault": {
+     "n": 2,
+     "median": 0.603,
+     "q1": 0.363,
+     "q3": 0.843
+    }
+   }
+  },
+  "gQL86xSuffg": {
+   "date": "20261010",
+   "gameData": "2026-10-01.json",
+   "labels": 13,
+   "fast": {
+    "cases": 23,
+    "all": {
+     "matchups": 23,
+     "hits": 90,
+     "inside": 0.233,
+     "insideBand": 0.7,
+     "ratioToRangeCentre": {
+      "n": 90,
+      "median": 0.871,
+      "q1": 0.726,
+      "q3": 1.113
+     },
+     "ratioToEngineDefault": {
+      "n": 90,
+      "median": 0.87,
+      "q1": 0.722,
+      "q3": 1.125
+     }
+    },
+    "first12s": {
+     "matchups": 23,
+     "hits": 90,
+     "inside": 0.233,
+     "insideBand": 0.7,
+     "ratioToRangeCentre": {
+      "n": 90,
+      "median": 0.871,
+      "q1": 0.726,
+      "q3": 1.113
+     },
+     "ratioToEngineDefault": {
+      "n": 90,
+      "median": 0.87,
+      "q1": 0.722,
+      "q3": 1.125
+     }
+    },
+    "timing": {
+     "gaps": 67,
+     "scored": 64,
+     "withinTolerance": 0.469,
+     "otherDurations": 0.068,
+     "lift": 6.92,
+     "plausibleGaps": 41,
+     "withinTolerancePlausible": 0.732,
+     "oneTurnGapsNotScored": 3,
+     "verdicts": {
+      "better": 8,
+      "tied": 0,
+      "worse": 3
+     },
+     "multiples": {
+      "1": 29,
+      "2": 1
+     }
+    }
+   },
+   "charged": {
+    "hits": 4,
+    "inside": 1,
+    "insideBand": 1,
+    "ratioToRangeCentre": {
+     "n": 4,
+     "median": 0.971,
+     "q1": 0.962,
+     "q3": 0.985
+    },
+    "ratioToEngineDefault": {
+     "n": 4,
+     "median": 0.998,
+     "q1": 0.985,
+     "q3": 1.067
+    }
+   }
+  },
+  "8g40gbvbAE4": {
+   "date": "20261010",
+   "gameData": "2026-10-01.json",
+   "labels": 4,
+   "fast": {
+    "cases": 4,
+    "all": {
+     "matchups": 4,
+     "hits": 8,
+     "inside": 0,
+     "insideBand": 0.125,
+     "ratioToRangeCentre": {
+      "n": 8,
+      "median": 0.269,
+      "q1": 0.17,
+      "q3": 0.343
+     },
+     "ratioToEngineDefault": {
+      "n": 8,
+      "median": 1.8,
+      "q1": 1.299,
+      "q3": 2.768
+     }
+    },
+    "first12s": {
+     "matchups": 4,
+     "hits": 8,
+     "inside": 0,
+     "insideBand": 0.125,
+     "ratioToRangeCentre": {
+      "n": 8,
+      "median": 0.269,
+      "q1": 0.17,
+      "q3": 0.343
+     },
+     "ratioToEngineDefault": {
+      "n": 8,
+      "median": 1.8,
+      "q1": 1.299,
+      "q3": 2.768
+     }
+    },
+    "timing": {
+     "gaps": 4,
+     "scored": 0,
+     "withinTolerance": null,
+     "otherDurations": null,
+     "lift": null,
+     "plausibleGaps": 0,
+     "withinTolerancePlausible": null,
+     "oneTurnGapsNotScored": 4,
+     "verdicts": {
+      "better": 0,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {}
+    }
+   },
+   "charged": {
+    "hits": 0,
+    "inside": null,
+    "insideBand": null,
+    "ratioToRangeCentre": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    },
+    "ratioToEngineDefault": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    }
+   }
+  },
+  "uhS8_m4VDtU": {
+   "date": "20261009",
+   "gameData": "2026-10-01.json",
+   "labels": 17,
+   "fast": {
+    "cases": 19,
+    "all": {
+     "matchups": 19,
+     "hits": 69,
+     "inside": 0.217,
+     "insideBand": 0.87,
+     "ratioToRangeCentre": {
+      "n": 69,
+      "median": 0.958,
+      "q1": 0.812,
+      "q3": 1.238
+     },
+     "ratioToEngineDefault": {
+      "n": 69,
+      "median": 1.022,
+      "q1": 0.832,
+      "q3": 1.196
+     }
+    },
+    "first12s": {
+     "matchups": 19,
+     "hits": 69,
+     "inside": 0.217,
+     "insideBand": 0.87,
+     "ratioToRangeCentre": {
+      "n": 69,
+      "median": 0.958,
+      "q1": 0.812,
+      "q3": 1.238
+     },
+     "ratioToEngineDefault": {
+      "n": 69,
+      "median": 1.022,
+      "q1": 0.832,
+      "q3": 1.196
+     }
+    },
+    "timing": {
+     "gaps": 42,
+     "scored": 33,
+     "withinTolerance": 0.121,
+     "otherDurations": 0.04,
+     "lift": 3,
+     "plausibleGaps": 4,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 9,
+     "verdicts": {
+      "better": 3,
+      "tied": 3,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 4
+     }
+    }
+   },
+   "charged": {
+    "hits": 7,
+    "inside": 0.857,
+    "insideBand": 1,
+    "ratioToRangeCentre": {
+     "n": 7,
+     "median": 0.961,
+     "q1": 0.939,
+     "q3": 0.978
+    },
+    "ratioToEngineDefault": {
+     "n": 7,
+     "median": 1.022,
+     "q1": 1.011,
+     "q3": 1.036
+    }
+   }
+  },
+  "vPjKop__xf0": {
+   "date": "20261008",
+   "gameData": "2026-10-01.json",
+   "labels": 3,
+   "fast": {
+    "cases": 8,
+    "all": {
+     "matchups": 8,
+     "hits": 32,
+     "inside": 0.125,
+     "insideBand": 0.813,
+     "ratioToRangeCentre": {
+      "n": 32,
+      "median": 0.637,
+      "q1": 0.435,
+      "q3": 0.812
+     },
+     "ratioToEngineDefault": {
+      "n": 32,
+      "median": 0.69,
+      "q1": 0.475,
+      "q3": 0.894
+     }
+    },
+    "first12s": {
+     "matchups": 7,
+     "hits": 31,
+     "inside": 0.129,
+     "insideBand": 0.839,
+     "ratioToRangeCentre": {
+      "n": 31,
+      "median": 0.637,
+      "q1": 0.435,
+      "q3": 0.802
+     },
+     "ratioToEngineDefault": {
+      "n": 31,
+      "median": 0.666,
+      "q1": 0.475,
+      "q3": 0.881
+     }
+    },
+    "timing": {
+     "gaps": 22,
+     "scored": 22,
+     "withinTolerance": 0.091,
+     "otherDurations": 0,
+     "lift": null,
+     "plausibleGaps": 2,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 1,
+      "tied": 2,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 2
+     }
+    }
+   },
+   "charged": {
+    "hits": 0,
+    "inside": null,
+    "insideBand": null,
+    "ratioToRangeCentre": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    },
+    "ratioToEngineDefault": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    }
+   }
+  },
+  "sqntYP2-y1I": {
+   "date": "20261009",
+   "gameData": "2026-10-01.json",
+   "labels": 3,
+   "fast": {
+    "cases": 6,
+    "all": {
+     "matchups": 6,
+     "hits": 30,
+     "inside": 0.267,
+     "insideBand": 0.967,
+     "ratioToRangeCentre": {
+      "n": 30,
+      "median": 0.918,
+      "q1": 0.718,
+      "q3": 1.081
+     },
+     "ratioToEngineDefault": {
+      "n": 30,
+      "median": 1.035,
+      "q1": 0.883,
+      "q3": 1.21
+     }
+    },
+    "first12s": {
+     "matchups": 6,
+     "hits": 29,
+     "inside": 0.276,
+     "insideBand": 0.966,
+     "ratioToRangeCentre": {
+      "n": 29,
+      "median": 0.94,
+      "q1": 0.705,
+      "q3": 1.091
+     },
+     "ratioToEngineDefault": {
+      "n": 29,
+      "median": 1.035,
+      "q1": 0.883,
+      "q3": 1.214
+     }
+    },
+    "timing": {
+     "gaps": 20,
+     "scored": 4,
+     "withinTolerance": 0.25,
+     "otherDurations": 0.083,
+     "lift": 3,
+     "plausibleGaps": 1,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 16,
+     "verdicts": {
+      "better": 0,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 1
+     }
+    }
+   },
+   "charged": {
+    "hits": 0,
+    "inside": null,
+    "insideBand": null,
+    "ratioToRangeCentre": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    },
+    "ratioToEngineDefault": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    }
+   }
+  },
+  "Mt58K0Gckb8": {
+   "date": "20261011",
+   "gameData": "2026-10-01.json",
+   "labels": 6,
+   "fast": {
+    "cases": 18,
+    "all": {
+     "matchups": 18,
+     "hits": 80,
+     "inside": 0.225,
+     "insideBand": 0.888,
+     "ratioToRangeCentre": {
+      "n": 80,
+      "median": 1.078,
+      "q1": 0.77,
+      "q3": 1.363
+     },
+     "ratioToEngineDefault": {
+      "n": 80,
+      "median": 1.122,
+      "q1": 0.832,
+      "q3": 1.431
+     }
+    },
+    "first12s": {
+     "matchups": 18,
+     "hits": 79,
+     "inside": 0.228,
+     "insideBand": 0.886,
+     "ratioToRangeCentre": {
+      "n": 79,
+      "median": 1.077,
+      "q1": 0.77,
+      "q3": 1.352
+     },
+     "ratioToEngineDefault": {
+      "n": 79,
+      "median": 1.122,
+      "q1": 0.831,
+      "q3": 1.416
+     }
+    },
+    "timing": {
+     "gaps": 55,
+     "scored": 21,
+     "withinTolerance": 0.19,
+     "otherDurations": 0.079,
+     "lift": 2.4,
+     "plausibleGaps": 4,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 34,
+     "verdicts": {
+      "better": 1,
+      "tied": 0,
+      "worse": 1
+     },
+     "multiples": {
+      "1": 4
+     }
+    }
+   },
+   "charged": {
+    "hits": 16,
+    "inside": 0.813,
+    "insideBand": 0.875,
+    "ratioToRangeCentre": {
+     "n": 16,
+     "median": 0.953,
+     "q1": 0.919,
+     "q3": 1.001
+    },
+    "ratioToEngineDefault": {
+     "n": 16,
+     "median": 1.008,
+     "q1": 0.981,
+     "q3": 1.035
+    }
+   }
+  },
+  "sH9MNfpYeCQ": {
+   "date": "20261010",
+   "gameData": "2026-10-01.json",
+   "labels": 4,
+   "fast": {
+    "cases": 10,
+    "all": {
+     "matchups": 10,
+     "hits": 33,
+     "inside": 0.182,
+     "insideBand": 0.788,
+     "ratioToRangeCentre": {
+      "n": 33,
+      "median": 0.685,
+      "q1": 0.501,
+      "q3": 0.94
+     },
+     "ratioToEngineDefault": {
+      "n": 33,
+      "median": 0.787,
+      "q1": 0.572,
+      "q3": 1.009
+     }
+    },
+    "first12s": {
+     "matchups": 10,
+     "hits": 33,
+     "inside": 0.182,
+     "insideBand": 0.788,
+     "ratioToRangeCentre": {
+      "n": 33,
+      "median": 0.685,
+      "q1": 0.501,
+      "q3": 0.94
+     },
+     "ratioToEngineDefault": {
+      "n": 33,
+      "median": 0.787,
+      "q1": 0.572,
+      "q3": 1.009
+     }
+    },
+    "timing": {
+     "gaps": 22,
+     "scored": 22,
+     "withinTolerance": 0.227,
+     "otherDurations": 0.03,
+     "lift": 7.5,
+     "plausibleGaps": 7,
+     "withinTolerancePlausible": 0.714,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 2,
+      "tied": 1,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 5
+     }
+    }
+   },
+   "charged": {
+    "hits": 0,
+    "inside": null,
+    "insideBand": null,
+    "ratioToRangeCentre": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    },
+    "ratioToEngineDefault": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    }
+   }
+  },
+  "fCgv6iz5BWE": {
+   "date": "20261010",
+   "gameData": "2026-10-01.json",
+   "labels": 5,
+   "fast": {
+    "cases": 5,
+    "all": {
+     "matchups": 5,
+     "hits": 25,
+     "inside": 0.4,
+     "insideBand": 0.96,
+     "ratioToRangeCentre": {
+      "n": 25,
+      "median": 0.932,
+      "q1": 0.784,
+      "q3": 1.122
+     },
+     "ratioToEngineDefault": {
+      "n": 25,
+      "median": 1.004,
+      "q1": 0.852,
+      "q3": 1.065
+     }
+    },
+    "first12s": {
+     "matchups": 5,
+     "hits": 25,
+     "inside": 0.4,
+     "insideBand": 0.96,
+     "ratioToRangeCentre": {
+      "n": 25,
+      "median": 0.932,
+      "q1": 0.784,
+      "q3": 1.122
+     },
+     "ratioToEngineDefault": {
+      "n": 25,
+      "median": 1.004,
+      "q1": 0.852,
+      "q3": 1.065
+     }
+    },
+    "timing": {
+     "gaps": 18,
+     "scored": 15,
+     "withinTolerance": 0.2,
+     "otherDurations": 0,
+     "lift": null,
+     "plausibleGaps": 3,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 3,
+     "verdicts": {
+      "better": 2,
+      "tied": 1,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 3
+     }
+    }
+   },
+   "charged": {
+    "hits": 4,
+    "inside": 0.5,
+    "insideBand": 0.5,
+    "ratioToRangeCentre": {
+     "n": 4,
+     "median": 0.996,
+     "q1": 0.916,
+     "q3": 1.067
+    },
+    "ratioToEngineDefault": {
+     "n": 4,
+     "median": 1.007,
+     "q1": 0.927,
+     "q3": 1.083
+    }
+   }
+  },
+  "9S11uNkDciM": {
+   "date": "20261010",
+   "gameData": "2026-10-01.json",
+   "labels": 9,
+   "fast": {
+    "cases": 17,
+    "all": {
+     "matchups": 17,
+     "hits": 51,
+     "inside": 0.137,
+     "insideBand": 0.882,
+     "ratioToRangeCentre": {
+      "n": 51,
+      "median": 1.174,
+      "q1": 0.829,
+      "q3": 1.927
+     },
+     "ratioToEngineDefault": {
+      "n": 51,
+      "median": 1.21,
+      "q1": 0.909,
+      "q3": 2.24
+     }
+    },
+    "first12s": {
+     "matchups": 17,
+     "hits": 51,
+     "inside": 0.137,
+     "insideBand": 0.882,
+     "ratioToRangeCentre": {
+      "n": 51,
+      "median": 1.174,
+      "q1": 0.829,
+      "q3": 1.927
+     },
+     "ratioToEngineDefault": {
+      "n": 51,
+      "median": 1.21,
+      "q1": 0.909,
+      "q3": 2.24
+     }
+    },
+    "timing": {
+     "gaps": 34,
+     "scored": 15,
+     "withinTolerance": 0.667,
+     "otherDurations": 0.067,
+     "lift": 10,
+     "plausibleGaps": 12,
+     "withinTolerancePlausible": 0.833,
+     "oneTurnGapsNotScored": 19,
+     "verdicts": {
+      "better": 3,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 10
+     }
+    }
+   },
+   "charged": {
+    "hits": 2,
+    "inside": 0.5,
+    "insideBand": 1,
+    "ratioToRangeCentre": {
+     "n": 2,
+     "median": 0.896,
+     "q1": 0.864,
+     "q3": 0.928
+    },
+    "ratioToEngineDefault": {
+     "n": 2,
+     "median": 0.965,
+     "q1": 0.93,
+     "q3": 1
+    }
+   }
+  },
+  "deEYSY-vXIw": {
+   "date": "20261010",
+   "gameData": "2026-10-01.json",
+   "labels": 5,
+   "fast": {
+    "cases": 6,
+    "all": {
+     "matchups": 6,
+     "hits": 31,
+     "inside": 0.032,
+     "insideBand": 0.516,
+     "ratioToRangeCentre": {
+      "n": 31,
+      "median": 0.667,
+      "q1": 0.346,
+      "q3": 0.854
+     },
+     "ratioToEngineDefault": {
+      "n": 31,
+      "median": 0.724,
+      "q1": 0.383,
+      "q3": 0.928
+     }
+    },
+    "first12s": {
+     "matchups": 6,
+     "hits": 31,
+     "inside": 0.032,
+     "insideBand": 0.516,
+     "ratioToRangeCentre": {
+      "n": 31,
+      "median": 0.667,
+      "q1": 0.346,
+      "q3": 0.854
+     },
+     "ratioToEngineDefault": {
+      "n": 31,
+      "median": 0.724,
+      "q1": 0.383,
+      "q3": 0.928
+     }
+    },
+    "timing": {
+     "gaps": 25,
+     "scored": 25,
+     "withinTolerance": 0.36,
+     "otherDurations": 0.067,
+     "lift": 5.4,
+     "plausibleGaps": 10,
+     "withinTolerancePlausible": 0.9,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 2,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 7,
+      "2": 1,
+      "3": 1
+     }
+    }
+   },
+   "charged": {
+    "hits": 0,
+    "inside": null,
+    "insideBand": null,
+    "ratioToRangeCentre": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    },
+    "ratioToEngineDefault": {
+     "n": 0,
+     "median": null,
+     "q1": null,
+     "q3": null
+    }
+   }
+  },
+  "S67R41DZFuY": {
+   "date": "20261007",
+   "gameData": "2026-10-01.json",
+   "labels": 12,
+   "fast": {
+    "cases": 31,
+    "all": {
+     "matchups": 31,
+     "hits": 101,
+     "inside": 0.436,
+     "insideBand": 0.96,
+     "ratioToRangeCentre": {
+      "n": 101,
+      "median": 0.958,
+      "q1": 0.883,
+      "q3": 1.105
+     },
+     "ratioToEngineDefault": {
+      "n": 101,
+      "median": 1.016,
+      "q1": 0.928,
+      "q3": 1.109
+     }
+    },
+    "first12s": {
+     "matchups": 31,
+     "hits": 99,
+     "inside": 0.434,
+     "insideBand": 0.96,
+     "ratioToRangeCentre": {
+      "n": 99,
+      "median": 0.958,
+      "q1": 0.88,
+      "q3": 1.104
+     },
+     "ratioToEngineDefault": {
+      "n": 99,
+      "median": 1.016,
+      "q1": 0.926,
+      "q3": 1.109
+     }
+    },
+    "timing": {
+     "gaps": 59,
+     "scored": 40,
+     "withinTolerance": 0.125,
+     "otherDurations": 0.208,
+     "lift": 0.6,
+     "plausibleGaps": 5,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 19,
+     "verdicts": {
+      "better": 1,
+      "tied": 2,
+      "worse": 4
+     },
+     "multiples": {
+      "1": 5
+     }
+    }
+   },
+   "charged": {
+    "hits": 5,
+    "inside": 0.8,
+    "insideBand": 1,
+    "ratioToRangeCentre": {
+     "n": 5,
+     "median": 0.916,
+     "q1": 0.909,
+     "q3": 0.937
+    },
+    "ratioToEngineDefault": {
+     "n": 5,
+     "median": 0.997,
+     "q1": 0.995,
+     "q3": 1.012
+    }
+   }
+  },
+  "FLJKUTh5ru8": {
+   "date": "20251214",
+   "gameData": "2025-04-16.json",
+   "labels": 17,
+   "fast": {
+    "cases": 16,
+    "all": {
+     "matchups": 16,
+     "hits": 47,
+     "inside": 0.234,
+     "insideBand": 0.957,
+     "ratioToRangeCentre": {
+      "n": 47,
+      "median": 0.856,
+      "q1": 0.766,
+      "q3": 1.093
+     },
+     "ratioToEngineDefault": {
+      "n": 47,
+      "median": 0.939,
+      "q1": 0.844,
+      "q3": 1.162
+     }
+    },
+    "first12s": {
+     "matchups": 16,
+     "hits": 46,
+     "inside": 0.239,
+     "insideBand": 0.957,
+     "ratioToRangeCentre": {
+      "n": 46,
+      "median": 0.883,
+      "q1": 0.781,
+      "q3": 1.1
+     },
+     "ratioToEngineDefault": {
+      "n": 46,
+      "median": 0.944,
+      "q1": 0.85,
+      "q3": 1.167
+     }
+    },
+    "timing": {
+     "gaps": 27,
+     "scored": 27,
+     "withinTolerance": 0.111,
+     "otherDurations": 0.16,
+     "lift": 0.69,
+     "plausibleGaps": 4,
+     "withinTolerancePlausible": 0.75,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 1,
+      "tied": 1,
+      "worse": 4
+     },
+     "multiples": {
+      "1": 3
+     }
+    }
+   },
+   "charged": {
+    "hits": 23,
+    "inside": 0.391,
+    "insideBand": 0.826,
+    "ratioToRangeCentre": {
+     "n": 23,
+     "median": 1.014,
+     "q1": 0.924,
+     "q3": 1.27
+    },
+    "ratioToEngineDefault": {
+     "n": 23,
+     "median": 1.097,
+     "q1": 0.985,
+     "q3": 1.367
+    }
+   }
+  },
+  "hour-gl": {
+   "date": "20250326",
+   "gameData": "2025-03-16.json",
+   "labels": 18,
+   "fast": {
+    "cases": 26,
+    "all": {
+     "matchups": 26,
+     "hits": 72,
+     "inside": 0.361,
+     "insideBand": 0.958,
+     "ratioToRangeCentre": {
+      "n": 72,
+      "median": 1.032,
+      "q1": 0.898,
+      "q3": 1.184
+     },
+     "ratioToEngineDefault": {
+      "n": 72,
+      "median": 1.14,
+      "q1": 0.93,
+      "q3": 1.348
+     }
+    },
+    "first12s": {
+     "matchups": 26,
+     "hits": 72,
+     "inside": 0.361,
+     "insideBand": 0.958,
+     "ratioToRangeCentre": {
+      "n": 72,
+      "median": 1.032,
+      "q1": 0.898,
+      "q3": 1.184
+     },
+     "ratioToEngineDefault": {
+      "n": 72,
+      "median": 1.14,
+      "q1": 0.93,
+      "q3": 1.348
+     }
+    },
+    "timing": {
+     "gaps": 45,
+     "scored": 45,
+     "withinTolerance": 0.889,
+     "otherDurations": 0.052,
+     "lift": 17.14,
+     "plausibleGaps": 43,
+     "withinTolerancePlausible": 0.93,
+     "oneTurnGapsNotScored": 0,
+     "verdicts": {
+      "better": 7,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 38,
+      "2": 2
+     }
+    }
+   },
+   "charged": {
+    "hits": 31,
+    "inside": 0.839,
+    "insideBand": 0.935,
+    "ratioToRangeCentre": {
+     "n": 31,
+     "median": 0.952,
+     "q1": 0.939,
+     "q3": 1.001
+    },
+    "ratioToEngineDefault": {
+     "n": 31,
+     "median": 1.012,
+     "q1": 0.998,
+     "q3": 1.067
+    }
+   }
+  },
+  "hour": {
+   "date": "20250305",
+   "gameData": "2025-03-01.json",
+   "labels": 14,
+   "fast": {
+    "cases": 17,
+    "all": {
+     "matchups": 17,
+     "hits": 62,
+     "inside": 0.371,
+     "insideBand": 0.968,
+     "ratioToRangeCentre": {
+      "n": 62,
+      "median": 0.996,
+      "q1": 0.919,
+      "q3": 1.356
+     },
+     "ratioToEngineDefault": {
+      "n": 62,
+      "median": 1.084,
+      "q1": 0.949,
+      "q3": 1.173
+     }
+    },
+    "first12s": {
+     "matchups": 17,
+     "hits": 62,
+     "inside": 0.371,
+     "insideBand": 0.968,
+     "ratioToRangeCentre": {
+      "n": 62,
+      "median": 0.996,
+      "q1": 0.919,
+      "q3": 1.356
+     },
+     "ratioToEngineDefault": {
+      "n": 62,
+      "median": 1.084,
+      "q1": 0.949,
+      "q3": 1.173
+     }
+    },
+    "timing": {
+     "gaps": 43,
+     "scored": 18,
+     "withinTolerance": 1,
+     "otherDurations": 0,
+     "lift": null,
+     "plausibleGaps": 18,
+     "withinTolerancePlausible": 1,
+     "oneTurnGapsNotScored": 25,
+     "verdicts": {
+      "better": 3,
+      "tied": 0,
+      "worse": 0
+     },
+     "multiples": {
+      "1": 18
+     }
+    }
+   },
+   "charged": {
+    "hits": 23,
+    "inside": 0.696,
+    "insideBand": 0.87,
+    "ratioToRangeCentre": {
+     "n": 23,
+     "median": 1.079,
+     "q1": 0.992,
+     "q3": 1.141
+    },
+    "ratioToEngineDefault": {
+     "n": 23,
+     "median": 1.196,
+     "q1": 1.109,
+     "q3": 1.295
+    }
+   }
+  },
+  "jZ4ux4QBdUU": {
+   "date": "20260104",
+   "gameData": "2025-12-08.json",
+   "labels": 21,
+   "fast": {
+    "cases": 25,
+    "all": {
+     "matchups": 25,
+     "hits": 110,
+     "inside": 0.218,
+     "insideBand": 0.964,
+     "ratioToRangeCentre": {
+      "n": 110,
+      "median": 1,
+      "q1": 0.742,
+      "q3": 1.18
+     },
+     "ratioToEngineDefault": {
+      "n": 110,
+      "median": 1.054,
+      "q1": 0.896,
+      "q3": 1.241
+     }
+    },
+    "first12s": {
+     "matchups": 25,
+     "hits": 110,
+     "inside": 0.218,
+     "insideBand": 0.964,
+     "ratioToRangeCentre": {
+      "n": 110,
+      "median": 1,
+      "q1": 0.742,
+      "q3": 1.18
+     },
+     "ratioToEngineDefault": {
+      "n": 110,
+      "median": 1.054,
+      "q1": 0.896,
+      "q3": 1.241
+     }
+    },
+    "timing": {
+     "gaps": 70,
+     "scored": 64,
+     "withinTolerance": 0.094,
+     "otherDurations": 0.047,
+     "lift": 2,
+     "plausibleGaps": 12,
+     "withinTolerancePlausible": 0.5,
+     "oneTurnGapsNotScored": 6,
+     "verdicts": {
+      "better": 3,
+      "tied": 4,
+      "worse": 4
+     },
+     "multiples": {
+      "1": 5,
+      "4": 1
+     }
+    }
+   },
+   "charged": {
+    "hits": 35,
+    "inside": 0.514,
+    "insideBand": 0.8,
+    "ratioToRangeCentre": {
+     "n": 35,
+     "median": 0.987,
+     "q1": 0.899,
+     "q3": 1.069
+    },
+    "ratioToEngineDefault": {
+     "n": 35,
+     "median": 1.066,
+     "q1": 0.969,
+     "q3": 1.139
+    }
+   }
+  }
+ },
+ "fast": {
+  "all": {
+   "cases": 306,
+   "all": {
+    "matchups": 306,
+    "hits": 1065,
+    "inside": 0.26,
+    "insideBand": 0.883,
+    "ratioToRangeCentre": {
+     "n": 1065,
+     "median": 0.948,
+     "q1": 0.764,
+     "q3": 1.181
+    },
+    "ratioToEngineDefault": {
+     "n": 1065,
+     "median": 1.013,
+     "q1": 0.829,
+     "q3": 1.238
+    }
+   },
+   "first12s": {
+    "matchups": 303,
+    "hits": 1057,
+    "inside": 0.261,
+    "insideBand": 0.884,
+    "ratioToRangeCentre": {
+     "n": 1057,
+     "median": 0.948,
+     "q1": 0.764,
+     "q3": 1.174
+    },
+    "ratioToEngineDefault": {
+     "n": 1057,
+     "median": 1.013,
+     "q1": 0.828,
+     "q3": 1.232
+    }
+   },
+   "timing": {
+    "gaps": 695,
+    "scored": 522,
+    "withinTolerance": 0.366,
+    "otherDurations": 0.077,
+    "lift": 4.78,
+    "plausibleGaps": 223,
+    "withinTolerancePlausible": 0.857,
+    "oneTurnGapsNotScored": 173,
+    "verdicts": {
+     "better": 48,
+     "tied": 16,
+     "worse": 21
+    },
+    "multiples": {
+     "1": 183,
+     "2": 6,
+     "3": 1,
+     "4": 1
+    }
+   }
+  },
+  "cpKnown": {
+   "cases": 306,
+   "all": {
+    "matchups": 306,
+    "hits": 1065,
+    "inside": 0.26,
+    "insideBand": 0.883,
+    "ratioToRangeCentre": {
+     "n": 1065,
+     "median": 0.948,
+     "q1": 0.764,
+     "q3": 1.181
+    },
+    "ratioToEngineDefault": {
+     "n": 1065,
+     "median": 1.013,
+     "q1": 0.829,
+     "q3": 1.238
+    }
+   },
+   "first12s": {
+    "matchups": 303,
+    "hits": 1057,
+    "inside": 0.261,
+    "insideBand": 0.884,
+    "ratioToRangeCentre": {
+     "n": 1057,
+     "median": 0.948,
+     "q1": 0.764,
+     "q3": 1.174
+    },
+    "ratioToEngineDefault": {
+     "n": 1057,
+     "median": 1.013,
+     "q1": 0.828,
+     "q3": 1.232
+    }
+   },
+   "timing": {
+    "gaps": 695,
+    "scored": 522,
+    "withinTolerance": 0.366,
+    "otherDurations": 0.077,
+    "lift": 4.78,
+    "plausibleGaps": 223,
+    "withinTolerancePlausible": 0.857,
+    "oneTurnGapsNotScored": 173,
+    "verdicts": {
+     "better": 48,
+     "tied": 16,
+     "worse": 21
+    },
+    "multiples": {
+     "1": 183,
+     "2": 6,
+     "3": 1,
+     "4": 1
+    }
+   }
+  },
+  "statusConfirmed": {
+   "cases": 26,
+   "all": {
+    "matchups": 26,
+    "hits": 82,
+    "inside": 0.329,
+    "insideBand": 0.866,
+    "ratioToRangeCentre": {
+     "n": 82,
+     "median": 0.926,
+     "q1": 0.754,
+     "q3": 1.032
+    },
+    "ratioToEngineDefault": {
+     "n": 82,
+     "median": 1.01,
+     "q1": 0.854,
+     "q3": 1.161
+    }
+   },
+   "first12s": {
+    "matchups": 25,
+    "hits": 79,
+    "inside": 0.342,
+    "insideBand": 0.861,
+    "ratioToRangeCentre": {
+     "n": 79,
+     "median": 0.926,
+     "q1": 0.728,
+     "q3": 1.03
+    },
+    "ratioToEngineDefault": {
+     "n": 79,
+     "median": 1.008,
+     "q1": 0.818,
+     "q3": 1.157
+    }
+   },
+   "timing": {
+    "gaps": 48,
+    "scored": 32,
+    "withinTolerance": 0.25,
+    "otherDurations": 0.063,
+    "lift": 4,
+    "plausibleGaps": 8,
+    "withinTolerancePlausible": 1,
+    "oneTurnGapsNotScored": 16,
+    "verdicts": {
+     "better": 3,
+     "tied": 1,
+     "worse": 1
+    },
+    "multiples": {
+     "1": 8
+    }
+   }
+  },
+  "confirmedNoShadow": {
+   "cases": 3,
+   "all": {
+    "matchups": 3,
+    "hits": 13,
+    "inside": 0.231,
+    "insideBand": 0.923,
+    "ratioToRangeCentre": {
+     "n": 13,
+     "median": 0.878,
+     "q1": 0.651,
+     "q3": 0.94
+    },
+    "ratioToEngineDefault": {
+     "n": 13,
+     "median": 0.957,
+     "q1": 0.882,
+     "q3": 1.214
+    }
+   },
+   "first12s": {
+    "matchups": 3,
+    "hits": 12,
+    "inside": 0.25,
+    "insideBand": 0.917,
+    "ratioToRangeCentre": {
+     "n": 12,
+     "median": 0.886,
+     "q1": 0.645,
+     "q3": 0.995
+    },
+    "ratioToEngineDefault": {
+     "n": 12,
+     "median": 0.951,
+     "q1": 0.819,
+     "q3": 1.214
+    }
+   },
+   "timing": {
+    "gaps": 8,
+    "scored": 0,
+    "withinTolerance": null,
+    "otherDurations": null,
+    "lift": null,
+    "plausibleGaps": 0,
+    "withinTolerancePlausible": null,
+    "oneTurnGapsNotScored": 8,
+    "verdicts": {
+     "better": 0,
+     "tied": 0,
+     "worse": 0
+    },
+    "multiples": {}
+   }
+  },
+  "confirmedShadowInvolved": {
+   "cases": 23,
+   "all": {
+    "matchups": 23,
+    "hits": 69,
+    "inside": 0.348,
+    "insideBand": 0.855,
+    "ratioToRangeCentre": {
+     "n": 69,
+     "median": 0.936,
+     "q1": 0.814,
+     "q3": 1.033
+    },
+    "ratioToEngineDefault": {
+     "n": 69,
+     "median": 1.013,
+     "q1": 0.851,
+     "q3": 1.127
+    }
+   },
+   "first12s": {
+    "matchups": 22,
+    "hits": 67,
+    "inside": 0.358,
+    "insideBand": 0.851,
+    "ratioToRangeCentre": {
+     "n": 67,
+     "median": 0.936,
+     "q1": 0.817,
+     "q3": 1.03
+    },
+    "ratioToEngineDefault": {
+     "n": 67,
+     "median": 1.013,
+     "q1": 0.818,
+     "q3": 1.119
+    }
+   },
+   "timing": {
+    "gaps": 40,
+    "scored": 32,
+    "withinTolerance": 0.25,
+    "otherDurations": 0.063,
+    "lift": 4,
+    "plausibleGaps": 8,
+    "withinTolerancePlausible": 1,
+    "oneTurnGapsNotScored": 8,
+    "verdicts": {
+     "better": 3,
+     "tied": 1,
+     "worse": 1
+    },
+    "multiples": {
+     "1": 8
+    }
+   }
+  },
+  "statusUnknown": {
+   "cases": 280,
+   "all": {
+    "matchups": 280,
+    "hits": 983,
+    "inside": 0.254,
+    "insideBand": 0.884,
+    "ratioToRangeCentre": {
+     "n": 983,
+     "median": 0.959,
+     "q1": 0.764,
+     "q3": 1.183
+    },
+    "ratioToEngineDefault": {
+     "n": 983,
+     "median": 1.016,
+     "q1": 0.829,
+     "q3": 1.242
+    }
+   },
+   "first12s": {
+    "matchups": 278,
+    "hits": 978,
+    "inside": 0.255,
+    "insideBand": 0.885,
+    "ratioToRangeCentre": {
+     "n": 978,
+     "median": 0.959,
+     "q1": 0.764,
+     "q3": 1.182
+    },
+    "ratioToEngineDefault": {
+     "n": 978,
+     "median": 1.015,
+     "q1": 0.829,
+     "q3": 1.239
+    }
+   },
+   "timing": {
+    "gaps": 647,
+    "scored": 490,
+    "withinTolerance": 0.373,
+    "otherDurations": 0.078,
+    "lift": 4.82,
+    "plausibleGaps": 215,
+    "withinTolerancePlausible": 0.851,
+    "oneTurnGapsNotScored": 157,
+    "verdicts": {
+     "better": 45,
+     "tied": 15,
+     "worse": 20
+    },
+    "multiples": {
+     "1": 175,
+     "2": 6,
+     "3": 1,
+     "4": 1
+    }
+   }
+  },
+  "benchmarkLabels": {
+   "cases": 60,
+   "all": {
+    "matchups": 60,
+    "hits": 182,
+    "inside": 0.236,
+    "insideBand": 0.907,
+    "ratioToRangeCentre": {
+     "n": 182,
+     "median": 0.971,
+     "q1": 0.764,
+     "q3": 1.186
+    },
+    "ratioToEngineDefault": {
+     "n": 182,
+     "median": 1.03,
+     "q1": 0.811,
+     "q3": 1.225
+    }
+   },
+   "first12s": {
+    "matchups": 58,
+    "hits": 180,
+    "inside": 0.239,
+    "insideBand": 0.911,
+    "ratioToRangeCentre": {
+     "n": 180,
+     "median": 0.971,
+     "q1": 0.763,
+     "q3": 1.184
+    },
+    "ratioToEngineDefault": {
+     "n": 180,
+     "median": 1.03,
+     "q1": 0.805,
+     "q3": 1.225
+    }
+   },
+   "timing": {
+    "gaps": 121,
+    "scored": 86,
+    "withinTolerance": 0.581,
+    "otherDurations": 0.085,
+    "lift": 6.82,
+    "plausibleGaps": 56,
+    "withinTolerancePlausible": 0.893,
+    "oneTurnGapsNotScored": 35,
+    "verdicts": {
+     "better": 11,
+     "tied": 1,
+     "worse": 2
+    },
+    "multiples": {
+     "1": 48,
+     "2": 2
+    }
+   }
+  },
+  "reviewerAnswers": {
+   "cases": 246,
+   "all": {
+    "matchups": 246,
+    "hits": 883,
+    "inside": 0.265,
+    "insideBand": 0.878,
+    "ratioToRangeCentre": {
+     "n": 883,
+     "median": 0.946,
+     "q1": 0.764,
+     "q3": 1.174
+    },
+    "ratioToEngineDefault": {
+     "n": 883,
+     "median": 1.008,
+     "q1": 0.831,
+     "q3": 1.239
+    }
+   },
+   "first12s": {
+    "matchups": 245,
+    "hits": 877,
+    "inside": 0.266,
+    "insideBand": 0.878,
+    "ratioToRangeCentre": {
+     "n": 877,
+     "median": 0.946,
+     "q1": 0.764,
+     "q3": 1.173
+    },
+    "ratioToEngineDefault": {
+     "n": 877,
+     "median": 1.008,
+     "q1": 0.831,
+     "q3": 1.238
+    }
+   },
+   "timing": {
+    "gaps": 574,
+    "scored": 436,
+    "withinTolerance": 0.323,
+    "otherDurations": 0.075,
+    "lift": 4.32,
+    "plausibleGaps": 167,
+    "withinTolerancePlausible": 0.844,
+    "oneTurnGapsNotScored": 138,
+    "verdicts": {
+     "better": 37,
+     "tied": 15,
+     "worse": 19
+    },
+    "multiples": {
+     "1": 135,
+     "2": 4,
+     "3": 1,
+     "4": 1
+    }
+   }
+  },
+  "predictedAtLeast4pct": {
+   "cases": 142,
+   "all": {
+    "matchups": 142,
+    "hits": 417,
+    "inside": 0.293,
+    "insideBand": 0.811,
+    "ratioToRangeCentre": {
+     "n": 417,
+     "median": 0.878,
+     "q1": 0.688,
+     "q3": 1.005
+    },
+    "ratioToEngineDefault": {
+     "n": 417,
+     "median": 0.958,
+     "q1": 0.765,
+     "q3": 1.089
+    }
+   },
+   "first12s": {
+    "matchups": 141,
+    "hits": 415,
+    "inside": 0.292,
+    "insideBand": 0.81,
+    "ratioToRangeCentre": {
+     "n": 415,
+     "median": 0.878,
+     "q1": 0.688,
+     "q3": 1.005
+    },
+    "ratioToEngineDefault": {
+     "n": 415,
+     "median": 0.958,
+     "q1": 0.752,
+     "q3": 1.089
+    }
+   },
+   "timing": {
+    "gaps": 248,
+    "scored": 244,
+    "withinTolerance": 0.348,
+    "otherDurations": 0.1,
+    "lift": 3.49,
+    "plausibleGaps": 93,
+    "withinTolerancePlausible": 0.914,
+    "oneTurnGapsNotScored": 4,
+    "verdicts": {
+     "better": 20,
+     "tied": 4,
+     "worse": 13
+    },
+    "multiples": {
+     "1": 84,
+     "3": 1
+    }
+   }
+  },
+  "predictedBelow4pct": {
+   "cases": 164,
+   "all": {
+    "matchups": 164,
+    "hits": 648,
+    "inside": 0.239,
+    "insideBand": 0.929,
+    "ratioToRangeCentre": {
+     "n": 648,
+     "median": 1.007,
+     "q1": 0.809,
+     "q3": 1.356
+    },
+    "ratioToEngineDefault": {
+     "n": 648,
+     "median": 1.066,
+     "q1": 0.866,
+     "q3": 1.376
+    }
+   },
+   "first12s": {
+    "matchups": 162,
+    "hits": 642,
+    "inside": 0.241,
+    "insideBand": 0.931,
+    "ratioToRangeCentre": {
+     "n": 642,
+     "median": 1.003,
+     "q1": 0.81,
+     "q3": 1.349
+    },
+    "ratioToEngineDefault": {
+     "n": 642,
+     "median": 1.065,
+     "q1": 0.865,
+     "q3": 1.376
+    }
+   },
+   "timing": {
+    "gaps": 447,
+    "scored": 278,
+    "withinTolerance": 0.381,
+    "otherDurations": 0.056,
+    "lift": 6.77,
+    "plausibleGaps": 130,
+    "withinTolerancePlausible": 0.815,
+    "oneTurnGapsNotScored": 169,
+    "verdicts": {
+     "better": 28,
+     "tied": 12,
+     "worse": 8
+    },
+    "multiples": {
+     "1": 99,
+     "2": 6,
+     "4": 1
+    }
+   }
+  },
+  "reviewerOverrodeModel": {
+   "cases": 79,
+   "all": {
+    "matchups": 79,
+    "hits": 294,
+    "inside": 0.252,
+    "insideBand": 0.901,
+    "ratioToRangeCentre": {
+     "n": 294,
+     "median": 0.938,
+     "q1": 0.749,
+     "q3": 1.186
+    },
+    "ratioToEngineDefault": {
+     "n": 294,
+     "median": 0.983,
+     "q1": 0.794,
+     "q3": 1.183
+    }
+   },
+   "first12s": {
+    "matchups": 79,
+    "hits": 292,
+    "inside": 0.25,
+    "insideBand": 0.901,
+    "ratioToRangeCentre": {
+     "n": 292,
+     "median": 0.94,
+     "q1": 0.751,
+     "q3": 1.192
+    },
+    "ratioToEngineDefault": {
+     "n": 292,
+     "median": 0.987,
+     "q1": 0.797,
+     "q3": 1.184
+    }
+   },
+   "timing": {
+    "gaps": 196,
+    "scored": 150,
+    "withinTolerance": 0.32,
+    "otherDurations": 0.06,
+    "lift": 5.33,
+    "plausibleGaps": 59,
+    "withinTolerancePlausible": 0.814,
+    "oneTurnGapsNotScored": 46,
+    "verdicts": {
+     "better": 12,
+     "tied": 7,
+     "worse": 3
+    },
+    "multiples": {
+     "1": 46,
+     "2": 2
+    }
+   }
+  }
+ },
+ "charged": {
+  "all": {
+   "hits": 222,
+   "inside": 0.64,
+   "insideBand": 0.865,
+   "ratioToRangeCentre": {
+    "n": 222,
+    "median": 0.978,
+    "q1": 0.92,
+    "q3": 1.048
+   },
+   "ratioToEngineDefault": {
+    "n": 222,
+    "median": 1.03,
+    "q1": 0.993,
+    "q3": 1.134
+   }
+  },
+  "cpKnown": {
+   "hits": 222,
+   "inside": 0.64,
+   "insideBand": 0.865,
+   "ratioToRangeCentre": {
+    "n": 222,
+    "median": 0.978,
+    "q1": 0.92,
+    "q3": 1.048
+   },
+   "ratioToEngineDefault": {
+    "n": 222,
+    "median": 1.03,
+    "q1": 0.993,
+    "q3": 1.134
+   }
+  },
+  "statusConfirmed": {
+   "hits": 3,
+   "inside": 1,
+   "insideBand": 1,
+   "ratioToRangeCentre": {
+    "n": 3,
+    "median": 0.943,
+    "q1": 0.93,
+    "q3": 0.96
+   },
+   "ratioToEngineDefault": {
+    "n": 3,
+    "median": 0.997,
+    "q1": 0.992,
+    "q3": 1.013
+   }
+  },
+  "confirmedNoShadow": {
+   "hits": 1,
+   "inside": 1,
+   "insideBand": 1,
+   "ratioToRangeCentre": {
+    "n": 1,
+    "median": 0.978,
+    "q1": 0.978,
+    "q3": 0.978
+   },
+   "ratioToEngineDefault": {
+    "n": 1,
+    "median": 0.988,
+    "q1": 0.988,
+    "q3": 0.988
+   }
+  },
+  "confirmedShadowInvolved": {
+   "hits": 2,
+   "inside": 1,
+   "insideBand": 1,
+   "ratioToRangeCentre": {
+    "n": 2,
+    "median": 0.93,
+    "q1": 0.923,
+    "q3": 0.936
+   },
+   "ratioToEngineDefault": {
+    "n": 2,
+    "median": 1.013,
+    "q1": 1.005,
+    "q3": 1.021
+   }
+  }
+ },
+ "parity": {
+  "pairs": 2502,
+  "equalDamage": 2502,
+  "equalStats": 2502,
+  "cases": 278,
+  "damageMatch": 1,
+  "statsMatch": 1
+ },
+ "moveDuration": {
+  "cases": 306,
+  "engineEqualsGameData": 306
+ },
+ "rows": {
+  "fast": 306,
+  "charged": 222
+ }
+}

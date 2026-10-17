@@ -47,3 +47,16 @@ test('static art with red dots on a pale card but no name text never counts as a
 test('a box a little too wide is refitted to the screen from the Poké Ball centres',()=>{
  const frames=[0,1,2,3].map(overlay),fixed=S.refine(frames,[351,0,605,540]);assert.ok(fixed,'refitted');
  assert.ok(Math.abs(fixed.box[0]-355)<=1&&Math.abs(fixed.box[2]-605)<=1,JSON.stringify(fixed));assert.equal(S.refine(frames,[355,0,605,540]),null,'a correct box is kept');});
+// An edited compilation: each battle clip places the same phone a few pixels apart, so no column is an edge on half
+// the frames (Npoke's -QiUVfUf8jo: 428–432 and 690–697 of 960) and the median edge search finds no phone at all.
+// x0=null: a frame without the phone (intro, talking head).
+function placed(x0){const W=960,H=540,w=250,data=new Uint8ClampedArray(W*H*4),scale=w/886;for(let i=0;i<data.length;i+=4)data.set([95,110,150,255],i);
+ if(x0===null)return {width:W,height:H,data};
+ const fill=(box,c)=>{const [a,b,z,d]=box;for(let y=b;y<d;y++)for(let x=a;x<z;x++)data.set([...c,255],(y*W+x)*4);};fill([x0,0,x0+w,H],[30,90,40]);
+ for(const side of ['my','opponent']){const box=b=>b.map((v,i)=>Math.round(v*scale)+(i%2===0?x0:0));fill(box(C.HUD.panel[side]),[250,250,250]);for(const b of C.HUD.balls[side])fill(box(b),[230,40,40]);text(fill,box,side);}
+ return {width:W,height:H,data};}
+test('a phone placed a few pixels apart in each clip is found from each frame\'s own edges (the commonest placement)',()=>{
+ const frames=[355,361,null,355,361,null,355,361,355].map(placed),xs=S.peaks(frames.map(f=>S.edgeProfile(f,'x')));
+ assert.deepEqual(xs,[0,960],'no column is a phone edge on half the frames');
+ const found=S.locate(frames);assert.deepEqual(found.box,[355,0,605,540]);assert.equal(found.score,4);
+ assert.equal(S.hudScore(frames,[361,0,611,540]).ok,3,'the other placement reads only its own clip');});

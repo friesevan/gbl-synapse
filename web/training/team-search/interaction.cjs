@@ -2,9 +2,13 @@
 const {Network:Base}=require('./neural.cjs');const {random}=require('../utils.cjs');
 const sigmoid=x=>1/(1+Math.exp(-Math.max(-30,Math.min(30,x))));
 class Network extends Base{
- constructor(input,hidden=8,seed=1){if(!Number.isInteger(input)||input<1||!Number.isInteger(hidden)||hidden<1)throw Error('Invalid neural dimensions');super(input,hidden,seed);this.interaction=new Float64Array(hidden*hidden);}
- toJSON(){return {...super.toJSON(),interaction:Array.from(this.interaction)};}
- static fromJSON(s){const n=new Network(s.input,s.hidden),base=Base.fromJSON(s);Object.assign(n,base);if(s.interaction){if(s.interaction.length!==n.hidden*n.hidden||s.interaction.some(v=>!Number.isFinite(v)))throw Error('Invalid neural interaction matrix');n.interaction=Float64Array.from(s.interaction);for(let i=0;i<n.hidden;i++)for(let j=0;j<n.hidden;j++)if(Math.abs(n.interaction[i*n.hidden+j]+n.interaction[j*n.hidden+i])>1e-9)throw Error('Interaction matrix must be antisymmetric');}return n;}
+ // rank > 0 (opt-in) replaces the free antisymmetric K by K = A Bᵀ − B Aᵀ with A, B of size hidden × rank
+ // (rank at most hidden/2 already spans every antisymmetric matrix). `interaction` always holds the current K, so every
+ // inference path is unchanged; the factors only matter while fitting. A starts small and random, B at zero, so K starts at 0 like the free matrix.
+ constructor(input,hidden=8,seed=1,rank=0){if(!Number.isInteger(input)||input<1||!Number.isInteger(hidden)||hidden<1)throw Error('Invalid neural dimensions');if(!Number.isInteger(rank)||rank<0||rank>hidden)throw Error('Invalid interaction rank');super(input,hidden,seed);this.interaction=new Float64Array(hidden*hidden);if(rank>0){this.rank=rank;const r=random(seed+7919);this.ka=Float64Array.from({length:hidden*rank},()=>(r()*2-1)*.3);this.kb=new Float64Array(hidden*rank);}}
+ syncInteraction(){const H=this.hidden,R=this.rank,K=this.interaction;for(let i=0;i<H;i++){K[i*H+i]=0;for(let j=i+1;j<H;j++){let v=0;for(let r=0;r<R;r++)v+=this.ka[i*R+r]*this.kb[j*R+r]-this.kb[i*R+r]*this.ka[j*R+r];K[i*H+j]=v;K[j*H+i]=-v;}}return this;}
+ toJSON(){return {...super.toJSON(),interaction:Array.from(this.interaction),...(this.rank?{rank:this.rank,ka:Array.from(this.ka),kb:Array.from(this.kb)}:{})};}
+ static fromJSON(s){const rank=s.rank||0,n=new Network(s.input,s.hidden,1,rank),base=Base.fromJSON(s);Object.assign(n,base);if(rank){if(!s.ka||!s.kb||s.ka.length!==n.ka.length||s.kb.length!==n.kb.length||s.ka.some(v=>!Number.isFinite(v))||s.kb.some(v=>!Number.isFinite(v)))throw Error('Invalid neural interaction factors');n.ka=Float64Array.from(s.ka);n.kb=Float64Array.from(s.kb);}if(s.interaction){if(s.interaction.length!==n.hidden*n.hidden||s.interaction.some(v=>!Number.isFinite(v)))throw Error('Invalid neural interaction matrix');n.interaction=Float64Array.from(s.interaction);for(let i=0;i<n.hidden;i++)for(let j=0;j<n.hidden;j++)if(Math.abs(n.interaction[i*n.hidden+j]+n.interaction[j*n.hidden+i])>1e-9)throw Error('Interaction matrix must be antisymmetric');if(rank){const saved=n.interaction;n.interaction=new Float64Array(saved.length);n.syncInteraction();if(saved.some((v,i)=>Math.abs(v-n.interaction[i])>1e-9))throw Error('Interaction matrix does not match its factors');}}else if(rank)n.syncInteraction();return n;}
 }
 function projected(n,h,out=new Float64Array(n.hidden)){out.fill(0);for(let i=0;i<n.hidden;i++)for(let j=0;j<n.hidden;j++)out[j]+=h[i]*n.interaction[i*n.hidden+j];return out;}
 // Fitting never uses the scalar sigmoid, and its two activations have a fixed size.
@@ -31,13 +35,18 @@ function accumulate(n,a,b,y,grads,scale=1,scratch=workspace(n)){
  }
  return {prob,loss:-y*Math.log(Math.max(prob,1e-12))-(1-y)*Math.log(Math.max(1-prob,1e-12))};
 }
-function gradient(n,a,b,y){const g=[n.w1,n.b1,n.w2,n.b2,n.interaction].map(x=>new Float64Array(x.length));return {...accumulate(n,a,b,y,g),g};}
-function train(n,samples,{epochs=10,rate=.002,seed=1,batch=64,cacheForward=true}={}){
- if(!samples.length)throw Error('Need training fixtures');if(!Number.isInteger(epochs)||epochs<1||!Number.isInteger(batch)||batch<1||!Number.isFinite(rate)||rate<=0)throw Error('Invalid neural training configuration');for(const s of samples)if(!Number.isFinite(s.y)||s.y<0||s.y>1)throw Error('Invalid neural training target');
- const arrays=[n.w1,n.b1,n.w2,n.b2,n.interaction],m=arrays.map(a=>new Float64Array(a.length)),v=arrays.map(a=>new Float64Array(a.length)),grads=arrays.map(a=>new Float64Array(a.length)),r=random(seed),scratch=workspace(n);if(cacheForward)scratch.cache=new Map();let step=0;
+// Low-rank K = A Bᵀ − B Aᵀ: with G the gradient of the antisymmetric pair parameters (G[j][k] = dL/dκ_jk, antisymmetric), dL/dA = G B and dL/dB = −G A.
+function lowRankGradients(n,G){const H=n.hidden,R=n.rank,da=new Float64Array(H*R),db=new Float64Array(H*R);for(let i=0;i<H;i++)for(let k=0;k<H;k++){const g=G[i*H+k];if(g===0)continue;for(let r=0;r<R;r++){da[i*R+r]+=g*n.kb[k*R+r];db[i*R+r]-=g*n.ka[k*R+r];}}return [da,db];}
+// g[4] is the gradient of the free antisymmetric matrix; with a low-rank interaction g[5] and g[6] are the gradients of its factors A and B.
+function gradient(n,a,b,y){const g=[n.w1,n.b1,n.w2,n.b2,n.interaction].map(x=>new Float64Array(x.length)),result=accumulate(n,a,b,y,g);if(n.rank>0)g.push(...lowRankGradients(n,g[4]));return {...result,g};}
+function train(n,samples,{epochs=10,rate=.002,seed=1,batch=64,cacheForward=true,l2=1}={}){
+ if(!samples.length)throw Error('Need training fixtures');if(!Number.isInteger(epochs)||epochs<1||!Number.isInteger(batch)||batch<1||!Number.isFinite(rate)||rate<=0||!Number.isFinite(l2)||l2<0)throw Error('Invalid neural training configuration');for(const s of samples)if(!Number.isFinite(s.y)||s.y<0||s.y>1)throw Error('Invalid neural training target');
+ // l2 scales every weight-decay term (0.0001 on weights, 0.001 on K or on its factors); the default 1 is the production setting.
+ const lowRank=n.rank>0,arrays=lowRank?[n.w1,n.b1,n.w2,n.b2,n.ka,n.kb]:[n.w1,n.b1,n.w2,n.b2,n.interaction],decay=arrays.map((_,k)=>(k===4||k===5?.001:k%2===0?.0001:0)*l2),m=arrays.map(a=>new Float64Array(a.length)),v=arrays.map(a=>new Float64Array(a.length)),grads=arrays.map(a=>new Float64Array(a.length)),pairGrad=lowRank?new Float64Array(n.hidden*n.hidden):grads[4],accumulating=lowRank?[grads[0],grads[1],grads[2],grads[3],pairGrad]:grads,r=random(seed),scratch=workspace(n);if(cacheForward)scratch.cache=new Map();let step=0;
  for(let epoch=0;epoch<epochs;epoch++){const order=samples.map((_,i)=>i);for(let i=order.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
- for(let start=0;start<order.length;start+=batch){for(const g of grads)g.fill(0);scratch.cache?.clear();const count=Math.min(batch,order.length-start);for(let q=0;q<count;q++){const s=samples[order[start+q]];accumulate(n,s.a,s.b,s.y,grads,1/count,scratch);}step++;const c1=1-.9**step,c2=1-.999**step;
- for(let k=0;k<arrays.length;k++)for(let i=0;i<arrays[k].length;i++){const g=Math.max(-1,Math.min(1,grads[k][i]+(k===4?.001:k%2===0?.0001:0)*arrays[k][i]));m[k][i]=.9*m[k][i]+.1*g;v[k][i]=.999*v[k][i]+.001*g*g;arrays[k][i]-=rate*(m[k][i]/c1)/(Math.sqrt(v[k][i]/c2)+1e-8);}}
+ for(let start=0;start<order.length;start+=batch){for(const g of grads)g.fill(0);if(lowRank)pairGrad.fill(0);scratch.cache?.clear();const count=Math.min(batch,order.length-start);for(let q=0;q<count;q++){const s=samples[order[start+q]];accumulate(n,s.a,s.b,s.y,accumulating,1/count,scratch);}if(lowRank){const [da,db]=lowRankGradients(n,pairGrad);grads[4].set(da);grads[5].set(db);}step++;const c1=1-.9**step,c2=1-.999**step;
+ for(let k=0;k<arrays.length;k++)for(let i=0;i<arrays[k].length;i++){const g=Math.max(-1,Math.min(1,grads[k][i]+decay[k]*arrays[k][i]));m[k][i]=.9*m[k][i]+.1*g;v[k][i]=.999*v[k][i]+.001*g*g;arrays[k][i]-=rate*(m[k][i]/c1)/(Math.sqrt(v[k][i]/c2)+1e-8);}
+ if(lowRank)n.syncInteraction();}
  }
  return n;
 }
@@ -59,4 +68,4 @@ function preparePredictor(models,refs){
   const mean=values.reduce((s,v)=>s+v,0)/values.length;if(!Number.isFinite(mean))throw Error('Nonfinite inference reference panel or weights');return {mean,uncertainty:Math.sqrt(values.reduce((s,v)=>s+(v-mean)**2,0)/values.length)};
  };
 }
-module.exports={Network,matchup,gradient,train,reference,predict,preparePredictor,logit};
+module.exports={Network,matchup,gradient,lowRankGradients,train,reference,predict,preparePredictor,logit};

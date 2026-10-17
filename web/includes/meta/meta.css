@@ -134,3 +134,24 @@
 .meta-observed-table td small,.meta-observed-table td.num{white-space:nowrap}.meta-observed-table th{white-space:nowrap;vertical-align:bottom}
 @media(max-width:600px){.meta-observed-groups .meta-data-table.meta-observed-table{min-width:640px}.meta-observed-table td,.meta-observed-table th{padding:8px 6px}.meta-observed-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.meta-observed-summary>div{padding:10px}.meta-observed-summary strong{font-size:18px}}
 @media(max-width:600px){.meta-observed-tabs{flex-wrap:nowrap;gap:6px}.meta-observed-tabs>button{flex:1 1 0;min-width:0;padding:8px 4px;font-size:12px}}
+/* Documentation dialogs (includes/docs.js): the plain-language / technical toggle, figures and diagrams */
+.gbl-docs-dialog{max-width:1000px;width:calc(100% - 32px);max-height:94vh;padding:22px 26px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;box-shadow:0 16px 80px var(--shadow)}
+.gbl-docs-dialog::backdrop{background:var(--backdrop);backdrop-filter:blur(3px)}
+.gbl-docs-dialog>.meta-heading{margin-top:0}
+.gbl-docs-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:0 0 14px}
+.gbl-docs-bar .pro-segmented button{padding:6px 16px}
+.gbl-docs-hint{font-size:12.5px;color:var(--muted);margin:0;max-width:62ch}
+.gbl-docs-raw{font-size:13px;color:var(--accent)}
+.gbl-docs-status{font-size:13px;color:var(--muted)}
+.meta-readme figure{margin:16px 0;max-width:100%}
+.meta-readme figure img,.meta-readme figure svg{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:10px;background:var(--sunken)}
+.meta-readme figure.gbl-doc-shot img{max-height:72vh;width:auto}
+.meta-readme figure.gbl-doc-diagram svg{width:100%;padding:8px;box-sizing:border-box}
+.meta-readme figcaption{font-size:12.5px;color:var(--muted);margin-top:6px;max-width:84ch;line-height:1.45}
+.meta-readme blockquote{margin:12px 0;padding:6px 14px;border-left:3px solid var(--accent-line);background:var(--accent-tint);border-radius:0 8px 8px 0;color:var(--text-2)}
+.meta-readme blockquote p{margin:4px 0}
+.meta-readme hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.meta-readme h5{margin:16px 0 4px;font-size:14px;color:var(--text-2)}
+.meta-readme h4{scroll-margin-top:12px}
+.meta-readme .gbl-doc-switch{background:none;border:0;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+@media(max-width:700px){.gbl-docs-dialog{padding:14px;width:calc(100% - 16px)}.meta-readme-toc ol{columns:1}}

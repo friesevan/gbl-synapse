@@ -423,3 +423,81 @@ Takes effect on the next harvester start.
   LC21LciODO8 6bk9nbypShQ hBgoNV-zhoU Kx3FBsCOHSo (maw_a7oKYMM is a known-good video: keep it).
 - Result screens, banners, dialogs and effectiveness texts in Japanese, Korean, Chinese, French and Italian (plus German,
   Spanish, Portuguese banners); split/merge rules in the tracker; CJK models fetched on demand in the browser.
+
+## Status 2026-10-13 (screen locate: each frame's own edges)
+
+Details: `includes/meta/README.md`, *Locating the phone screen*. Takes effect on the next harvester start.
+
+- Cause of 4 zero-battle Japanese uploads from Npoke (`-QiUVfUf8jo`, `M5ED7uc0aao`, `SwlQC3kwKIs`, `avOqMEM2QmA`; saved
+  results `crop: null`): the phone sits between a team card and an art panel, and each battle clip is placed a few
+  pixels apart (right edge 690–697 of 960), so no column is an edge on half the sampled frames and the median edge
+  search found no box. `g8PnIk1zbDA` is a team-explanation slideshow without battles (0 is correct).
+- Fix (`screen.js` locate, shared by the probe, `CROP=auto` and the browser): a last pass over each frame's own strong
+  edges, kept where the HUD reads on that frame; the box reading on the most frames wins. It runs only when the earlier
+  passes find nothing, so their boxes are unchanged (8 retained videos checked, identical).
+- `CROP=auto` (the requeue path), before → after: battles 0 → 5, 4, 6, 4; opponent species 0 → 13, 7, 15, 11; full teams
+  0 → 3, 1, 3, 3. The retained Spanish `_bnPdUKMYpw` (dark arena on a dark backdrop) 0 → 11 battles, 33 species.
+- Open: one crop per video. Clips placed > ~2 px from it read no HUD (M5ED7uc0aao: two placements 6 px apart, about
+  2 of 6 battles lost; avOqMEM2QmA its first). Needs per-placement boxes through probe, plan and runner (README *Gaps*).
+  91 saved results ran `CROP=auto` without a box and 117 were probe-skipped for "screen not found"; some would gain
+  from a re-extraction. Nothing was requeued.
+
+## Status 2026-10-13 (battles lost in the 2026-10-12 re-analysis)
+
+Details: `includes/meta/README.md` §6, *Battles lost in the 2026-10-12 re-analysis*, and §3 *Battle boundaries from the HUD*.
+
+- _bnPdUKMYpw (11 → 0): the screen locate, fixed above (main's code: 11 battles, 11 full teams, 5 results). A requeued
+  re-analysis skips `probe.cjs` and locates with run-node's `CROP=auto` (16 seeks), a weaker search than a first analysis
+  gets (32 keyframes, then the seeks); this video's old result had come from the probe's box.
+- uYt7eHxdT8I 17 → 12 battles (full teams 12 → 11), PyY0dvrz9m8 7 → 5, iMkGf4Flu0k 7 → 5, o-RROgfJWJg 9 → 6, 5d9UzKXX_XQ
+  6 → 5: correct merges by the boundary rules (same opponent CPs on both sides of each 0.5–5.5 s join); uYt7eHxdT8I had
+  one team counted twice. No change needed.
+- Fixed (`core.js` HudTracker): a battle opened on a misread first HUD (often right after a fade) that turns fresh within
+  20 s no longer keeps "Recording starts mid-battle", which excluded its team from the usage export ("lead unknown") and
+  from lead questions. Saved results keep the flag until re-analysed. Candidates, with a flagged battle opening < 25 s
+  after the previous one (20 battles, 18 full teams; 8 confirmed by replay): 36cfA5qVVrI 5d9UzKXX_XQ Baiai1zZWj8
+  C3njE-P31NQ N51EETBZm94 WQGHOO5AjNI _T8lKPVFesk a-mnQk662RQ eK-nGuYVh5E maw_a7oKYMM miczjE9kUI0 nqByV0SN4VU s93qk0PwYTc
+  u2jAMngLVBw xe-lOmy2x24. khxysRLr8AE and Mxwep4-3rVI keep theirs (their HUD never reads fresh). Nothing was requeued.
+
+## Status 2026-10-13 (language search, 16:9 HP bars, requeue path; review of the 2026-10-11/12 fixes)
+
+Details: `includes/meta/README.md` §6 *At harvest scale, and the language search*, §3 *Why the cutoff is 0.55*,
+§10 gaps. Takes effect on the next harvester start.
+
+- **The 2026-10-11/12 fixes at scale** (the 286 requeued videos re-analysed on 2026-10-12): Japanese-titled 0 → 409
+  battles (45 of 74 videos gained), Korean 1 → 92, Chinese 0 → 38; Latin-script results read 6 → 351; wide screens
+  (≥ 0.6) have hits on your bar in 66% of matchups (old code 26%; phones 78%). Lost battles on Spanish videos were
+  correct merges or the screen locate (entries above).
+- **Language search** (`core.js` NameLanguage, matchJamo; `run-node.cjs`): 36 analyses had spent the CJK budget with
+  English never naming 3 species, 16 of them 288×640 uploads of one Korean channel (first exact match at plate 53–79).
+  Letterless plates are free, the budget is 200 plates while English has named nothing, weak models drop out after 20
+  tries; Korean names match by jamo after the switch (Mega X/Y from the English read); a language decided > 45 s after
+  the first nameplate triggers a second pass with it preset (`NAME_LANGUAGE`, `LATE_LANGUAGE`). 99komx6lfIw 0 → 5
+  battles, 9KDK30i9hOI 0 → 5 (2 full teams), 6qkOGaSvDIk 0 → 2.
+- **16:9 HP bars** (`hp.js`): the wide rule starts at aspect 0.55 (was 0.6); 7 videos at 0.56–0.58: your bar 43% → 72%
+  of matchups, opponent unchanged; phones and ≥ 0.6 identical. Open decision (README gaps): phones still count a
+  centred cutscene bar as the opponent's (false hits in 14 matchups on 5 phone videos); changing it needs a re-extract
+  and refit.
+- **Requeue path** (`harvest.py`): a re-analysis now runs the probe for its screen box (the whole video is still
+  analysed); run-node's own 16-seek search had missed `_bnPdUKMYpw`.
+- **Not recoverable from nameplates**: uploads whose crop cuts the names off the phone's top (K7vaQKc1Gxs,
+  te5W8Jrc-Mk); species would have to come from banners (README gaps).
+- **Labelled benchmark** (9 recordings, session start c4f1538 → main with all of the above): 7 byte-identical; the two
+  PokeDeeGO videos (aspect 0.567, 16:9) differ only in HP/aura evidence from the 0.55 cutoff: score.cjs output
+  identical, battle structure, species, teams and results identical, labelled Shadow Feraligatr 0.425 → 0.597 and
+  non-Shadow Marowak 0.014 → 0.009, fast-move picks unchanged. parity.cjs 7/7 identical. 236 Node and 141 Python tests pass.
+- **Requeued and re-analysed (2026-10-13 10:57–16:57, 8 workers):** 125 requests written for these fixes (reason
+  "re-analyse with 2026-10-13 extractor fixes: …") plus the 51 pending; 116 finished: battles 341 → 515, opponent
+  species 775 → 1,298, full teams 173 → 343, results 181 → 341, 29 videos 0 → some; second pass on 21. 60 `reprocess`
+  rows remain (downloads): the next harvester start continues them. The new battles' questions are in Validate.
+- **Phone HP series and the `knockout` result rule** (merged from a measured experiment; README §3 *Centred bars on
+  phones*, §4): phone HP series no longer follow a centred cutscene bar (it did in 696 of 4,830 labelled phone
+  matchups); the aura keeps the phone rule (skipping it there cost Shadow log-loss). A new result rule reads the final
+  knockout from the centred bar (74/77 against read result screens); it asks with its guess until ≥ 30 owner answers
+  promote it. Old results gain it only when re-analysed.
+- **Labelled videos re-extracted and refit 61** (2026-10-14 01:50): all current results backed up to
+  `results-backup-2026-10-13-phonebars/`; `reextract-labelled.cjs` installed 104 videos (16 not installed: battle
+  structure changed since they were labelled, so their labels need remapping first: 8g40gbvbAE4 gQL86xSuffg vPjKop__xf0
+  GT2HaKrxyDc cVMJbsB5l9c tPEBKgLqMuA KC_-Hc-Uj7U glOZKkCcUq0 u3bK2DIXDSM YwlLsjFhjGc Aw-3ZxU19TE 6XaqQ19ad80 tETcuI22o4Y
+  RdVQ_zzDwPE l8IDt433dcU PwxEzXhu0HY). Held out by video, refit 60 → 61: fast moves 169 → 171/197 (log-loss 0.322 →
+  0.316), forms 25/31 (0.302 → 0.299), Shadow 321/395 (log-loss 0.421 → 0.405, AUC 0.888 → 0.896).

@@ -30,24 +30,42 @@ function localeDictionary(pokemon,names,lang,english=null){const loc=LOCALES[lan
   if(m){const pre=m[2]==='Mega'?loc.mega:loc.primal;if(!pre)continue;shown=pre+local+(m[3]?m[3].trim():'');}
   const key=nameKey(shown,lang);if(key.length<(loc.script?2:3)||english?.has(key))continue;if(!map.has(key))map.set(key,[]);if(!map.get(key).some(x=>x.speciesId===p.speciesId))map.get(key).push(p);}
  return map;}
-// Exact match, or one wrong character for longer names when exactly one species is that close.
-function matchLocale(text,map,lang){if(!map)return null;const cjk=!!LOCALES[lang]?.script;let key=nameKey(String(text).replace(/\bCP\s*\d+/gi,''),lang);if(key.length<(cjk?2:3))return null;
+// Korean names are compared by jamo (the letters inside a syllable): blurry plates mostly lose one stroke (메→에,
+// 벨→켈), which is one jamo but a whole syllable. Up to a quarter of the jamo may differ when one species is
+// closest. Mega X and Y differ only in the final Latin letter, which Korean OCR reads as a syllable (누, 뉘); the
+// English read of the same plate (latin) usually still ends in it.
+const jamo=s=>{let o='';for(const c of s){const i=c.charCodeAt(0)-0xAC00;o+=i<0||i>11171?c:String.fromCharCode(0x1100+Math.floor(i/588),0x1161+Math.floor(i%588/28))+(i%28?String.fromCharCode(0x11A7+i%28):'');}return o;},jamoNames=new WeakMap();
+function matchJamo(key,map,latin){const kj=jamo(key),tol=Math.max(1,kj.length>>2);if(kj.length<6)return null;let names=jamoNames.get(map);if(!names)jamoNames.set(map,names=[...map].map(([name,items])=>[jamo(name),name,items]));
+ let best=Infinity,found=[];for(const [nj,name,items] of names){if(Math.abs(nj.length-kj.length)>tol)continue;const d=distance(kj,nj);if(d>tol||d>best)continue;if(d<best){best=d;found=[];}found.push([name,items]);}
+ const tail=/([a-z])[^a-z]*$/i.exec(String(latin||''))?.[1]?.toLowerCase();if(found.length>1&&(tail==='x'||tail==='y')&&found.every(([n])=>/[xy]$/.test(n))){const pick=found.filter(([n])=>n.endsWith(tail));if(pick.length)found=pick;}
+ return found.length&&found.every(([,items])=>englishKey(items[0])===englishKey(found[0][1][0]))?found[0][1]:null;}
+// Exact match, or one wrong character for longer names when exactly one species is that close (Korean: matchJamo).
+function matchLocale(text,map,lang,latin=null){if(!map)return null;const cjk=!!LOCALES[lang]?.script;let key=nameKey(String(text).replace(/\bCP\s*\d+/gi,''),lang);if(key.length<(cjk?2:3))return null;
  let candidates=map.get(key),quality='exact';
  // CJK OCR often adds a stray digit or Latin letter at either end (the CP's first digit, a ball's edge).
  if(!candidates&&cjk){const core=key.replace(/^[0-9a-z]+|[0-9a-z]+$/g,'');if(core!==key&&core.length>=2){candidates=map.get(core);if(!candidates&&core.length>=4)key=core;}}
+ if(!candidates&&lang==='ko'){candidates=matchJamo(key,map,latin);quality='suggestion';}
  if(!candidates){if(key.length<(cjk?4:5))return null;let found=null,ambiguous=false;for(const [name,items] of map){if(Math.abs(name.length-key.length)>1||distance(key,name)>1)continue;if(found&&englishKey(found[0])!==englishKey(items[0]))ambiguous=true;found=found||items;}
   if(!found||ambiguous)return null;candidates=found;quality='suggestion';}
  return {...hitOf(text,candidates,quality),lang};}
 // Which language a video's nameplates use, from exact matches of distinct species. It starts as English
 // and switches once to a language with two exact matches, or one long one (≥ 3 CJK characters / 5 letters)
 // while English has none. Until then other languages are only consulted, never used, so English videos
-// keep their results. Extra OCR for CJK languages stops once English has 3 species or after `maxTries`.
+// keep their results. Extra OCR for CJK languages stops once English has 3 species, or after `maxTries`
+// plates (`maxBlind` while English has named nothing: on blurry 288×640 uploads the first exact Korean
+// match came at the 63rd plate). Plates whose English read has no letter are skipped (CJK reads of them were
+// empty too). After `narrowAfter` tries a language whose reads average `narrowGap` points of confidence below
+// the best language's is no longer read, so a long search costs about one read per plate. `lang` presets the
+// language (a second pass over a video whose language was decided late).
 class NameLanguage{
- constructor({maxTries=40}={}){this.lang='en';this.votes={};this.tries=0;this.maxTries=maxTries;}
+ constructor({lang='en',maxTries=40,maxBlind=200,narrowAfter=20,narrowGap=20}={}){this.lang=lang||'en';this.votes={};this.tries=0;this.maxTries=maxTries;this.maxBlind=maxBlind;this.narrowAfter=narrowAfter;this.narrowGap=narrowGap;this.conf={};}
  count(lang){return this.votes[lang]?.size||0;}
  vote(lang,key){(this.votes[lang]||(this.votes[lang]=new Set())).add(key);if(this.lang!=='en'||lang==='en')return false;const k=this.count(lang),long=key.length>=(LOCALES[lang]?.script?3:5);
   if(k>=2||(k===1&&long&&this.count('en')===0)){this.lang=lang;return true;}return false;}
- searching(){return this.lang==='en'&&this.count('en')<3&&this.tries<this.maxTries;}
+ searching(){return this.lang==='en'&&this.count('en')<3&&this.tries<(this.count('en')?this.maxTries:this.maxBlind);}
+ // Mean confidence of a CJK model's reads while searching (a model not read yet, e.g. not loaded in the browser, stays in).
+ heard(lang,confidence){const c=this.conf[lang]||(this.conf[lang]={n:0,sum:0});c.n++;c.sum+=confidence||0;}
+ reads(lang){if(this.tries<this.narrowAfter||!this.conf[lang]?.n)return true;const mean=l=>this.conf[l]?.n?this.conf[l].sum/this.conf[l].n:0,best=Math.max(...Object.keys(this.conf).map(mean));return mean(lang)>=best-this.narrowGap;}
 }
 // Resolves one nameplate. eng: {text, confidence} from the English OCR; alt(lang) reads the box with that
 // language's OCR model (CJK only; omit it where no model is available). Returns {hit, switched}.
@@ -56,10 +74,10 @@ class NameLanguage{
 function readName(eng,{dict,locales={},language,alt=null,minConfidence=45}){const m=match(eng.text,dict);let switched=false,cjkTried=false;
  const englishHit=m&&eng.confidence>=minConfidence?{...m,confidence:eng.confidence,raw:eng.text}:null;
  if(englishHit?.quality==='exact')return {hit:englishHit,switched:language.vote('en',englishHit.key)};
- let exact=null,fuzzy=null;
+ let exact=null,fuzzy=null;const searching=language.lang==='en'&&language.searching()&&/\p{L}/u.test(String(eng.text));
  for(const [lang,map] of Object.entries(locales)){if(!map||(language.lang!=='en'&&language.lang!==lang))continue;const cjk=!!LOCALES[lang]?.script;
-  if(cjk&&(!alt||(language.lang==='en'&&!language.searching())))continue;const r=cjk?alt(lang):eng;cjkTried=cjkTried||cjk;
-  const lm=r&&r.confidence>=minConfidence?matchLocale(r.text,map,lang):null;if(!lm)continue;const hit={...lm,confidence:r.confidence,raw:r.text};
+  if(cjk&&(!alt||(language.lang==='en'&&(!searching||!language.reads(lang)))))continue;const r=cjk?alt(lang):eng;cjkTried=cjkTried||cjk;if(cjk&&r&&language.lang==='en')language.heard(lang,r.confidence);
+  const lm=r&&r.confidence>=minConfidence?matchLocale(r.text,map,lang,eng.text):null;if(!lm)continue;const hit={...lm,confidence:r.confidence,raw:r.text};
   if(lm.quality==='exact'){switched=language.vote(lang,lm.key)||switched;exact=hit;break;}fuzzy=fuzzy||hit;}
  if(cjkTried&&language.lang==='en')language.tries++;
  if(language.lang==='en')return {hit:englishHit,switched};
@@ -223,8 +241,12 @@ class HudTracker{
   // most 3 s before a fresh HUD (within 15 s, a charged-attack cutscene): shield icons hide or blur as a charged attack
   // starts; a real shield takes one. Nobody may have fainted. In 35 saved videos 5 of 264 battles were
   // such 28–56 s parts split off at 0.5–1 s gaps; cGATSvEItIM had 3 more, one across an 8 s cutscene.
-  const c0=this.current,settling=c0&&t-c0.start<20&&gap<8,transient=c0&&c0.usedJump>=2&&this.lastHud-c0.usedAt<=3&&gap<15;
-  if(c0&&fresh&&c0.used>0&&(settling||transient)&&this.current.fainted.my+this.current.fainted.opponent===0){const c=this.current;c.used=0;c.shieldsUsed={my:0,opponent:0};c.events=c.events.filter(e=>e.kind!=='shield');}
+  // Such a fresh HUD also shows the battle's start: a battle that opened on a misread (a shield, or a ball read '?', often
+  // on the first HUD after a fade, below) and turns fresh within 20 s was seen from its start, so it drops the "mid-battle"
+  // flag, which cost the 2026-10-12 re-analysis full teams in the usage export and the counter's results (5d9UzKXX_XQ 110.5 s).
+  const c0=this.current,settling=c0&&t-c0.start<20&&gap<8,transient=c0&&c0.usedJump>=2&&this.lastHud-c0.usedAt<=3&&gap<15,clean=c0&&fresh&&(settling||transient)&&c0.fainted.my+c0.fainted.opponent===0;
+  if(clean&&c0.used>0){c0.used=0;c0.shieldsUsed={my:0,opponent:0};c0.events=c0.events.filter(e=>e.kind!=='shield');}
+  if(clean&&t-c0.start<20)c0.flags=c0.flags.filter(f=>!f.startsWith('Recording starts mid-battle'));
   // After a fade to black, a HUD that returns (≥ 3 s later) with fewer fainted Pokémon than the battle has seen starts
   // the next battle even when it doesn't read as fresh (a misread ball or shield on every frame): fainted counts never go
   // down within a battle. cBePYfn3m1U merged 4 battles into one 772 s "battle" that way (fades at 136, 322 and 522 s).
@@ -285,12 +307,16 @@ class HudTracker{
 //   fade (a fade to black after the last HUD with both sides alive: opponent forfeit, 10/14), tie (counter 2/2, the
 //   last bar empty on one side: that side lost, 41/49), mid-start (counter 3 but the recording began mid-battle and
 //   the bars don't agree: 7/15), unread (a result-like screen OCR couldn't read), both-alive (older saved results
-//   without fade data and both bars alive at the end: the forfeit-looking case; re-extraction adds the fields).
+//   without fade data and both bars alive at the end: the forfeit-looking case; re-extraction adds the fields),
+//   knockout (counter 2 on one side, ≤1 on the other, and the centred bar of the final charged-attack cutscene read
+//   empty within 3 s of the end, the other side's own bar ≥ 10%: the knockout of that side's last Pokémon; the
+//   cutscene bar is the defender's, framed alone as it is hit; b.cutsceneBar from run-node.cjs; 74/77 read result
+//   screens on 122 re-extracted labelled videos, 7/9 owner answers, 2026-10-13).
 //   Timer endings (both alive at 0:00) can't be told apart: the clock isn't read.
 // - UNRESOLVABLE, closed (policy) when no rule applies, there is no fade and no result-like screen, and the next
 //   battle's HUD follows within 10 s or the recording ends (a hard cut).
 const RESULT_RULES={zero:.03,alive:.1,lag:3,cut:10,fade:6};
-const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46};
+const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46,knockout:.96};
 const PROMOTABLE=new Set(Object.keys(RESULT_GUESS_P));
 // Sources that inference may set and re-derive; legacy names from saved results are replaced too.
 const INFERRED_SOURCES=new Set(['','faints','surrender','unresolvable','Poké Ball count','surrender dialog',...PROMOTABLE]);
@@ -300,11 +326,15 @@ function median(a){const s=a.filter(Number.isFinite).sort((p,q)=>p-q),n=s.length
 function lastHp(b){let g=null;for(const m of b.matchups||[])if(m.series&&(!g||m.end>g.end))g=m;if(!g)return {};const s=g.series,out={};
  for(const side of ['my','opponent']){const pts=[];(s[side]||[]).forEach((v,i)=>{if(v!=null&&Number.isFinite(v))pts.push([s.ts?s.ts[i]:s.t0+i/s.fps,v]);});if(!pts.length)continue;const tl=pts.at(-1)[0];out[side]={t:tl,v:median(pts.filter(p=>p[0]>=tl-2).map(p=>p[1]))};}
  return out;}
+// The centred cutscene bar at the end of the battle (b.cutsceneBar: [[t, fill, y0], …] around the end): {v: median fill
+// over the last 1 s of readings up to `lag` s after the end, t: time of the last one}, or null.
+function lastCutscene(b,lag=RESULT_RULES.lag){const pts=(b.cutsceneBar||[]).filter(p=>Number.isFinite(p[1])&&p[0]<=b.end+lag);if(!pts.length)return null;const tl=pts.at(-1)[0];return {t:tl,v:median(pts.filter(p=>p[0]>=tl-1).map(p=>p[1]))};}
 const GUESS_WHY={fade:'The screen faded to black with both sides still standing, which usually means the opponent left or forfeited, but the game fades at every ending',
  tie:'Both sides had two Pokémon down and one last HP bar read empty at the end; the empty side probably lost, but the final knockout is often hidden by the attack animation',
  'mid-start':'All three of one side’s Pokémon show as fainted, but the recording began mid-battle so the counter may be stale and the HP bars don’t confirm it',
  unread:'A result-like screen appeared but could not be read, and nothing on the timeline decides',
- 'both-alive':'Both HP bars were still above empty at the end, so the opponent probably left or forfeited (this saved result has no fade data)'};
+ 'both-alive':'Both HP bars were still above empty at the end, so the opponent probably left or forfeited (this saved result has no fade data)',
+ knockout:'Two Pokémon of the losing side had fainted on the Poké Ball counter and the HP bar shown alone in the final charged-attack cutscene emptied as the battle ended; that bar is the defender\u2019s, but the cutscene does not show whose it is'};
 const GUESS_VALUE={'Win:opponent-forfeit':'the opponent forfeited','Win':'you won','Loss':'you lost','Loss:you-forfeit':'you forfeited','Tie':'a tie'};
 // The question text for a guess; p is the measured precision when known ({right,total}) else the default.
 function guessDetail(g,stat){const n=stat&&stat.total>=10?`${stat.right} of ${stat.total} of your earlier answers agreed`:`about ${Math.round(g.p*100)}% right in earlier checks`;
@@ -321,6 +351,9 @@ function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.e
  const zeroed=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my';return f[x]>=2&&f[y]<2&&empty(x)&&standing(y);});
  if(zeroed.length===1){const x=zeroed[0];return {result:x==='opponent'?'Win':'Loss',source:'faints',reason:`Two of ${name[x]} Pokémon fainted on the Poké Ball counter and the last one's HP bar emptied at the end`};}
  const lose=x=>x==='opponent'?'Win':'Loss';
+ // The last knockout inside a cutscene: the defender's bar is centred there, not in either side's own HP series.
+ const cut=lastCutscene(b,R.lag),ko=!!cut&&cut.v<=R.zero&&Math.abs(b.end-cut.t)<=R.lag,knocked=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my';return ko&&f[x]>=2&&f[y]<2&&standing(y);});
+ if(knocked.length===1)return guess('knockout',lose(knocked[0]),`Counter at 2 for ${name[knocked[0]]} side; the bar shown alone in the final cutscene emptied at the end`);
  if(three.length===1)return guess('mid-start',lose(three[0]),`Poké Ball counter shows all three of ${name[three[0]]} Pokémon fainted, but the recording started mid-battle`);
  if(f.my===2&&f.opponent===2){const e=['my','opponent'].filter(empty);if(e.length===1&&standing(e[0]==='my'?'opponent':'my'))return guess('tie',lose(e[0]==='my'?'my':'opponent'),`Counter at 2 on both sides; ${name[e[0]]} last HP bar is empty`);}
  if(b.resultUnread)return guess('unread',three[0]?lose(three[0]):'Win:opponent-forfeit','A result-like screen could not be read');
@@ -441,5 +474,5 @@ HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null){const b=
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

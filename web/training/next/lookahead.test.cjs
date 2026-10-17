@@ -45,3 +45,37 @@ test('equivalent scouting scenarios are cached without consuming policy randomne
  assert.equal(c.calls,0);assert.equal(c.options.scoutingCache.size,1);assert.equal(c.two.name,'NEITHER_BAIT');assert.notEqual(c.two.matchups[0],-1);
  c.p.hp--;c.ai.runScenario('NO_BAIT',c.p,c.q);assert.equal(c.options.scoutingCache.size,2);assert.equal(c.calls,0);
 });
+// v4 controller options (lookahead-v4.js, <controller-options>): pure helpers, evaluated the way the battle VM loads them.
+function v4(){const c=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(__dirname,'lookahead-v4.js'),'utf8'),c);return c;}
+test('weighted replies: an exact softmax expectation over the opponent\'s own values, tending to the worst case',()=>{
+ const c=v4(),w=(values,t)=>c.teamWeightedReply(values,t),close=(x,y)=>assert.ok(Math.abs(x-y)<1e-12,x+' vs '+y);
+ // Opponent utility is the rollout value negated: the reply worst for the decider gets the largest weight.
+ const values=[.4,-.2,1.1],t=.25,u=values.map(v=>Math.exp(-v/t)),expected=values.reduce((s,v,i)=>s+v*u[i],0)/u.reduce((s,x)=>s+x,0);
+ close(w(values,t),expected);assert.ok(w(values,t)>Math.min(...values)&&w(values,t)<values.reduce((s,v)=>s+v,0)/3);
+ assert.equal(w(values,1e-9),-.2);assert.equal(w([.3,.3,.3],.25),.3);assert.ok(Math.abs(w(values,1e9)-values.reduce((s,v)=>s+v,0)/3)<1e-8);
+ assert.equal(w([],.25),Infinity);assert.equal(w([-10,10],.25),-10);
+ // The order of the replies does not matter beyond floating-point summation, and the result is reproducible.
+ close(w([1.1,.4,-.2],t),w(values,t));assert.equal(w(values,t),w(values,t));
+});
+test('controller settings: defaults, battle-wide options, per-side overrides and validation',()=>{
+ const c=v4(),plain=x=>JSON.parse(JSON.stringify(x));
+ assert.deepEqual(plain(c.teamControllerSettings({seed:4,horizon:24},0)),{replyModel:'worst',replyTemperature:.25,rolloutContinuation:0,switchMargin:.08,shieldPolicy:'default'});
+ const o={replyModel:'weighted',controllerTeams:[null,{replyModel:'worst',shieldPolicy:'never'}]};
+ assert.equal(c.teamControllerSettings(o,0).replyModel,'weighted');assert.equal(c.teamControllerSettings(o,1).replyModel,'worst');assert.equal(c.teamControllerSettings(o,1).shieldPolicy,'never');
+ assert.equal(c.teamControllerIdentity({replyModel:'worst',replyTemperature:3}),null);
+ assert.equal(c.teamControllerSuffix({replyModel:'weighted'}),'+controller:replyModel=weighted,replyTemperature=0.25');
+ assert.equal(c.teamControllerSuffix({rolloutContinuation:8,replyModel:'weighted',replyTemperature:.5}),'+controller:replyModel=weighted,replyTemperature=0.5,rolloutContinuation=8');
+ assert.equal(c.teamControllerSuffix({}),'');assert.throws(()=>c.teamControllerSuffix({controllerTeams:[{switchMargin:0},null]}),/Per-side/);
+ assert.deepEqual(plain(c.teamControllerSideKeys({controllerTeams:[{switchMargin:0},{switchMargin:0}]})),[null,null]);
+ assert.deepEqual(plain(c.teamControllerSideKeys({controllerTeams:[null,{shieldPolicy:'never'}]})),[null,{shieldPolicy:'never'}]);
+ assert.throws(()=>c.teamControllerSettings({controllerTeams:[{replyModle:'weighted'},null]},0),/unknown controller option/);
+ assert.throws(()=>c.teamControllerSettings({rolloutContinuation:30},0),/rolloutContinuation/);
+});
+test('Node, the battle VM and the browser adapter share one controller-options source',()=>{
+ const node=require('./controller-options.cjs'),c=v4(),source=fs.readFileSync(path.join(__dirname,'lookahead-v4.js'),'utf8');
+ assert.ok(source.includes(node.section()));
+ for(const o of [{},{replyModel:'weighted'},{rolloutContinuation:3,switchMargin:0},{shieldPolicy:'always',controllerTeams:[null,{replyModel:'weighted'}]}])for(const side of [0,1])assert.deepEqual(node.teamControllerSettings(o,side),JSON.parse(JSON.stringify(c.teamControllerSettings(o,side))));
+ assert.equal(node.searchController({replyModel:'worst',replyTemperature:.25,rolloutContinuation:0}),null);
+ assert.deepEqual(node.searchController({replyModel:'weighted',replyTemperature:.5,rolloutContinuation:8}),{replyModel:'weighted',replyTemperature:.5,rolloutContinuation:8});
+ assert.equal(node.describe(null),'default');
+});

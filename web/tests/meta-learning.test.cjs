@@ -53,6 +53,17 @@ test('result questions: the timeline settles or closes them by policy, re-derive
  assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:1,byRule:{faints:{right:1,total:1,videos:1,uncertain:false,promoted:false},surrender:{right:0,total:1,videos:1,uncertain:false,promoted:false}}});assert.deepEqual(m.sources,{read:0,inferred:0,human:2,unresolvable:1,open:1});
  assert.equal(Cc.inferResult(run.full[3],{next:null,videoEnd:500}),null);});
 
+test('result rules: the cutscene knockout rule learns from saved runs (b.cutsceneBar) and settles only once the gate passes',()=>{
+ const opts=require('../includes/meta/questions.js').RESULT_OPTIONS;
+ // Opponent at 2 fainted, you at 1, both own bars standing, the centred cutscene bar empty at the end; no fade, no screen.
+ const b=i=>({start:i*100,end:i*100+90,result:'Unknown',resultSource:'',fadeAt:null,resultUnread:0,fainted:{my:1,opponent:2},flags:[],events:[],my:[],opponent:[],
+  matchups:[{start:i*100+60,end:i*100+90,my:'a',opponent:'b',series:{t0:i*100+87,fps:10,my:Array(30).fill(.5),opponent:Array(30).fill(.4)}}],cutsceneBar:[[i*100+90.5,.2,980],[i*100+90.8,0,980],[i*100+91.2,0,980]]});
+ const raws={},answers=[];for(let v=0;v<6;v++){raws['v'+v]={end:9999,full:[0,1,2,3,4].map(b)};for(let i=0;i<5;i++)answers.push({qid:`k${v}:${i}`,kind:'result',battle:i,video:{id:'v'+v},value:'Win'});}
+ const run=refitRun(raws.v0,{gm}),q={qid:'x',kind:'result',battle:0,video:{id:'v0'},clip:[raws.v0.full[0].end-2,raws.v0.full[0].end+14],options:opts};
+ assert.deepEqual([run.full[0].result,run.full[0].resultGuess.rule,run.full[0].resultGuess.value],['Unknown','knockout','Win']);assert.equal(L.resultResolution(q,run,1),null);
+ const stats=L.ruleStats(answers,vid=>raws[vid]);assert.deepEqual([stats.knockout.right,stats.knockout.total,stats.knockout.videos],[30,30,6]);assert.deepEqual(L.promotedRules(stats),['knockout']);
+ assert.deepEqual(L.promotedRules(L.ruleStats(answers.slice(0,29),vid=>raws[vid])),[],'29 answers are too few');
+ const run2=refitRun(raws.v0,{gm,promotedRules:['knockout']}),r=L.resultResolution(q,run2,1);assert.deepEqual([run2.full[0].result,run2.full[0].resultSource,r.value,r.source,r.rule],['Win','knockout','Win','timeline','knockout']);});
 test('result rules: uncertain inferences are asked with the measured guess, and a rule is promoted at 95% on 30 answers from 5 videos',()=>{
  const opts=require('../includes/meta/questions.js').RESULT_OPTIONS,Cc=require('../includes/meta/core.js');
  // 40 battles each in 8 videos: fade after both alive (tracked extraction), answers 'Win:opponent-forfeit' 38 times.

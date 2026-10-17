@@ -50,6 +50,13 @@ function locate(frames,{minAspect=.38,maxAspect=.75}={}){if(!frames.length)retur
  if(!best){const few=frames.filter((_,i)=>i%Math.max(1,Math.floor(frames.length/8))===0).slice(0,8),seen=new Set(),inset=[];
   for(const box of tried){const w=box[2]-box[0];for(const l of [0,1,2,3])for(const r of [0,1,2,3]){if(!l&&!r)continue;const b=[box[0]+Math.round(w*l/100),box[1],box[2]-Math.round(w*r/100),box[3]],key=b.join();if(seen.has(key)||checked.has(key))continue;seen.add(key);if(hudScore(few,b).ok>=2)inset.push(b);}}
   check(inset,Math.min(frames.length,Math.max(2,Math.ceil(frames.length*.2))));}
+ // An edge that isn't on half the frames is lost to the median: edited compilations place each battle clip a few
+ // pixels apart (Npoke's -QiUVfUf8jo: left edge 428–432, right 690–697 of 960 over five clips), and a dark arena
+ // against a dark backdrop hides the edge in most scenes (_bnPdUKMYpw: x 607 strong on 6 of 16 frames). Last resort:
+ // each frame's own strong edges, kept only when the HUD reads inside them on that frame; the box that reads on
+ // the most frames (the commonest placement) wins.
+ if(!best){const own=[],seen=new Set();for(let k=0;k<frames.length;k++)for(const b of candidates(peaks([xp[k]]),peaks([yp[k]],.35,4))){const key=b.join();if(seen.has(key)||checked.has(key))continue;if(hudScore([frames[k]],b).ok){seen.add(key);own.push(b);}}
+  check(own,Math.min(frames.length,Math.max(2,Math.ceil(frames.length*.2))));}
  if(!best)return null;best.box=snap(frames,best.box);const fixed=refine(frames,best.box);if(fixed){const s=hudScore(frames,fixed.box);if(s.ok>=best.score){best.box=fixed.box;best.score=s.ok;best.dy=s.dy;best.refined=fixed.fit;}}
  return {...best,frames:frames.length,aspect:+((best.box[2]-best.box[0])/(best.box[3]-best.box[1])).toFixed(3)};}
 // Horizontal fit from the Poké Balls (2026-10-11). Branded layouts frame the phone with borders that the

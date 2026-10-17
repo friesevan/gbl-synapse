@@ -1,0 +1,114 @@
+{
+  "createdAt": "2026-10-14T03:35:25.080Z",
+  "node": "v20.18.1",
+  "workers": 12,
+  "battlesPerRun": 192,
+  "repeats": 3,
+  "fixtures": {
+    "kind": "search",
+    "pool": {
+      "path": "training/runs/team-search/pool.json",
+      "hash": "de5810d7636433035a869f6697461f516147e23143a263b13d08c4cabf8f08f8"
+    },
+    "usageFile": "/Users/evanfries/Desktop/Projects/PoGo Recorder/src/yt-harvest/usage/observed-gl-opponents.json",
+    "beliefTeams": 2048
+  },
+  "loadAverage": [
+    15.87646484375,
+    5.955078125,
+    3.53173828125
+  ],
+  "measurements": [
+    {
+      "warmup": true,
+      "repetition": 0,
+      "optimized": false,
+      "seconds": 9.801240083,
+      "battlesPerSecond": 19.589357915333498,
+      "peakRssMB": 1377.71875,
+      "peakWorkerHeapMB": 71.23423767089844,
+      "recycles": 17
+    },
+    {
+      "warmup": true,
+      "repetition": 0,
+      "optimized": true,
+      "seconds": 3.8592129999999996,
+      "battlesPerSecond": 49.75107619092287,
+      "peakRssMB": 1343.140625,
+      "peakWorkerHeapMB": 63.861000061035156,
+      "recycles": 17
+    },
+    {
+      "warmup": false,
+      "repetition": 1,
+      "optimized": true,
+      "seconds": 4.031864792,
+      "battlesPerSecond": 47.62064451689083,
+      "peakRssMB": 1335.8125,
+      "peakWorkerHeapMB": 78.0164566040039,
+      "recycles": 17
+    },
+    {
+      "warmup": false,
+      "repetition": 1,
+      "optimized": false,
+      "seconds": 9.882661833999999,
+      "battlesPerSecond": 19.427964168464133,
+      "peakRssMB": 1436.828125,
+      "peakWorkerHeapMB": 67.92191314697266,
+      "recycles": 18
+    },
+    {
+      "warmup": false,
+      "repetition": 2,
+      "optimized": false,
+      "seconds": 10.071538,
+      "battlesPerSecond": 19.063622656241776,
+      "peakRssMB": 1378.828125,
+      "peakWorkerHeapMB": 79.57476043701172,
+      "recycles": 19
+    },
+    {
+      "warmup": false,
+      "repetition": 2,
+      "optimized": true,
+      "seconds": 3.8373312499999956,
+      "battlesPerSecond": 50.0347735160993,
+      "peakRssMB": 1361.953125,
+      "peakWorkerHeapMB": 73.4927749633789,
+      "recycles": 17
+    },
+    {
+      "warmup": false,
+      "repetition": 3,
+      "optimized": true,
+      "seconds": 3.8180103329999984,
+      "battlesPerSecond": 50.287972858663316,
+      "peakRssMB": 1326.125,
+      "peakWorkerHeapMB": 62.11155700683594,
+      "recycles": 19
+    },
+    {
+      "warmup": false,
+      "repetition": 3,
+      "optimized": false,
+      "seconds": 9.969781041999996,
+      "battlesPerSecond": 19.258196262400933,
+      "peakRssMB": 1403.265625,
+      "peakWorkerHeapMB": 65.4569091796875,
+      "recycles": 16
+    }
+  ],
+  "warning": "Paired full-battle benchmark, including worker startup/recycling. Frozen-reference event parity is tested separately. Hardware load affects throughput; no neural-quality gain is implied.",
+  "baselineMedianSeconds": 9.969781041999996,
+  "optimizedMedianSeconds": 3.8373312499999956,
+  "speedup": 2.5981027939665116,
+  "baselineBattlesPerSecond": 19.258196262400933,
+  "optimizedBattlesPerSecond": 50.0347735160993,
+  "loadAverageAfter": [
+    25.54345703125,
+    10.14892578125,
+    5.2314453125
+  ]
+}

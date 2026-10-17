@@ -76,7 +76,7 @@ async function cjkWorker(lang){if(cjk.workers[lang])return cjk.workers[lang];sta
 const cjkActive=()=>{const l=nameLanguage.lang;return C.LOCALES[l]?.script?cjk.workers[l]||null:null;};
 async function cjkAlt(eng,box){if(cjk.off)return null;const decided=C.LOCALES[nameLanguage.lang]?.script?nameLanguage.lang:null;
  if(decided){const w=cjk.workers[decided];if(!w)return null;const r=await ocrRegion(hudCanvas,box,{worker:w});return l=>l===decided?r:null;}
- if(nameLanguage.lang!=='en'||!nameLanguage.searching()||C.match(eng.text,dict))return null;if(++cjk.unread<6)return null;
+ if(nameLanguage.lang!=='en'||!nameLanguage.searching()||!/\p{L}/u.test(eng.text)||C.match(eng.text,dict))return null;if(++cjk.unread<6)return null;
  if(cjk.tries>=8){cjk.i++;cjk.tries=0;}const lang=CJK_TRY[cjk.i];if(!lang){cjk.off=true;return null;}
  let w;try{w=await cjkWorker(lang);}catch(e){cjk.off=true;metrics.languageNote=`The nameplates look Japanese, Korean or Chinese, but the ${CJK_NAME[lang]} OCR model couldn't be loaded here (${e?.message||e}). Run the local app (START.command → Meta Extractor) or the Node runner, which read those languages.`;status(metrics.languageNote);return null;}
  cjk.tries++;metrics.cjkReads=(metrics.cjkReads||0)+1;const r=await ocrRegion(hudCanvas,box,{worker:w});return l=>l===lang?r:null;}
@@ -289,40 +289,12 @@ $('metaTrainer').onclick=()=>{const sample=subset().filter(b=>!b.context.example
 function validReport(report){if(report?.schema!=='meta-extractor-v1'||!Array.isArray(report.battles)||report.battles.length>5000)throw Error('Use a Meta Extractor reviewed-report JSON with at most 5,000 battles.');return report.battles.map(b=>{if(typeof b.id!=='string'||!b.reviewed||!b.context||![500,1500,2500,10000].includes(b.context.cp)||typeof b.context.cup!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(b.context.collectedAt)||!Array.isArray(b.opponent)||!Array.isArray(b.my)||b.opponent.length>3||b.my.length>3||![...b.opponent,...b.my].every(p=>typeof p.id==='string'&&(!p.id||byId.has(p.id))))throw Error('A battle has invalid or unsupported metadata / species.');return {...b,...(window.MetaObservedCore?.evidence({...b,timeline:b.timeline||(b.hp&&window.MetaTimeline?MetaTimeline.summarize(b):null)})||{}),opponent:b.opponent.map(p=>({...p,dex:byId.get(p.id)?.dex})),my:b.my.map(p=>({...p,dex:byId.get(p.id)?.dex})),result:['Win','Loss','Tie'].includes(b.result)?b.result:'Unknown',events:[],flags:['Imported reviewed observation'],context:{...b.context,example:!!b.context.example}};});}
 $('metaImport').onchange=async e=>{try{await data();const all=new Map(records.map(b=>[b.id,b]));let added=0;for(const f of e.target.files){if(f.size>10*1024*1024)throw Error('Each report must be under 10 MB.');for(const b of validReport(JSON.parse(await f.text()))){if(!all.has(b.id)){all.set(b.id,b);added++;}}}localStorage.setItem(storageKey,JSON.stringify([...all.values()]));records=[...all.values()];$('metaCount').textContent=records.length;renderDataset();$('metaImportStatus').textContent=`Imported ${added} new observations; repeated battle IDs were skipped. Re-encoded or separate uploads can still duplicate a battle.`;}catch(error){$('metaImportStatus').textContent=error.message;}e.target.value='';};
 $('metaExample').onclick=async()=>{try{await data();example=true;file=null;if(url){URL.revokeObjectURL(url);url=null;}$('metaVideo').removeAttribute('src');$('metaVideo').load();$('metaWorkspace').hidden=true;sessionId=crypto.randomUUID();const demo=[{my:['melmetal','cramorant','jumpluff'],opponent:['clodsire','feraligatr','mandibuzz'],result:'Win'},{my:['melmetal','cramorant','jumpluff'],opponent:['azumarill','dunsparce','talonflame'],result:'Loss'},{my:['melmetal','cramorant','jumpluff'],opponent:['clodsire','feraligatr'],result:'Unknown'}];run=demo.map((b,i)=>({...b,id:crypto.randomUUID(),start:i*160,end:i*160+140,context:{...context(),collectedAt:'2026-10-09'},my:b.my.map(id=>({id,label:byId.get(id)?.speciesName,first:i*160})),opponent:b.opponent.map((id,j)=>({id,label:byId.get(id)?.speciesName,first:i*160+j*35})),events:[{t:i*160,kind:'reveal',side:'opponent',label:byId.get(b.opponent[0])?.speciesName,confidence:92}],flags:['Illustrative example · never used as training evidence'],reviewed:false,leadConfirmed:false}));metrics={ocr:0};renderReview();view('analyze');$('metaReviewPane').scrollIntoView({behavior:'smooth'});}catch(e){$('metaSaveStatus').textContent=e.message;}};
-// ---- README in the info dialog ----
-// A small Markdown renderer for includes/meta/README.md: headings, paragraphs, nested lists, tables,
-// fenced code, and inline code/bold/italic/links. Text is escaped first; only http(s) links become
-// anchors (relative repo paths aren't published with the site, so they stay as code).
-function mdInline(text){const esc=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const codes=[];
- return esc.replace(/`([^`]+)`/g,(_,c)=>{codes.push(c);return `\u0000${codes.length-1}\u0000`;})
-  .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(_,t,u)=>/^https?:\/\//.test(u)?`<a href="${u.replace(/"/g,'%22')}" target="_blank" rel="noopener">${t}</a>`:t)
-  .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g,'$1<em>$2</em>')
-  .replace(/\u0000(\d+)\u0000/g,(_,i)=>`<code>${codes[i]}</code>`);}
-function renderMarkdown(md){const out=document.createDocumentFragment(),lines=md.replace(/\r/g,'').split('\n'),toc=[];let i=0;
- const html=(tag,inner,cls)=>{const n=document.createElement(tag);n.innerHTML=inner;if(cls)n.className=cls;return n;};
- while(i<lines.length){const line=lines[i];
-  if(/^```/.test(line)){const code=[];i++;while(i<lines.length&&!/^```/.test(lines[i]))code.push(lines[i++]);i++;const pre=document.createElement('pre');pre.textContent=code.join('\n');out.append(pre);continue;}
-  const h=/^(#{1,4})\s+(.*)$/.exec(line);if(h){const level=h[1].length,n=html('h'+Math.min(6,level+1),mdInline(h[2]));if(level===2){n.id='meta-readme-'+toc.length;toc.push([n.id,h[2]]);}out.append(n);i++;continue;}
-  if(/^\|/.test(line)&&/^\|[\s:|-]+\|?\s*$/.test(lines[i+1]||'')){const row=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());const head=row(line);i+=2;const body=[];while(i<lines.length&&/^\|/.test(lines[i]))body.push(row(lines[i++]));
-   const wrap=document.createElement('div');wrap.className='table-scroll';wrap.tabIndex=0;wrap.innerHTML=`<table><thead><tr>${head.map(c=>`<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>${body.map(r=>`<tr>${r.map(c=>`<td>${mdInline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;out.append(wrap);continue;}
-  if(/^\s*([-*]|\d+\.)\s+/.test(line)){
-   // Lists: indentation of two or more spaces nests; indented lines without a marker continue the item.
-   const root={children:[],ordered:/^\s*\d+\./.test(line)},stack=[{indent:/^\s*/.exec(line)[0].length,list:root}];let last=null;
-   while(i<lines.length&&(/^\s*([-*]|\d+\.)\s+/.test(lines[i])||(/^\s{2,}\S/.test(lines[i])&&last))){const l=lines[i],m=/^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(l);
-    if(!m){last.text+=' '+l.trim();i++;continue;}const d=m[1].length;
-    if(d>stack.at(-1).indent&&last){last.sub={children:[],ordered:/\d/.test(m[2])};stack.push({indent:d,list:last.sub});}
-    else while(stack.length>1&&d<stack.at(-1).indent)stack.pop();
-    last={text:m[3],sub:null};stack.at(-1).list.children.push(last);i++;}
-   const build=list=>{const el=document.createElement(list.ordered?'ol':'ul');for(const it of list.children){const li=html('li',mdInline(it.text));if(it.sub)li.append(build(it.sub));el.append(li);}return el;};out.append(build(root));continue;}
-  if(!line.trim()){i++;continue;}
-  const para=[];while(i<lines.length&&lines[i].trim()&&!/^(#{1,4}\s|```|\|)/.test(lines[i])&&!/^\s*([-*]|\d+\.)\s+/.test(lines[i]))para.push(lines[i++].trim());out.append(html('p',mdInline(para.join(' '))));}
- return {fragment:out,toc};}
-let readmeLoaded=false;
-$('metaInfo').onclick=async()=>{const host=$('metaHelpBody');$('metaHelp').showModal();if(readmeLoaded)return;host.replaceChildren(el('p','Loading the Meta Extractor README…','hint'));
- try{const md=await fetch('includes/meta/README.md').then(r=>{if(!r.ok)throw Error(r.status);return r.text();});const {fragment,toc}=renderMarkdown(md.replace(/^# .*\n/,''));
-  const nav=document.createElement('nav');nav.className='meta-readme-toc';nav.setAttribute('aria-label','README sections');nav.append(el('strong','Contents'));const ol=document.createElement('ol');
-  for(const [id,text] of toc){const li=document.createElement('li'),b=el('button',text.replace(/`/g,''),'linklike');b.type='button';b.onclick=()=>host.querySelector('#'+id)?.scrollIntoView({behavior:'smooth',block:'start'});li.append(b);ol.append(li);}
-  nav.append(ol);const article=document.createElement('article');article.className='meta-readme';article.append(fragment);host.replaceChildren(nav,article);readmeLoaded=true;}
- catch(e){host.replaceChildren(el('p',`The README couldn’t be loaded (${e.message}).`,'hint'));}};$('metaCloseHelp').onclick=()=>$('metaHelp').close();
+// ---- Documentation in the info dialog (includes/docs.js) ----
+// Two documents rendered from Markdown next to the code: README-plain.md (a short plain-language summary) and
+// README.md (the technical reference), with a toggle, figures and diagrams. GblDocs renders and links them.
+const metaDocs=window.GblDocs?window.GblDocs.mount({dialog:$('metaHelp'),host:$('metaHelpBody'),storageKey:'gbl-synapse.docs.meta',docs:[
+ {id:'plain',label:'Plain English',file:'includes/meta/README-plain.md',hint:'A short summary of how the extractor reads a battle, for a quick read.'},
+ {id:'technical',label:'Technical',file:'includes/meta/README.md',hint:'The full reference: every rule, measurement, gap and command.'}]}):null;
+$('metaInfo').onclick=()=>{if(metaDocs)metaDocs.open();else $('metaHelp').showModal();};$('metaCloseHelp').onclick=()=>$('metaHelp').close();
 window.addEventListener('beforeunload',()=>{if(url)URL.revokeObjectURL(url);worker?.terminate();});
 })();

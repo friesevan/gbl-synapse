@@ -13,6 +13,8 @@ function validate(d){
   const ids=new Set(o.beliefRoster.map(p=>p.speciesId));
   if(ids.size!==o.beliefRoster.length||o.beliefRoster.some(p=>typeof p.speciesId!=='string'||!Number.isInteger(p.dex)||!Number.isFinite(p.weight)||p.weight<0||!Array.isArray(p.moveset)||p.moveset.length<2||p.moveset.length>4||p.moveset.some(m=>typeof m!=='string')))fail('invalid belief species');
   if(o.beliefTeams.some(t=>!Array.isArray(t)||t.length!==3||new Set(t).size!==3||t.some(id=>!ids.has(id))))fail('invalid belief lineup');
+  // Controller options travel in engineOptions (one controller for both sides); per-side controllers are evaluation-only.
+  if(o.controllerTeams!=null)fail('invalid controller options');
  }
  const ids=new Set();let fixtures=0;
  for(const row of table.rows){
@@ -25,8 +27,48 @@ function validate(d){
    for(const m of matches[key])if(!Array.isArray(m)||m.length!==3||!Array.isArray(m[0])||m[0].length!==3||m[0].some(i=>!Number.isInteger(i)||!table.opponents[i])||!Number.isInteger(m[1])||m[1]<0||m[1]>0xffffffff||!Number.isFinite(m[2])||m[2]<0||m[2]>1)fail('malformed battle');
   }
  }
+ // Optional (added with the previous-champions baseline group); older reports simply lack it.
+ if(d.champions!=null){const c=d.champions,ok=i=>Number.isInteger(i)&&table.variants[i];if(!Array.isArray(c.teams)||c.teams.length>500||c.teams.some(t=>!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||typeof t.label!=='string'||t.label.length>200)||c.skipped!=null&&(!Array.isArray(c.skipped)||c.skipped.length>500||c.skipped.some(x=>!x||typeof x.label!=='string'||typeof x.detail!=='string')))fail('invalid previous champions');if(c.comparisons!=null&&(!Array.isArray(c.comparisons.entries)||c.comparisons.entries.length>500||c.comparisons.entries.some(e=>!Array.isArray(e.team)||e.team.length!==3||!e.team.every(ok)||!Number.isFinite(e.score)||!Number.isFinite(e.delta)||!Array.isArray(e.interval95)||e.interval95.length!==2||!e.interval95.every(Number.isFinite)||typeof e.verdict!=='string')))fail('invalid champion comparisons');}
+ // Optional (added with the meta-sensitivity panel, training/team-search/sensitivity.cjs); older reports simply lack it.
+ if(d.sensitivity!=null){
+  const s=d.sensitivity,ok=i=>Number.isInteger(i)&&table.variants[i],unit=v=>Number.isFinite(v)&&v>=0&&v<=1,optional=v=>v==null||unit(v);
+  const meta=m=>m&&typeof m.id==='string'&&m.id.length<=80&&typeof m.label==='string'&&m.label.length<=300&&Number.isInteger(m.fixtures)&&m.fixtures>=1&&Number.isInteger(m.seed)&&m.seed>=0&&m.seed<=0xffffffff;
+  const rowOk=t=>t&&typeof t.kind==='string'&&Array.isArray(t.team)&&t.team.length===3&&t.team.every(ok)&&Array.isArray(t.scores)&&t.scores.length===s.metas.length&&t.scores.every(unit)&&unit(t.mean)&&unit(t.min)&&unit(t.max)&&unit(t.spread)&&t.min<=t.mean+1e-9&&t.mean<=t.max+1e-9&&optional(t.finalScore)&&optional(t.noiseSpread)&&(t.spreadInterval95==null||Array.isArray(t.spreadInterval95)&&t.spreadInterval95.length===2&&t.spreadInterval95.every(unit))&&(t.ranks==null||Array.isArray(t.ranks)&&t.ranks.length===s.metas.length&&t.ranks.every(Number.isInteger));
+  if(typeof s!=='object'||!Array.isArray(s.metas)||!s.metas.length||s.metas.length>32||!s.metas.every(meta)||new Set(s.metas.map(m=>m.id)).size!==s.metas.length||!Number.isInteger(s.fixtures)||s.fixtures<1||!Array.isArray(s.teams)||s.teams.length>500||!s.teams.every(rowOk))fail('invalid sensitivity panel');
+ }
+ // Optional (added with the sealed confirmation test): null when no challenger needed confirming; older reports lack it.
+ if(d.confirmation!=null){const c=d.confirmation,ok=i=>Number.isInteger(i)&&table.variants[i],team=t=>Array.isArray(t)&&t.length===3&&t.every(ok),score=v=>v==null||Number.isFinite(v)&&v>=0&&v<=1,band=b=>Array.isArray(b)&&b.length===2&&b.every(Number.isFinite);
+  if(typeof c!=='object'||!Number.isInteger(c.seed)||c.seed<0||c.seed>0xffffffff||!Number.isSafeInteger(c.requestedFixtures)||c.requestedFixtures<1||c.requestedFixtures>100000||!Number.isSafeInteger(c.completedFixtures)||c.completedFixtures<0||c.completedFixtures>c.requestedFixtures||!team(c.primary)||!['challenger-confirmed','not-confirmed','incomplete'].includes(c.outcome)||typeof c.summary!=='string'||c.summary.length>4000||(c.method!=null&&(typeof c.method!=='string'||c.method.length>2000))
+   ||!Array.isArray(c.teams)||c.teams.length<1||c.teams.length>500||c.teams.some(t=>!team(t.team)||!['primary','challenger'].includes(t.role)||!score(t.score)||!score(t.finalScore))
+   ||!Array.isArray(c.comparisons)||c.comparisons.length>500||c.comparisons.some(x=>!team(x.team)||!Number.isFinite(x.delta)||!band(x.interval95)||!band(x.simultaneous95)||!['primary-better','challenger-better','unresolved'].includes(x.verdict)||typeof x.confirmed!=='boolean')
+   ||c.pairs!=null&&(!Array.isArray(c.pairs)||c.pairs.length>5000||c.pairs.some(p=>!team(p.a)||!team(p.b)||!Number.isFinite(p.delta)||!band(p.simultaneous95))))fail('invalid confirmation');}
+ // Optional (opponent policy styles: search.cjs --policy-panel, training/next/policy-panel.cjs); older reports lack it.
+ if(d.policyPanel!=null){const p=d.policyPanel,ok=i=>Number.isInteger(i)&&table.variants[i],score=x=>Number.isFinite(x)&&x>=0&&x<=1,band=b=>Array.isArray(b)&&b.length===2&&b.every(x=>Number.isFinite(x)&&x>=-1&&x<=1),name=x=>typeof x==='string'&&x.length>0&&x.length<=64;
+  if(!Array.isArray(p.styles)||p.styles.length<2||p.styles.length>12||p.styles.some(s=>!s||!name(s.name)||typeof s.label!=='string'||s.label.length>100)||new Set(p.styles.map(s=>s.name)).size!==p.styles.length)fail('invalid policy panel styles');
+  if(!p.fixtures||!Number.isInteger(p.fixtures.requested)||!Number.isInteger(p.fixtures.completed)||p.fixtures.completed<0||p.fixtures.completed>p.fixtures.requested||p.own!=null&&typeof p.own.label!=='string')fail('invalid policy panel fixtures');
+  if(!Array.isArray(p.teams)||p.teams.length>64||p.teams.some(t=>!t||!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||!p.styles.every(s=>score(t.scores?.[s.name]))||![t.mean,t.min,t.max].every(score)||!Number.isFinite(t.spread)||!band(t.spreadInterval95)||t.versusDefault!=null&&(!Array.isArray(t.versusDefault)||t.versusDefault.some(v=>!v||!name(v.style)||!Number.isFinite(v.delta)||!band(v.interval95)))))fail('invalid policy panel teams');
+ }
+ // Optional (opponent movesets: search.cjs --alternate-panel, training/team-search/alternate-panel.cjs); older reports lack it.
+ if(d.alternatePanel!=null){
+  const a=d.alternatePanel,ok=i=>Number.isInteger(i)&&table.variants[i],score=x=>Number.isFinite(x)&&x>=0&&x<=1,band=b=>Array.isArray(b)&&b.length===2&&b.every(x=>Number.isFinite(x)&&x>=-1&&x<=1),name=x=>typeof x==='string'&&x.length>0&&x.length<=80,share=x=>Number.isFinite(x)&&x>=0&&x<=1;
+  if(typeof a!=='object'||!Number.isInteger(a.requestedFixtures)||!Number.isInteger(a.fixtures)||a.fixtures<1||a.fixtures>a.requestedFixtures||a.requestedFixtures>100000||!a.reference||!name(a.reference.id)||typeof a.reference.label!=='string'||a.reference.label.length>300)fail('invalid alternate panel');
+  if(!Array.isArray(a.levels)||!a.levels.length||a.levels.length>8||a.levels.some(l=>!l||!name(l.id)||l.id===a.reference.id||typeof l.label!=='string'||l.label.length>100||!Number.isInteger(l.rank)||l.rank<1||!share(l.changedMemberShare)||!share(l.changedFixtureShare))||new Set(a.levels.map(l=>l.id)).size!==a.levels.length)fail('invalid alternate panel levels');
+  if(!Array.isArray(a.teams)||a.teams.length>64||a.teams.some(t=>!t||!Array.isArray(t.team)||t.team.length!==3||!t.team.every(ok)||!score(t.scores?.[a.reference.id])||!a.levels.every(l=>score(t.scores?.[l.id]))||!Array.isArray(t.deltas)||t.deltas.length!==a.levels.length||t.deltas.some(v=>!v||!a.levels.some(l=>l.id===v.level)||!Number.isFinite(v.delta)||!band(v.interval95)||!['higher','lower','unresolved'].includes(v.verdict))||!Number.isFinite(t.worstDelta)||!name(t.worstLevel)))fail('invalid alternate panel teams');
+ }
+ // Optional (added with the uncertainty-calibration read-out, training/team-search/calibration.cjs): on diagnostics and on each history round; older reports lack it.
+ if(d.diagnostics?.uncertaintyCalibration!=null&&!calibrationOk(d.diagnostics.uncertaintyCalibration))fail('invalid uncertainty calibration');
+ if(Array.isArray(d.history)){if(d.history.length>100000)fail('too many history rounds');for(const h of d.history)if(h?.diagnostics?.uncertaintyCalibration!=null&&!calibrationOk(h.diagnostics.uncertaintyCalibration))fail('invalid uncertainty calibration');}
  return d;
 }
+// Held-out spread-versus-error read-out: counts and shares are bounded, correlations lie in [-1, 1], and null means "not computable".
+function calibrationOk(c,nested=false){
+ const num=(k,lo,hi)=>c[k]==null||Number.isFinite(c[k])&&c[k]>=lo&&c[k]<=hi;
+ if(!c||typeof c!=='object'||!Number.isSafeInteger(c.teams)||c.teams<0||c.teams>1e7)return false;
+ if(!['k80','k90','medianSpread','medianAbsResidual'].every(k=>num(k,0,1e9))||!['coverage80','coverage90','coverage1'].every(k=>num(k,0,1))||!num('spearman',-1-1e-9,1+1e-9))return false;
+ if(c.wellMeasured==null)return true;
+ return !nested&&Number.isSafeInteger(c.wellMeasured.minFixtures)&&c.wellMeasured.minFixtures>=1&&calibrationOk(c.wellMeasured,true);
+}
+function validateCalibration(c){if(!calibrationOk(c))throw Error('Invalid neural report: invalid uncertainty calibration');return c;}
 async function verifySnapshot(d){const raw=JSON.stringify([d.snapshot.published,d.snapshot.overrides,d.snapshot.gameMaster]),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==d.dataHash)throw Error('The report’s pinned data failed its integrity check');return d;}
 async function readFile(file){
  if(file.size>128*1024*1024)throw Error('Report exceeds 128 MB');
@@ -35,5 +77,5 @@ async function readFile(file){
  try {for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>256*1024*1024){await reader.cancel();throw Error('Expanded report exceeds 256 MB');}chunks.push(value);}}finally{reader.releaseLock();}
  const bytes=new Uint8Array(size);let offset=0;chunks.forEach(c=>{bytes.set(c,offset);offset+=c.length;});return verifySnapshot(validate(JSON.parse(new TextDecoder().decode(bytes))));
 }
-const api={validate,verifySnapshot,readFile};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.NeuralReportCore=api;
+const api={validate,validateCalibration,verifySnapshot,readFile};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.NeuralReportCore=api;
 })(globalThis);

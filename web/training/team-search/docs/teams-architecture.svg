@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 700" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>Team Rankings architecture: scouting pool and opponent meta feed a search loop of proposal, neural prediction, staged simulation and refitting; sealed screening and final tests produce the report the site shows</title>
+<style>
+.box{fill:var(--sunken,#f3f6f9);stroke:var(--line,#c9d3dc);stroke-width:1.3}
+.acc{fill:var(--accent-tint,#e4f1fb);stroke:var(--accent-line,#86b7e0)}
+.out{fill:var(--panel,#ffffff);stroke:var(--line,#c9d3dc)}
+.loop{fill:none;stroke:var(--accent-line,#86b7e0);stroke-width:1.5;stroke-dasharray:6 4}
+.t{font-size:13.5px;font-weight:700;fill:var(--text,#1d2b36)}
+.s{font-size:11.5px;fill:var(--text-2,#3d4f5e)}
+.m{font-size:10.5px;fill:var(--muted,#6b7a88)}
+.lane{font-size:11px;font-weight:700;letter-spacing:.12em;fill:var(--accent,#2f7fc1)}
+.a{stroke:var(--text-2,#3d4f5e);stroke-width:1.5;fill:none;marker-end:url(#teams-arch-arrow)}
+</style>
+<defs><marker id="teams-arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-2,#3d4f5e)"/></marker></defs>
+
+<text x="20" y="26" class="lane">A · ONCE PER DATA SNAPSHOT</text>
+<rect x="20" y="36" width="300" height="118" rx="10" class="box"/>
+<text x="32" y="58" class="t">Candidate pool (prepare.cjs)</text>
+<text x="32" y="78" class="s">top 300 Great League entries by PvPoke weight</text>
+<text x="32" y="94" class="s">every legal moveset (12,335) scouted 1-v-1</text>
+<text x="32" y="110" class="s">vs 300 opponents × 5 shield scenarios</text>
+<text x="32" y="126" class="s">keep ≤ 5 movesets per entry → 1,498 variants</text>
+<text x="32" y="144" class="m">18.4 M single-Pokémon simulations, cached in chunks</text>
+
+<rect x="20" y="170" width="300" height="118" rx="10" class="box"/>
+<text x="32" y="192" class="t">Opponent meta (meta.cjs)</text>
+<text x="32" y="212" class="s">observed YouTube opponent teams (usage file),</text>
+<text x="32" y="228" class="s">time-decayed, creator-capped, shrunk toward</text>
+<text x="32" y="244" class="s">PvPoke weights^1.25 (independent + coherent draws)</text>
+<text x="32" y="260" class="s">recommended movesets for every opponent</text>
+<text x="32" y="278" class="m">share = min(.8, W / (W + prior strength))</text>
+
+<text x="360" y="26" class="lane">B · SEARCH ROUND (repeats until 80% of the time budget)</text>
+<rect x="350" y="36" width="810" height="300" rx="14" class="loop"/>
+<rect x="364" y="48" width="250" height="112" rx="10" class="acc"/>
+<text x="376" y="70" class="t">1 · Propose 12,000 unseen teams</text>
+<text x="376" y="90" class="s">every moveset / lead neighbour of the</text>
+<text x="376" y="106" class="s">top 8 incumbents, then 60% mutations</text>
+<text x="376" y="122" class="s">of known leaders, 40% fresh random teams</text>
+<text x="376" y="140" class="m">propose.cjs · Species Clause enforced</text>
+
+<rect x="634" y="48" width="250" height="112" rx="10" class="acc"/>
+<text x="646" y="70" class="t">2 · Predict with the ensemble</text>
+<text x="646" y="90" class="s">12 networks score each team against</text>
+<text x="646" y="106" class="s">256 fixed reference opponents →</text>
+<text x="646" y="122" class="s">mean expected score ± disagreement</text>
+<text x="646" y="140" class="m">1.5 s for 12,000 teams on 12 cores</text>
+
+<rect x="904" y="48" width="242" height="112" rx="10" class="acc"/>
+<text x="916" y="70" class="t">3 · Pick 24 to simulate</text>
+<text x="916" y="90" class="s">12 highest predicted mean</text>
+<text x="916" y="106" class="s">6 highest mean + disagreement</text>
+<text x="916" y="122" class="s">5 uniform random · 1 retest</text>
+<text x="916" y="140" class="m">retest: leader every 3rd round, else a rival</text>
+
+<rect x="634" y="176" width="512" height="146" rx="10" class="acc"/>
+<text x="646" y="198" class="t">4 · Simulate full 3-v-3 battles (12 CPU workers)</text>
+<text x="646" y="218" class="s">all 24 teams play the same 8 opponent fixtures; the promising half</text>
+<text x="646" y="234" class="s">(cautious mean + disagreement) plays all 64 → 864 battles instead of 1,536</text>
+<text x="646" y="252" class="s">both sides: PvPoke engine with the v4 observation-limited controller</text>
+<text x="646" y="268" class="s">(sees only revealed Pokémon, visible HP %, public shields and clocks;</text>
+<text x="646" y="284" class="s">imagines hidden backlines from the meta prior; bounded switch lookahead)</text>
+<text x="646" y="304" class="m">engine-v4.cjs · lookahead-v4.js · observations.js · seeded, reproducible</text>
+
+<rect x="364" y="176" width="250" height="146" rx="10" class="acc"/>
+<text x="376" y="198" class="t">5 · Fit 12 bootstrapped networks</text>
+<text x="376" y="218" class="s">labels = one battle outcome each</text>
+<text x="376" y="234" class="s">(win 1, draw ½, loss 0), ≤ 48,000 per fit,</text>
+<text x="376" y="250" class="s">6 Adam epochs, ~20% of team identities</text>
+<text x="376" y="266" class="s">held out for the error diagnostics</text>
+<text x="376" y="284" class="s">checkpoint after every batch (resumable)</text>
+<text x="376" y="304" class="m">interaction.cjs · fit-interaction.cjs · 20–25 s per fit</text>
+
+<text x="20" y="372" class="lane">C · SEALED EVALUATION (last 20% of the budget)</text>
+<rect x="20" y="382" width="360" height="104" rx="10" class="out"/>
+<text x="32" y="404" class="t">Screening</text>
+<text x="32" y="424" class="s">the 24 best training teams (cautious score)</text>
+<text x="32" y="440" class="s">each play the same 512 new fixtures (fresh seeds)</text>
+<text x="32" y="456" class="s">→ the primary team and 7 more finalists are</text>
+<text x="32" y="472" class="s">chosen here, BEFORE the final test</text>
+
+<rect x="410" y="382" width="370" height="104" rx="10" class="out"/>
+<text x="422" y="404" class="t">Final test</text>
+<text x="422" y="424" class="s">8 finalists + 12 baseline teams (4 random, 4 weight-</text>
+<text x="422" y="440" class="s">sampled best moves, 4 greedy coverage) play another</text>
+<text x="422" y="456" class="s">common 512-fixture panel; paired bootstrap intervals;</text>
+<text x="422" y="472" class="s">simultaneous bands across finalists</text>
+
+<rect x="810" y="382" width="350" height="104" rx="10" class="out"/>
+<text x="822" y="404" class="t">Report</text>
+<text x="822" y="424" class="s">report.pvpteams.json.gz: every team, every battle</text>
+<text x="822" y="440" class="s">(opponents, seed, score), history, meta description,</text>
+<text x="822" y="456" class="s">simulator and data fingerprints — no model weights,</text>
+<text x="822" y="472" class="s">no machine paths</text>
+
+<text x="20" y="522" class="lane">D · IN THE SITE (PvPoke Pro › Team Rankings)</text>
+<rect x="20" y="532" width="560" height="120" rx="10" class="box"/>
+<text x="32" y="554" class="t">Viewer</text>
+<text x="32" y="574" class="s">rankings with training / screening / test scores · search syntax over teams and leads</text>
+<text x="32" y="590" class="s">Search Performance charts (proposal quality, held-out error, baselines)</text>
+<text x="32" y="606" class="s">battle replay: the same engine and seed rerun in a Web Worker, checked against the</text>
+<text x="32" y="622" class="s">saved score; HP graphs for all six Pokémon; paired team comparisons</text>
+<text x="32" y="642" class="m">neural.js · neural-portable.js · team-browser.js · team-replay-v4-*.js</text>
+
+<rect x="610" y="532" width="550" height="120" rx="10" class="box"/>
+<text x="622" y="554" class="t">Guarantees and limits</text>
+<text x="622" y="574" class="s">every battle is seeded and replayable; fingerprints refuse mixing engines or data</text>
+<text x="622" y="590" class="s">scores are simulated expected scores against the modelled meta, not human win rates</text>
+<text x="622" y="606" class="s">the surrogate guides the search; only fresh simulations decide the winner</text>
+<text x="622" y="622" class="s">ensemble disagreement is a search heuristic, not a confidence interval</text>
+<text x="622" y="642" class="m">PERFORMANCE.md · REFINEMENT_FINDINGS.md · training/next/OBSERVATION_CONTROLLER.md</text>
+
+<path class="a" d="M320 95 L364 95"/>
+<path class="a" d="M320 229 C340 229 340 250 364 250"/>
+<path class="a" d="M614 104 L634 104"/>
+<path class="a" d="M884 104 L904 104"/>
+<path class="a" d="M1025 160 L1025 176"/>
+<path class="a" d="M634 250 L614 250"/>
+<path class="a" d="M489 176 L489 160"/>
+<path class="a" d="M400 336 C400 360 340 360 340 382"/>
+<path class="a" d="M380 434 L410 434"/>
+<path class="a" d="M780 434 L810 434"/>
+<path class="a" d="M985 486 L985 532"/>
+<path class="a" d="M985 486 C985 510 300 500 300 532"/>
+<text x="600" y="680" class="m" text-anchor="middle">One search round labels 864 battles; an 8-hour run on a 12-core M2 Max completes roughly 300 rounds before screening and testing begin.</text>
+</svg>

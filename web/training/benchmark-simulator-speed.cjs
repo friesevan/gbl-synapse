@@ -2,12 +2,21 @@
 'use strict';
 const {performance}=require('node:perf_hooks'),path=require('node:path'),fs=require('node:fs');
 const {BattlePool,defaultWorkers}=require('./pool.cjs'),{BattleRunner}=require('./runner.cjs');
-const {simulatorFixtures}=require('./simulator-fixtures.cjs');
+const {simulatorFixtures,searchFixtures}=require('./simulator-fixtures.cjs');
 const median=xs=>xs.slice().sort((a,b)=>a-b)[Math.floor(xs.length/2)];
 async function main(){
- const n=Number(process.argv[2]||192),repeats=Number(process.argv[3]||3),workers=Number(process.argv[4]||defaultWorkers());
- if(!Number.isInteger(n)||n<8||!Number.isInteger(repeats)||repeats<1||!Number.isInteger(workers)||workers<1)throw Error('Usage: node training/benchmark-simulator-speed.cjs [battles>=8] [repeats>=1] [workers>=1] [output.json]');
- const jobs=simulatorFixtures(n),output={createdAt:new Date().toISOString(),node:process.version,workers,battlesPerRun:n,repeats,measurements:[],warning:'Paired full-battle benchmark, including worker startup/recycling. Frozen-reference event parity is tested separately. Hardware load affects throughput; no neural-quality gain is implied.'};
+ // Positional: [battles] [repeats] [workers] [output.json]. Flags:
+ // --fixtures legacy|search (default legacy, the fixture set of earlier tables);
+ // search builds belief priors and opponents as search.cjs does, from --pool
+ // (else the bundled rankings) and optionally --usage-file with
+ // --usage-half-life-days, --usage-as-of and --usage-prior-strength.
+ const args=process.argv.slice(2),flags={},positional=[];
+ for(let i=0;i<args.length;i++){if(args[i].startsWith('--')){const [k,v]=args[i].slice(2).split('=');flags[k]=v??args[++i];}else positional.push(args[i]);}
+ const n=Number(positional[0]||192),repeats=Number(positional[1]||3),workers=Number(positional[2]||defaultWorkers()),out=positional[3],kind=flags.fixtures||'legacy';
+ if(!Number.isInteger(n)||n<8||!Number.isInteger(repeats)||repeats<1||!Number.isInteger(workers)||workers<1||!['legacy','search'].includes(kind))throw Error('Usage: node training/benchmark-simulator-speed.cjs [battles>=8] [repeats>=1] [workers>=1] [output.json] [--fixtures legacy|search] [--pool FILE] [--usage-file FILE --usage-half-life-days N --usage-as-of DATE --usage-prior-strength N]');
+ const prepared=flags.pool?JSON.parse(fs.readFileSync(path.resolve(flags.pool))):null;
+ const jobs=kind==='search'?searchFixtures(n,{pool:prepared,usageFile:flags['usage-file']||'',usageHalfLifeDays:Number(flags['usage-half-life-days']||0),usageAsOf:flags['usage-as-of']||'',usagePriorStrength:Number(flags['usage-prior-strength']??500)}):simulatorFixtures(n);
+ const output={createdAt:new Date().toISOString(),node:process.version,workers,battlesPerRun:n,repeats,fixtures:kind==='search'?{kind,pool:prepared?{path:flags.pool,hash:prepared.hash}:null,usageFile:flags['usage-file']||null,beliefTeams:jobs[0][4].beliefTeams.length}:{kind},loadAverage:require('node:os').loadavg(),measurements:[],warning:'Paired full-battle benchmark, including worker startup/recycling. Frozen-reference event parity is tested separately. Hardware load affects throughput; no neural-quality gain is implied.'};
  let reference;
  for(let r=0;r<=repeats;r++)for(const optimized of r%2?[true,false]:[false,true]){
   const pool=new BattlePool(workers,()=>new BattleRunner({workerFile:path.join(__dirname,'battle-worker-v4.cjs'),heapMb:192}));
@@ -24,7 +33,8 @@ async function main(){
  const results=optimized=>output.measurements.filter(m=>!m.warmup&&m.optimized===optimized);
  output.baselineMedianSeconds=median(results(false).map(m=>m.seconds));output.optimizedMedianSeconds=median(results(true).map(m=>m.seconds));output.speedup=output.baselineMedianSeconds/output.optimizedMedianSeconds;
  output.baselineBattlesPerSecond=n/output.baselineMedianSeconds;output.optimizedBattlesPerSecond=n/output.optimizedMedianSeconds;
- if(process.argv[5])fs.writeFileSync(path.resolve(process.argv[5]),JSON.stringify(output,null,2)+'\n');
+ output.loadAverageAfter=require('node:os').loadavg();
+ if(out)fs.writeFileSync(path.resolve(out),JSON.stringify(output,null,2)+'\n');
  console.log(JSON.stringify({baselineBattlesPerSecond:output.baselineBattlesPerSecond,optimizedBattlesPerSecond:output.optimizedBattlesPerSecond,speedup:output.speedup}));
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

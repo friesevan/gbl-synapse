@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 440" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>The observation-limited battle controller (v4): what each side may see, what it must imagine, and how it decides</title>
+<style>
+.box{fill:var(--sunken,#f3f6f9);stroke:var(--line,#c9d3dc);stroke-width:1.3}
+.acc{fill:var(--accent-tint,#e4f1fb);stroke:var(--accent-line,#86b7e0)}
+.bad{fill:var(--panel,#ffffff);stroke:var(--bad-text,#c0392b);stroke-width:1.4;stroke-dasharray:5 4}
+.t{font-size:13.5px;font-weight:700;fill:var(--text,#1d2b36)}
+.s{font-size:11.5px;fill:var(--text-2,#3d4f5e)}
+.m{font-size:10.5px;fill:var(--muted,#6b7a88)}
+.a{stroke:var(--text-2,#3d4f5e);stroke-width:1.5;fill:none;marker-end:url(#teams-ctl-arrow)}
+</style>
+<defs><marker id="teams-ctl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-2,#3d4f5e)"/></marker></defs>
+
+<rect x="20" y="30" width="330" height="170" rx="10" class="box"/>
+<text x="32" y="52" class="t">Visible to the policy (public state)</text>
+<text x="32" y="74" class="s">own Pokémon: moves, HP, energy, IVs, buffs, cooldowns</text>
+<text x="32" y="90" class="s">opponent species that have appeared and their forms</text>
+<text x="32" y="106" class="s">opponent HP bar, rounded to 1%</text>
+<text x="32" y="122" class="s">shield counts and switch clocks of both sides</text>
+<text x="32" y="138" class="s">moves the opponent has actually used (after they resolve)</text>
+<text x="32" y="154" class="s">energy estimate from counted fast and charged moves</text>
+<text x="32" y="176" class="m">observations.js · perfect counting, no lag or misreads yet</text>
+
+<rect x="20" y="230" width="330" height="150" rx="10" class="bad"/>
+<text x="32" y="252" class="t">Withheld (known only to the simulator)</text>
+<text x="32" y="274" class="s">unrevealed backline Pokémon and their moves</text>
+<text x="32" y="290" class="s">the opponent’s exact energy, IVs, attack/defence, max HP</text>
+<text x="32" y="306" class="s">the move the opponent is about to throw, or has queued</text>
+<text x="32" y="322" class="s">the charged move awaiting the shield decision</text>
+<text x="32" y="344" class="m">tests change hidden state and check decisions stay identical;</text>
+<text x="32" y="360" class="m">poisoned hidden arguments throw on any access</text>
+
+<rect x="400" y="30" width="360" height="170" rx="10" class="acc"/>
+<text x="412" y="52" class="t">Beliefs about what is hidden</text>
+<text x="412" y="74" class="s">unknown moves start as the published recommended set;</text>
+<text x="412" y="90" class="s">an observed move replaces its slot</text>
+<text x="412" y="106" class="s">backline: 3 sampled lineups from a 2,048-team bank drawn</text>
+<text x="412" y="122" class="s">from the same opponent meta, filtered to the revealed</text>
+<text x="412" y="138" class="s">species (fallback: weighted marginal draws)</text>
+<text x="412" y="154" class="s">unknown IVs: default initialisation</text>
+<text x="412" y="176" class="m">--belief-samples 3 · the bank is saved in the report for exact replay</text>
+
+<rect x="400" y="230" width="360" height="150" rx="10" class="acc"/>
+<text x="412" y="252" class="t">Decisions</text>
+<text x="412" y="274" class="s">switch: every 4 turns (or at low HP), compare staying with each</text>
+<text x="412" y="290" class="s">bench member; roll each imagined lineup 24 steps forward,</text>
+<text x="412" y="306" class="s">take the opponent’s worst-case reply, average over lineups;</text>
+<text x="412" y="322" class="s">switch only if it beats staying by ≥ 0.08</text>
+<text x="412" y="338" class="s">attack: cheapest useful charged move while shields remain,</text>
+<text x="412" y="354" class="s">else energy-efficient or lethal · shield: expected damage ≥ 35% HP</text>
+<text x="412" y="374" class="m">lookahead-v4.js · seeded by own state + public view only</text>
+
+<rect x="810" y="30" width="350" height="350" rx="10" class="box"/>
+<text x="822" y="52" class="t">Why this controller, and its cost</text>
+<text x="822" y="74" class="s">PvPoke’s Champion AI reads the opponent’s real moves and</text>
+<text x="822" y="90" class="s">energy. A team scored under full information can win on</text>
+<text x="822" y="106" class="s">counter-switches no human could make, so the ranking</text>
+<text x="822" y="122" class="s">would reward the wrong teams. v4 draws the line at what a</text>
+<text x="822" y="138" class="s">player sees on screen.</text>
+<text x="822" y="164" class="s">Terminal value of a rollout (side A − side B):</text>
+<text x="822" y="182" class="s">HP×(1 + 0.18·energy) of living members</text>
+<text x="822" y="198" class="s">+ 0.32 × shields  + 0.24 × roster coverage</text>
+<text x="822" y="214" class="s">− 0.12 × switch-lock cost</text>
+<text x="822" y="240" class="s">Costs: more simulation per battle (bounded by headless</text>
+<text x="822" y="256" class="s">mode and branch caches); a 128-fixture parity check</text>
+<text x="822" y="272" class="s">gave 50.8% vs the old controller — realism, not proven</text>
+<text x="822" y="288" class="s">strength. Labels from v1–v3 cannot be reused.</text>
+<text x="822" y="314" class="m">Open: delayed catches, mixed strategies, full-roster</text>
+<text x="822" y="330" class="m">continuation, learned terminal value, realistic counting</text>
+<text x="822" y="346" class="m">errors and lag; several policy styles for stress tests</text>
+<text x="822" y="368" class="m">training/next/OBSERVATION_CONTROLLER.md</text>
+
+<path class="a" d="M350 115 L400 115"/>
+<path class="a" d="M580 200 L580 230"/>
+<path class="a" d="M760 305 L810 305"/>
+<text x="590" y="420" class="m" text-anchor="middle">Both teams in every simulated battle use this same controller, so neither side has an information advantage.</text>
+</svg>

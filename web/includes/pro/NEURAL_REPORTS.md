@@ -15,6 +15,113 @@ Read [the current guide](../../training/team-search/README.md) and
 The exact verified simulator implementation preserves historical v4 replay IDs;
 changed search settings require a new run or compatible v4 warm-start.
 
+## Selection protocol in a report
+
+`search` records the optional safeguards of the run: `minLeadFixtures` (a team with fewer fixtures than this ranked after every team with that many, so it could neither lead, be the retest incumbent nor be screened; `search.selection` describes what it did: teams at or above the threshold, screening candidates, whether the ranking fell back), `confirmationOpponents` (the planned size of the sealed confirmation panel) and `validationOpponentsMax` (the planned larger final panel). They are absent when off.
+
+`finalPanel` keeps `requestedFixtures` (the planned base panel), `completedFixtures` (the total, including extension steps) and `complete`, and, when the final panel was to grow, `extension`: `baseFixtures`, `requestedMax`, `step` (64), `completedFixtures`, `steps[]` (`fixtures`, `added`, `requested`, `seconds`, `battles`) and `stoppedBecause` (`target-reached`, `time`, `stopped`, `base-incomplete`).
+
+`confirmation` sits beside `finalistComparisons` and is `null` when no challenger needed confirming (older reports lack it). When present it describes one sealed panel: `seed`, `requestedFixtures`, `completedFixtures`, `complete`, `primary` (three indexes into `table.variants`), `finalPanelFixtures`, `triggers[]` (what the final panel found: `stage` `final-panel` or `extended-final-panel`, `fixtures`, `challengers[]` with `evidence` of kind `finalist` or `previous-champion`), `teams[]` (`team`, `role` `primary` or `challenger`, `kind`, `finalScore`, the sealed-panel `score`, `games`, `wins`, `draws`, `losses`), `comparisons[]` (one per challenger: `delta` = primary minus challenger, `interval95` for that pair alone, `simultaneous95` from one band over every pair of the confirmation teams, `verdict` `primary-better`, `challenger-better` or `unresolved`, `confirmed`), `pairs[]` (every pair under the same band: `a`, `b`, `delta` = a minus b, `simultaneous95`, `verdict` `a-better`, `b-better` or `unresolved`), `outcome` (`challenger-confirmed`, `not-confirmed`, `incomplete`), `summary`, `method`. The screening-selected primary stays `table.rows[].primary` whatever the outcome. The per-fixture scores stay in the run's `checkpoint.json`; `neural-report-core.js` validates the block.
+
+## Previous champions in a report
+
+A run started with `--champions` (the launcher adds the published v1 and v3 primaries and every completed
+matching run automatically) tests earlier winning teams on its final panel as a fourth baseline group. In the
+report this is `baselines["previous-champions"]` (the same shape as the other groups: `delta`, `interval95`,
+`fixtures`, `baselineTeams`) plus an optional top-level `champions` block, `null` when the run had none:
+
+- `champions.teams[]`: `team` (three indexes into `table.variants`, lead first), `label`, `sources[]`
+  (`source`, `role` primary or finalist, `rank`, the source's own `finalScore`, which is not comparable);
+- `champions.skipped[]`: compositions not mapped into the run's pool, with `reason` and `detail`;
+- `champions.comparisons`: `outcome` (`primary-better`, `tie-rediscovered`, `unresolved`, `champion-better`),
+  `summary`, `fixtures`, and `entries[]` with each champion's final-panel `score`, `delta` (primary minus
+  champion), simultaneous `interval95` and `verdict` (`primary-better`, `challenger-better`, `unresolved`,
+  `same-team`).
+
+Champion teams are ordinary rows in `table.rows` with `baseline: "previous-champions"`, so their matchups can be
+inspected and replayed like any other tested team. The validator in `neural-report-core.js` checks the block when it is
+present; reports without it are unchanged and remain valid. See
+[the evaluation protocol](../../training/team-search/EVALUATION_PROTOCOL.md) for how to read the comparison.
+
+## Meta sensitivity in a report
+
+A run started with `--sensitivity-fixtures N` (default 128; 0 disables) re-simulates its final-tested finalists, after the
+final test, under alternative opponent metas on sealed panels of their own. The report carries it as the optional top-level
+field `sensitivity` beside `finalPanel` (`null` or absent when the run had none; schema stays 1):
+
+- `requestedFixtures`, `fixtures` (the common completed prefix, equal on every meta), `complete`, `groups` (`finalists`, or
+  `all` when baseline and previous-champion teams were included), `resamples`, `seed`, `method`;
+- `metas[]`: `id` (`independent-1.25`, `coherent`, `observed`, `observed-without-top-creator`, `independent-1.0`,
+  `independent-1.5`; the observed ones need a usage file), `label`, `mode`, `weightPower`, `observedShare`, `seed` (derived from
+  the validation seed, distinct from every other panel), `fixtures`, `components` (fixtures drawn per meta component), and for
+  observed metas `observedCount`, `distinctTeams`, `creators`; the leave-one-creator-out meta carries the removed creator's
+  weight share and a short hash, never the name;
+- `teams[]`: `team` (three indexes into `table.variants`, lead first), `kind` (`finalist`, or a baseline group), `primary`,
+  `finalScore` (the run meta's final-panel score, for reference only), `scores[]` (mean per meta, in `metas` order),
+  `standardErrors[]`, `ranks[]` (1 = best among the listed teams, per meta), `mean`, `min` and `minMeta`, `max` and `maxMeta`,
+  `spread` (max minus min), `spreadInterval95` (bootstrap over fixtures within each meta), `noiseSpread` (the median spread
+  that fixture noise alone would give if the team scored the same under every meta) and `meanMinusSpread` (recorded for study;
+  it is not used for selection);
+- `summary.topByMeta[]`: the index in `teams` of the best team on each meta.
+
+Mean, min and spread are over the alternative metas only. The spread of a team measured on 128 fixtures per meta contains
+roughly 7 to 9 points of fixture noise (4 to 5 at 512), so read it against `noiseSpread`. Scores under different metas are not comparable as
+strength. The primary stays the screening winner. The validator in `neural-report-core.js` checks the block when present;
+`neural-portable.js` shows it as a table in Search Performance and as one line under each finalist's bar
+("across 6 metas: min 62.5%, spread 14.1 points"). `training/team-search/sensitivity.cjs` re-runs the panel for a finished
+run or report; see its header and [the evaluation protocol](../../training/team-search/EVALUATION_PROTOCOL.md).
+## Controller options and opponent policy styles in a report
+
+A run started with `--reply-model weighted` (and `--reply-temperature`) or `--rollout-continuation N` uses a different
+controller ([OBSERVATION_CONTROLLER.md](../../training/next/OBSERVATION_CONTROLLER.md), "Controller options"). Its
+report carries the options in `engineOptions` (`replyModel`, `replyTemperature`, `rolloutContinuation`) and its
+`mechanicsHash` is the v4 id plus a suffix such as `+controller:replyModel=weighted,replyTemperature=0.25`. The v4
+adapter (`team-replay-v4-manifest.js`, `controllerSuffix`) replays such a report only when the suffix matches the
+options; older adapters refuse it. Reports without options are unchanged. `engineOptions.controllerTeams` (per-side
+controllers) is refused.
+
+A run started with `--policy-panel N` adds an optional top-level `policyPanel` block (absent otherwise): the finalists,
+after the final test, replayed on N common fixtures once per opponent style while they keep the run's controller.
+
+- `policyPanel.styles[]`: `name` and `label` (`default`, `weighted-replies`, `no-voluntary-switches`,
+  `eager-switches`, `always-shield`, `never-shield`) and the opponent's `controller` options;
+- `policyPanel.fixtures`: `requested`, `completed` (a common prefix when the deadline stopped it), `seed`,
+  `exploratory` (fewer than 256);
+- `policyPanel.own`: the finalists' controller (`label`, `controller`);
+- `policyPanel.teams[]` (primary first): `team` (indexes into `table.variants`), `label`, `scores` per style name,
+  `mean`, `min`, `max`, `spread` (best minus worst style), `spreadInterval95` (simultaneous paired band),
+  `bestStyle`, `worstStyle`, and `versusDefault[]` (`style`, `delta` = style minus default, `interval95`, `verdict`).
+
+The viewer adds a caption line to the finalists card and a table to Search Performance; `neural-report-core.js`
+validates the block when it is present. The panel never affects selection.
+
+## Opponent movesets in a report
+
+Two optional additions (a report without them is unchanged; schema stays 1).
+
+**Observed-moveset opponents** (a run started with `--observed-moves`). Opponents normally play the pool's recommended
+moveset, so `table.opponents` is the pool's species in order and a matchup names an opponent by its species index. With
+`--observed-moves` an observed team's members that play another moveset get a row of their own, appended after the pool's
+species: the same `speciesId` and `speciesName`, `moveset` = the moves the battle was simulated with, `recommended` = the
+species' recommended moveset. Matchups refer to those rows by index, so the browser replays the moves used. Members without
+an observation keep their species index. `table.opponents` may hold up to 2,000 rows.
+
+**`alternatePanel`** (a run started with `--alternate-panel N`; absent otherwise): the finalists, after the final test,
+replayed on N sealed fixtures of the run's own meta three ways on the same opponent species, order and battle seeds.
+
+- `alternatePanel.reference`: `id` (`run`) and `label`, the arm in which opponents play the movesets the run models;
+- `alternatePanel.levels[]`: `id` (`alternate-1`, `alternate-2`), `rank`, `label`, and what the swap changed: `members`,
+  `changedMembers`, `changedMemberShare`, `changedFixtures`, `changedFixtureShare`. Level k gives every opponent member its
+  k-th best scouted moveset other than the recommended one (a species with fewer alternates repeats its last);
+- `alternatePanel.requestedFixtures`, `fixtures` (completed whole fixtures), `complete`, `exploratory` (fewer than 256),
+  `seed`, `method`;
+- `alternatePanel.teams[]` (primary first): `team` (indexes into `table.variants`), `primary`, `finalScore`, `scores`
+  per arm id, `deltas[]` (`level`, `delta` = arm minus run, `interval95` = a paired band simultaneous over the arms,
+  `verdict` `higher` / `lower` / `unresolved`), `worstLevel`, `worstDelta`, `bandRadius`.
+
+The viewer adds a caption line to the finalists card (`neural-portable.js` `alternatePanelCaption`); `neural-report-core.js`
+validates the block when it is present. The panel never affects selection.
+
 The following v3 instructions are historical.
 
 # Neural team search v3: run, import and transfer
@@ -114,6 +221,8 @@ The October 10 refined run finished at 6:51 p.m. Eastern, exit code 0, with 265,
 The performance view computes its analysis from the loaded report, rather than using a fixed success claim. The final baseline chart compares the preselected primary with baseline group means (primary score minus the saved paired delta), on the common final panel. Each baseline group contains only a few teams; this is not an equally budgeted optimizer comparison.
 
 New-team suggestion curves use a trailing, team-count-weighted average of up to ten rounds. Early/middle/late summaries exclude initialization and split neural rounds into quarters/half. The leading training estimate is the saved `bestTraining` field for the selection leader; it is not a monotonic best-so-far curve or independent validation. Held-out prediction error is interpreted relative to the constant-prediction baseline in the same round. Changes across rounds cannot be read as a controlled learning curve because the held-out population changes.
+
+Under the held-out error chart the viewer states how far the ensemble spread is from an error bar. It reads `diagnostics.uncertaintyCalibration` of the latest round that recorded one (also present in every `history[].diagnostics`): `k80` and `k90` are the smallest multiples of the spread that contained 80% and 90% of the held-out teams' errors, `coverage1` is the share of teams inside ±1 × spread, `spearman` says whether a larger spread went with a larger error, and `wellMeasured` repeats it for teams with at least 64 fixtures. The field is optional (older reports lack it, and it is `null` while fewer than 10 teams are held out), every number is bounded by the validator in `neural-report-core.js`, and a held-out team's error also contains the sampling noise of its own simulated score, so a large multiplier does not by itself mean a poor model.
 
 Finalist bars show common-panel scores; the simultaneous paired uncertainty table determines whether a difference is resolved. Draws count as half a win. Simulated scores are conditional on the estimated meta, controller and data snapshot, not measured live-player win rates. Historical reports remain separate.
 

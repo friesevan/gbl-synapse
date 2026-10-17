@@ -63,16 +63,24 @@ function outline(img,x0,y0,y1,s,P=BAR){const w=img.width,h=img.height,d=img.data
  const top=band(y0-10*s,y0-2*s);return top>=P.frameMin?top:Math.max(top,band(y1+2*s,y1+10*s));}
 // Kept for callers that measure a known bar: the values come from findBars.
 const measureBar=(img,bar)=>({fill:bar.fill,trail:bar.trail});
-// Your bar starts near the left edge (x ≈ 50 of 886); the opponent's starts mid-screen (x ≈ 300–500).
+// Your bar starts near the left edge (x ≈ 50 of 886); the opponent's starts mid-screen (x ≈ 400–590).
 // Bench tiles and buttons carry small bars elsewhere and are ignored. The clearest outline wins.
-// Wide, tablet-shaped screens (width/height ≥ 0.6 after cropping; phones measure 0.39–0.57) lay the
-// battle out differently (2026-10-11, bar positions on 5 wide and 4 phone videos): your bar starts at
-// x ≈ 110–145 instead of 50–80, outside the phone window, so your HP was lost; and in a charged-attack
-// cutscene the attacker's bar is drawn centred (x ≈ 320, as on phones) whoever attacks, inside the
-// opponent's window, so your cutscene bar was read as the opponent's (aura and HP). On wide screens your
-// window is x 30–230 and a centred bar belongs to neither side. Phone screens keep the original rule.
+// Where your bar starts depends on the screen's shape (width/height after cropping) and on the Pokémon
+// (2026-10-13, each of your Pokémon's usual x0 on 19 videos at 0.45–0.75). Phones taller than 16:9
+// (0.45–0.544) keep it within 52–78, most at the left limit (≈ 55). From 16:9 (0.56) up it moves right as
+// the screen widens, more for some Pokémon than others (0.56: 56–150, Zekrom 122, Lunala 150; 0.58–0.64:
+// 56–140; 0.67: 126–142; 0.75: 154–160), outside the phone window, so your HP was lost. It jumps at 16:9
+// (Zekrom 76 at 0.531) and differs between devices of one shape, so the rule is a cutoff, not a window
+// that scales with the aspect. In a charged-attack cutscene the attacker's bar is drawn centred (x ≈ 320)
+// whoever attacks, inside the opponent's window: your cutscene bar was read as the opponent's (aura, HP),
+// and where the opponent's own bar showed less often the cutscene bar became their series (false 13–29%
+// "hits"). Screens ≥ 0.55 use x 30–230 for your bar and skip centred bars. Phone screens keep the original
+// windows; their HP series (track) skip centred bars too, but assignBars (the aura box and effect-text
+// strip) still counts a centred bar as the opponent's there (2026-10-13, 92 labelled phone videos
+// re-extracted: in track it removed 696 matchups of cutscene-bar series and held-out fast moves went
+// 169 → 171/196; in assignBars it cost the Shadow classifier 4 held-out calls and log-loss, so it stays).
 // Outline colour was measured too (white vs light blue) but differs by video and encoding, so it isn't used.
-const WIDE_ASPECT=.6,BAR_WIDE={...BAR,sides:{my:[30,230],opponent:[230,600]}};
+const WIDE_ASPECT=.55,BAR_WIDE={...BAR,sides:{my:[30,230],opponent:[230,600]}};
 const isWide=(width,height)=>height>0&&width/height>=WIDE_ASPECT;
 // findBars settings for a frame of this size (height = the analysed screen's full height).
 const barSettings=(width,height)=>isWide(width,height)?BAR_WIDE:BAR;
@@ -158,11 +166,17 @@ function cadence(list){const gaps=[];for(let i=1;i<list.length;i++){const g=list
  const [turns,repeats]=[...counts].sort((a,b)=>b[1]-a[1]||a[0]-b[0])[0];return {turns,repeats,gaps};}
 // Follows each side's bar through a window of frames: the real bar keeps the same left edge, while
 // effects and scenery that happen to match come and go. frames: [{t, bars}] from findBars.
-// Wide screens (assignBars): your window is x 30–230 and centred cutscene bars are skipped.
-function track(frames,width,height=0){const s=width/REF_W,out={my:[],opponent:[]},wide=isWide(width,height),use=b=>!wide||!centred(b,width);
+// Screens ≥ 0.55 (assignBars): your window is x 30–230. Centred cutscene bars are skipped on every screen:
+// the attacker's bar (yours about as often as theirs) is not one side's HP.
+function track(frames,width,height=0){const s=width/REF_W,out={my:[],opponent:[]},wide=isWide(width,height),use=b=>!centred(b,width);
  for(const [side,lo,hi] of wide?[['my',30,229.99],['opponent',230,600]]:[['my',30,80],['opponent',230,600]]){const xs=new Map();for(const f of frames)for(const b of f.bars)if(use(b)&&b.x0>=lo*s&&b.x0<=hi*s){const k=Math.round(b.x0/(3*s));xs.set(k,(xs.get(k)||0)+1);}
   if(!xs.size){out[side]=frames.map(()=>null);continue;}const best=[...xs].sort((a,b)=>b[1]-a[1])[0][0]*3*s;let lastY=null;
   out[side]=frames.map(f=>{const c=f.bars.filter(b=>use(b)&&Math.abs(b.x0-best)<=4*s).sort((a,b)=>(lastY===null?0:Math.abs(a.y0-lastY)-Math.abs(b.y0-lastY))||(b.y1-b.y0)-(a.y1-a.y0));const b=c[0];if(!b)return null;lastY=b.y0;return {t:f.t,fill:b.fill,trail:b.trail};});}
  return out;}
-const api={BAR,BAR_WIDE,WIDE_ASPECT,barSettings,phoneBars,BAND,cls,outline,hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
+// The centred cutscene bar's readings in a window of frames: [[t, fill, y0], …] (every centred bar of every frame;
+// y0 in 886-wide units). track() leaves these out of both sides' HP, but the defender's bar, framed alone as it is
+// hit, shows a knockout in the final cutscene: run-node.cjs saves the battle's last seconds (b.cutsceneBar) and
+// core.js inferResult reads them (rule 'knockout').
+function centredReadings(frames,width){const s=width/REF_W,out=[];for(const f of frames)for(const b of f.bars||[])if(centred(b,width))out.push([+f.t.toFixed(1),+b.fill.toFixed(3),Math.round(b.y0/s)]);return out;}
+const api={BAR,BAR_WIDE,WIDE_ASPECT,barSettings,phoneBars,BAND,cls,outline,hpTimeline,findBars,measureBar,assignBars,track,hits,cadence,chargedDamage,centredReadings,effectBox,effectSig,effectShape,effectKind};if(typeof module!=='undefined')module.exports=api;root.MetaHp=api;
 })(typeof window==='undefined'?globalThis:window);

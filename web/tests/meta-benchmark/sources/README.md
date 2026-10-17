@@ -91,6 +91,7 @@ The script is a polite client: on a 429 or a "confirm you're not a bot" response
 - **Stop safely**: press Ctrl-C, or run `touch ~/Desktop/Projects/PoGo\ Recorder/src/yt-harvest/STOP`. State and registry are saved on the way out.
 - **Resume**: run the same command again. Finished work is never fetched again. Interrupted metadata, download and extraction work goes back on the queue. Date-sorted searches repeat after 12 h, channels after 24 h, and relevance searches after 7 days.
 - **Useful flags**:
+  - `--focus-cup ID --focus-since YYYY-MM-DD [--focus-only]`: put one format's searches first (format ids from `data/gbl-schedule.json`, e.g. `little`) and download and analyse its videos first, or only them with `--focus-only`. A video matches when its league guess is that format or its title names it; `--focus-since` limits matches to uploads from that date (the cup's period). Example (2026-10-15): `--focus-cup little --focus-since 2026-10-13 --focus-only` for Little Cup: Great League Edition.
   - `--no-extract`: download only.
   - `--cc-only`: the old rule (CC licence or written permission only).
   - `--max-downloads 0`: metadata only.

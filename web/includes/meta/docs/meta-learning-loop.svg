@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 400" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>The learning loop: uncertain detections become questions; human answers refit the models; held-out gates decide what the model may settle on its own</title>
+<style>
+.box{fill:var(--sunken,#f3f6f9);stroke:var(--line,#c9d3dc);stroke-width:1.3}
+.acc{fill:var(--accent-tint,#e4f1fb);stroke:var(--accent-line,#86b7e0)}
+.hum{fill:var(--panel,#ffffff);stroke:var(--accent,#2f7fc1);stroke-width:1.6}
+.t{font-size:13.5px;font-weight:700;fill:var(--text,#1d2b36)}
+.s{font-size:11.5px;fill:var(--text-2,#3d4f5e)}
+.m{font-size:10.5px;fill:var(--muted,#6b7a88)}
+.a{stroke:var(--text-2,#3d4f5e);stroke-width:1.5;fill:none;marker-end:url(#meta-loop-arrow)}
+.d{stroke-dasharray:5 4}
+</style>
+<defs><marker id="meta-loop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-2,#3d4f5e)"/></marker></defs>
+
+<rect x="20" y="40" width="210" height="112" rx="10" class="box"/>
+<text x="32" y="62" class="t">1 · Analysis of a video</text>
+<text x="32" y="82" class="s">every Pokémon gets a posterior:</text>
+<text x="32" y="98" class="s">fast move p · Shadow p · form p</text>
+<text x="32" y="114" class="s">every battle: result + source</text>
+<text x="32" y="136" class="m">saved evidence: HP series, aura, hits</text>
+
+<rect x="270" y="40" width="220" height="112" rx="10" class="acc"/>
+<text x="282" y="62" class="t">2 · Questions, only if unsure</text>
+<text x="282" y="82" class="s">fast move p &lt; .85 · Shadow .15–.85</text>
+<text x="282" y="98" class="s">form unsettled · result not read</text>
+<text x="282" y="114" class="s">ordered by impact: uncertainty ×</text>
+<text x="282" y="130" class="s">species frequency ÷ answers already</text>
+<text x="282" y="146" class="m">questions.js · validation-policy.js</text>
+
+<rect x="530" y="40" width="220" height="112" rx="10" class="hum"/>
+<text x="542" y="62" class="t">3 · A person answers</text>
+<text x="542" y="82" class="s">watches the clip at that moment</text>
+<text x="542" y="98" class="s">Yes / No / move / “Not sure” / Skip</text>
+<text x="542" y="114" class="s">answers are labels; model guesses</text>
+<text x="542" y="130" class="s">never become labels</text>
+<text x="542" y="146" class="m">Validate tab · feedback.json</text>
+
+<rect x="790" y="40" width="370" height="112" rx="10" class="acc"/>
+<text x="802" y="62" class="t">4 · Refit from saved evidence (after 8 useful answers)</text>
+<text x="802" y="82" class="s">species priors (fast moves, Shadow rates, forms)</text>
+<text x="802" y="98" class="s">evidence settings every 24 labels (noise, timing, energy)</text>
+<text x="802" y="114" class="s">Shadow classifier weights (L2 logistic regression)</text>
+<text x="802" y="130" class="s">no video is decoded; a refit of 37 videos takes seconds</text>
+<text x="802" y="146" class="m">feedback.py · learning-loop.cjs · refit.cjs · movefit-fit.cjs</text>
+
+<rect x="790" y="196" width="370" height="124" rx="10" class="box"/>
+<text x="802" y="218" class="t">5 · Held out by video, then gates</text>
+<text x="802" y="238" class="s">each video is scored with priors learned from the others</text>
+<text x="802" y="254" class="s">pick the lowest confidence at which held-out answers were</text>
+<text x="802" y="270" class="s">≥ 95% right, over ≥ 30 answers from ≥ 5 videos,</text>
+<text x="802" y="286" class="s">Wilson lower bound ≥ .90 (Shadow: ≥ 25 calls, ≥ .80)</text>
+<text x="802" y="306" class="m">fast moves: p ≥ .90 (102/103) · forms: not yet · Shadow: by direction</text>
+
+<rect x="400" y="196" width="350" height="124" rx="10" class="acc"/>
+<text x="412" y="218" class="t">6 · Every saved result is re-derived</text>
+<text x="412" y="238" class="s">confident items are settled by the model (reversible,</text>
+<text x="412" y="254" class="s">audited as “model resolved”); the rest stay open</text>
+<text x="412" y="270" class="s">result rules promote/demote at ≥ 95% on ≥ 30 answers</text>
+<text x="412" y="286" class="s">human answers always win over any model output</text>
+<text x="412" y="306" class="m">metrics-history.json → Model performance view</text>
+
+<rect x="20" y="196" width="340" height="124" rx="10" class="box"/>
+<text x="32" y="218" class="t">Why this design</text>
+<text x="32" y="238" class="s">labels are scarce and expensive (a person per answer),</text>
+<text x="32" y="254" class="s">so the model must ask the most informative questions,</text>
+<text x="32" y="270" class="s">must never train on its own guesses, and must prove</text>
+<text x="32" y="286" class="s">on unseen videos that it is right before it stops asking.</text>
+<text x="32" y="306" class="m">audit spot checks (2 per video) keep measuring confident calls</text>
+
+<path class="a" d="M230 96 L270 96"/>
+<path class="a" d="M490 96 L530 96"/>
+<path class="a" d="M750 96 L790 96"/>
+<path class="a" d="M975 152 L975 196"/>
+<path class="a" d="M790 258 L750 258"/>
+<path class="a d" d="M575 196 L575 176 L125 176 L125 156"/>
+<text x="590" y="372" class="m" text-anchor="middle">dashed: the next analysis, and every saved one, uses the refitted priors and settings</text>
+</svg>

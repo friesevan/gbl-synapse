@@ -1,6 +1,6 @@
 # PvPoke Pro — ranking logic README
 
-This guide describes PvPoke Pro › Pokémon Rankings, the second tab of PvP IV Pro: **Current** (published and custom rankings) and **Historical** (PvPoke snapshot comparisons). Team Rankings, the full-team neural network beside it, is documented in [NEURAL_REPORTS.md](NEURAL_REPORTS.md) and `training/team-search/README.md`. It documents the code currently shipped, rather than an idealized ranking algorithm. It is also available as a plain Markdown file for AI tools.
+This guide describes PvPoke Pro › Pokémon Rankings, the second tab of PvP IV Pro: **Current** (published and custom rankings) and **Historical** (PvPoke snapshot comparisons). Team Rankings, the full-team neural network beside it, is documented in `training/team-search/README.md` (technical reference) and `README-plain.md` (plain language), both shown by the Info button on that tab, with the report format in [NEURAL_REPORTS.md](NEURAL_REPORTS.md). It documents the code currently shipped, rather than an idealized ranking algorithm. It is also available as a plain Markdown file for AI tools.
 
 ## 1. Three different kinds of result
 

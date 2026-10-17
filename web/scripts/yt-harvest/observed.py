@@ -483,6 +483,7 @@ class ObservedCatalog:
             identity, shadow = identity.removesuffix('_shadow'), True
         moves = inference.get('moves') or []
         fast = (moves[0] if moves else None) or detail.get('fastMove') or {}
+        fast_source = 'inference' if (fast.get('id') or fast.get('value')) else None
         key = m.get('key') or str(m.get('label') or m.get('name') or '').lower().replace(' ', '')
         reviewed = []
         for a in answers:
@@ -498,6 +499,7 @@ class ObservedCatalog:
                 shadow = a['value'] if isinstance(a['value'], bool) else None
             elif kind == 'fastMove':
                 fast = {'id': a['value'], 'p': 1}
+                fast_source = 'model' if a.get('source') == 'model' else 'reviewer'
             else:
                 continue
             if a.get('source') != 'model':
@@ -520,7 +522,7 @@ class ObservedCatalog:
         return {'id': identity, 'name': m.get('label') or m.get('name') or detail.get('name') or identity or 'Unknown',
                 'key': key, 'cp': m.get('cp') or detail.get('cp'), 'shadow': shadow, 'shadowP': shadow_p,
                 'formConfidence': form_p, 'fastMove': fast.get('id') or fast.get('value'),
-                'fastMoveConfidence': fast.get('p'), 'chargedMoves': charged, 'uncertain': uncertain,
+                'fastMoveConfidence': fast.get('p'), 'fastMoveSource': fast_source, 'chargedMoves': charged, 'uncertain': uncertain,
                 'reviewed': reviewed, 'first': m.get('first'), 'why': why,
                 'fastQuestion': questions.get('fastMove')}
 

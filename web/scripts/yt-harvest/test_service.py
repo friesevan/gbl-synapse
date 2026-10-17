@@ -318,6 +318,27 @@ class Pipeline(unittest.TestCase):
             self.assertEqual(result['media']['ranges'],'');self.assertEqual(result['media']['sha256'],'a'*64)
             h.state.db.close()
 
+    def test_reviewer_full_reanalysis_uses_the_probe_screen_but_not_its_ranges(self):
+        # The probe's search finds screens CROP=auto misses (_bnPdUKMYpw: a faint phone edge on a dark backdrop).
+        with tempfile.TemporaryDirectory() as directory:
+            h=self.fake(directory);vid='abcdefghijk';path=Path(directory)/(vid+'.mp4');path.write_bytes(b'fake')
+            h.state.x('INSERT INTO videos(id) VALUES(?)',(vid,))
+            h.state.x('INSERT INTO reprocess(id,requested) VALUES(?,1)',(vid,))
+            h.export_validation=lambda *a,**kw:0
+            seen={}
+            class Process:
+                def __init__(self,command,**kwargs):
+                    seen.update(kwargs['env']);Path(command[-1]).write_text('{"battles":[],"full":[]}');self.returncode=0
+                def poll(self):return 0
+            probe={'box':[700,0,1200,1080],'ranges':[{'start':30.0,'end':90.0,'hits':5}],'hits':5,'coverage':.1,'samples':40}
+            h.a.no_probe=False
+            with patch.object(H.Harvester,'run_probe',lambda self,*a,**kw:probe),patch('harvest.subprocess.Popen',Process),\
+                 patch('harvest.gamemaster_for',return_value=''),patch('harvest.write_league_refinement',return_value=None):
+                h.extract_one({'id':vid,'dl_path':str(path),'sha256':'a'*64,'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
+            self.assertEqual((seen['CROP'],seen['FORCE_FULL']),('700,0,1200,1080','1'))
+            self.assertNotIn('RANGES',seen)
+            h.state.db.close()
+
     def test_confirmed_league_survives_registry_export_and_retry(self):
         prior={'reviewerLeague':True,'leagueId':'ultra','leagueGuess':'Ultra League',
                'leagueConfidence':1,'leagueEvidence':[{'source':'reviewer'}]}
