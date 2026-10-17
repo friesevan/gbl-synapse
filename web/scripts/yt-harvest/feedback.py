@@ -95,6 +95,61 @@ class FeedbackUnavailable(Exception):
     """503: a different local server owns validation, or this instance was closed."""
 
 
+LEASE_HELD = ("Another local web server already manages validation for this work directory. Use its Validate tab, or stop "
+              "that server before opening validation in a second server. Harvest status and stop controls remain available.")
+
+
+def acquire_lease(work_dir, message=LEASE_HELD):
+    """Exclusive ownership of WORK/feedback.lock (non-blocking). The running app's FeedbackService holds it for its whole
+    life and keeps feedback.json in memory, so any other writer (remap_battles.py) must hold it too. Returns the open lock
+    file (release_lease closes it); raises FeedbackUnavailable(message) while someone else holds it."""
+    work = Path(work_dir)
+    work.mkdir(parents=True, exist_ok=True)
+    lease = (work / "feedback.lock").open("a+")
+    try:
+        fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lease.close()
+        raise FeedbackUnavailable(message) from None
+    return lease
+
+
+def release_lease(lease):
+    if lease is not None:
+        fcntl.flock(lease, fcntl.LOCK_UN)
+        lease.close()
+
+
+def save_feedback(path, data):
+    """feedback.json: a new revision, written atomically (the Validate tab reloads on a revision change)."""
+    data["revision"] = int(data.get("revision") or 0) + 1
+    atomic_json(path, data)
+
+
+def apply_battle_label(b, kind, a):
+    """One answer's effect on its battle's entry in labels/<id>.json (`battles[n]`, n = battle index + 1): kept under
+    verified[kind]; a league answer sets leagueId or the Team Rocket battleType, a result answer sets result/ending."""
+    b.setdefault("verified", {})[kind] = a
+    if kind == "league":
+        # "rocket" is a battle type, not a league: training only, excluded from observed meta.
+        if a["value"] == "rocket" and confirmed(a):
+            b["battleType"] = "rocket"
+            b.pop("leagueId", None)
+        elif a["value"] not in (None, "other", "rocket", "gbl"):
+            b["leagueId"] = a["value"]
+            b.pop("battleType", None)
+        else:
+            b.pop("leagueId", None)
+            b.pop("battleType", None)
+    if kind == "result":
+        if confirmed(a):
+            result, _, ending = str(a["value"]).partition(":")
+            b.update(result=result, ending=ending or "normal")
+        else:
+            b.pop("result", None)
+            b.pop("ending", None)
+
+
 class FeedbackService:
     def __init__(self, work_dir, web_root):
         self.work = Path(work_dir)
@@ -104,14 +159,8 @@ class FeedbackService:
         self._closing = False
         self.thread = None
         self.requested = False
-        self.work.mkdir(parents=True, exist_ok=True)
-        self._lease = (self.work / "feedback.lock").open("a+")
-        try:
-            fcntl.flock(self._lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            self._lease.close()
-            self._lease = None
-            raise FeedbackUnavailable("Another local web server already manages validation for this work directory. Use its Validate tab, or stop that server before opening validation in a second server. Harvest status and stop controls remain available.") from None
+        self._lease = None
+        self._lease = acquire_lease(self.work)
         self.data = read_json(self.path, {})
         for key in ("answers", "resolutions", "manualReview", "fitSignatures", "questions", "sideEffectSignatures"):
             self.data.setdefault(key, {})
@@ -150,10 +199,8 @@ class FeedbackService:
             raise FeedbackUnavailable("This validation service is closed; reopen the local app to continue.")
 
     def _release_lease(self):
-        if self._lease is not None:
-            fcntl.flock(self._lease, fcntl.LOCK_UN)
-            self._lease.close()
-            self._lease = None
+        release_lease(self._lease)
+        self._lease = None
 
     def close(self, wait=True):
         """Drain an active refit before releasing exclusive feedback ownership.
@@ -183,8 +230,7 @@ class FeedbackService:
             pass
 
     def _save(self):
-        self.data["revision"] = int(self.data.get("revision") or 0) + 1
-        atomic_json(self.path, self.data)
+        save_feedback(self.path, self.data)
 
     def _questions(self):
         inbox = read_json(self.web / "tests/meta-benchmark/results/validation-inbox.json", {})
@@ -524,25 +570,7 @@ class FeedbackService:
             if b is None:
                 b = {"n": int(q["battle"]) + 1, "verified": {}}
                 battles.append(b)
-            b.setdefault("verified", {})[q["kind"]] = a
-            if q["kind"] == "league":
-                # "rocket" is a battle type, not a league: training only, excluded from observed meta.
-                if a["value"] == "rocket" and confirmed(a):
-                    b["battleType"] = "rocket"
-                    b.pop("leagueId", None)
-                elif a["value"] not in (None, "other", "rocket", "gbl"):
-                    b["leagueId"] = a["value"]
-                    b.pop("battleType", None)
-                else:
-                    b.pop("leagueId", None)
-                    b.pop("battleType", None)
-            if q["kind"] == "result":
-                if confirmed(a):
-                    result, _, ending = str(a["value"]).partition(":")
-                    b.update(result=result, ending=ending or "normal")
-                else:
-                    b.pop("result", None)
-                    b.pop("ending", None)
+            apply_battle_label(b, q["kind"], a)
         if q["kind"] == "league" and q.get("allBattles"):
             if a["value"] == "rocket" and confirmed(a):
                 labels["videoType"] = "rocket"

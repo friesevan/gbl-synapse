@@ -520,3 +520,27 @@ Details: `includes/meta/README.md` §6 *At harvest scale, and the language searc
   Corvisquire's 푸크로우, 3 from Zekrom's 제크로무). The fix is the owner-request branch "WIP nameplate checks"
   (worktree-agent-acc132cc82ce829aa, another session). After it merges, requeue the CJK videos with suggestion-quality
   members.
+
+## Status 2026-10-17 (label remap)
+
+Details: `includes/meta/README.md` §5 (*Answers follow their battle…*) and the docstring of `remap_battles.py`.
+
+- **Tool.** `reextract-labelled.cjs VIDEO_DIR --keep DIR` saves re-extracted results instead of installing them;
+  `python3 -I scripts/yt-harvest/remap_battles.py WORK --new DIR [--only ids] [--dry-run]` installs them (old result →
+  `.json.previous`) and moves everything battle-addressed (feedback.json records by qid, `labels/<id>.json`,
+  `validation/<id>/` and manifest) to the battle matched by time overlap, picked by the question's clip and the
+  Pokémon's key. Merged battles keep agreeing answers once; a conflict keeps the battle covering more of the new one;
+  answers on gone battles or Pokémon are archived in feedback.json `history`, never deleted (the run aborts unless
+  before = after + archived). It reopens the video's model resolutions, drops its predictions and fit signatures
+  (Retrain after the restart refits), rebuilds the leagues sidecar and the inbox, retires the focus sidecar. It needs
+  the validation lease (refuses while the app runs), backs up every file with a `--restore` journal, writes atomically.
+- **The 16 videos** (f09da6e's extractor; main's stillBattle rule drops none of their battles), on a copy of the work
+  dir: battles 184 → 210; answers kept 68, moved 51, merged 1, conflicts 0, archived 6 (+1 stale index realigned);
+  1,404 human answers = 1,397 + 7 archived. Archived: tPEBKgLqMuA mightyena/hydreigon/snorlax/sandslash Shadow = yes
+  (the new extraction no longer reads them and joins battles with different teams; 56/65 old Pokémon found),
+  u3bK2DIXDSM my empoleon, YwlLsjFhjGc poliwrath (a one-frame "battle" the new code drops). Held out by video, before →
+  after: fast moves 248/305 → 249/304 (log-loss 0.475 → 0.470), forms 35/43 → 35/43 (0.354 → 0.373), Shadow 614/819 →
+  611/814 (75.0 → 75.1%, log-loss 0.479 → 0.481, AUC 0.851 → 0.850); without tPEBKgLqMuA Shadow 617/818 (75.4%).
+- **Found:** 36 answers on 17 other videos already point at a battle without their Pokémon (results replaced by
+  re-analyses after they were answered, e.g. uYt7eHxdT8I, rLA_EvTrtYg). `--new` with copies of their saved results
+  realigns 34 by their clips (dry run; not applied). Not remapped: `validation-withdrawn-*` archives.

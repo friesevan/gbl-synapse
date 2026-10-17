@@ -3,13 +3,15 @@
 // so the learning loop and the held-out checks (movefit-eval.cjs, shadow-dataset.cjs) use the new HP bars.
 // Labels address battles by index and Pokémon by key, so each run reuses the saved result's crop, decode
 // ranges, league and game data, and a result is installed only if its battle structure is unchanged.
-//   node reextract-labelled.cjs VIDEO_DIR [--jobs 4] [--only id,id] [--dry]
+//   node reextract-labelled.cjs VIDEO_DIR [--jobs 4] [--only id,id] [--dry] [--keep DIR]
 //   WORK_DIR=... (default ~/Desktop/Projects/PoGo Recorder/src/yt-harvest)
+// --keep DIR saves every re-extracted result to DIR/<id>.json and installs nothing: a result whose battle structure
+// changed is installed by scripts/yt-harvest/remap_battles.py, which moves the labels onto the new battles.
 // VIDEO_DIR holds <videoId>.mp4 (local files only; nothing is downloaded). The originals are kept once in
 // results-backup-hpbars/<id>.json. Long chunked runs (the owner's hour-long recordings) use run-batch.cjs.
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn}=require('node:child_process'),D=require('./movefit-data.cjs');
 const arg=k=>{const i=process.argv.indexOf(k);return i>0?process.argv[i+1]:null;};
-const VIDEOS=process.argv[2],JOBS=Number(arg('--jobs')||Math.max(1,Math.floor(os.cpus().length/3))),only=arg('--only')?.split(','),dry=process.argv.includes('--dry');
+const VIDEOS=process.argv[2],JOBS=Number(arg('--jobs')||Math.max(1,Math.floor(os.cpus().length/3))),only=arg('--only')?.split(','),dry=process.argv.includes('--dry'),keep=arg('--keep');
 const results=path.join(D.WORK,'results'),backup=path.join(D.WORK,'results-backup-hpbars'),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'reextract-'));
 const sig=r=>(r.full||[]).map(b=>[Math.round(b.start),b.my.map(p=>p.key).join('+'),b.opponent.map(p=>p.key).join('+')].join('|')).join(';');
 function envFor(id,old){const lc=old.learningContext||{},ctx=D.runContext(id),env={...process.env,FFMPEG_THREADS:'1'};
@@ -26,6 +28,8 @@ function run(id){return new Promise(done=>{const file=path.join(results,id+'.jso
  const p=spawn('node',cmd,{env,stdio:['ignore','ignore','pipe']});let err='';p.stderr.on('data',d=>{err=(err+d).slice(-400);});
  p.on('close',code=>{const s=((Date.now()-t)/1000).toFixed(0);if(code!==0||!fs.existsSync(out)){console.log(`${id}: failed after ${s} s ${err.trim()}`);return done();}
   const nw=JSON.parse(fs.readFileSync(out,'utf8')),cur=JSON.parse(fs.readFileSync(file,'utf8'));for(const [k,v] of Object.entries(cur))if(!(k in nw))nw[k]=v;
+  if(keep){nw.hpBars={reextracted:new Date().toISOString()};fs.mkdirSync(keep,{recursive:true});const k=path.join(keep,id+'.json');fs.writeFileSync(k+'.tmp',JSON.stringify(nw));fs.renameSync(k+'.tmp',k);
+   console.log(`${id}: saved to ${keep} (${s} s, ${nw.full.length} battles, was ${(old.full||[]).length}; structure ${sig(nw)===sig(old)?'unchanged':'changed'})`);return done();}
   if(sig(nw)!==sig(old)){console.log(`${id}: battle structure changed, not installed (${s} s)`);return done();}
   fs.mkdirSync(backup,{recursive:true});if(!fs.existsSync(path.join(backup,id+'.json')))fs.copyFileSync(file,path.join(backup,id+'.json'));
   nw.hpBars={reextracted:new Date().toISOString()};fs.writeFileSync(file+'.tmp',JSON.stringify(nw));fs.renameSync(file+'.tmp',file);console.log(`${id}: installed (${s} s, ${nw.full.length} battles)`);done();});});}
