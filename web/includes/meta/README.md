@@ -102,6 +102,8 @@ Within a battle, fainted balls and used shields can only increase. So a HUD with
 - A battle seen on a single HUD frame that opened mid-battle is dropped when a later HUD closes it.
 - A battle that opened on a HUD that wasn't fresh (the first frame after a fade with a shield icon still appearing or a ball read '?', or a misread while the HUD settles) and turns fresh within 20 s under the first two rules was seen from its start: it loses the "Recording starts mid-battle" flag. It used to keep the flag, so its full team was left out of the usage export ("lead unknown") and the lead questions, and the Poké Ball counter could not settle its result (asked as "mid-start").
 
+**Still images of a battle (2026-10-17).** A screenshot of a battle on a title card or in a talking-head video shows a full HUD, so it used to become a short "battle" with questions about it (INMpMrmY7GI: Lucario vs Zekrom for 5 s, the video's opening still). Once the matchups' HP series exist, `core.js` `stillBattle` drops a battle with no hits and no "used"/"Go" banners whose most common HP reading makes up ≥ 90% of each side's readings (≥ 20 readings): real footage jitters with compression and animation. Over the 4,678 saved battles of 2026-10-17 the most common reading was ≤ 67% of a side in every hitless real battle and 96–100% on the two stills (INMpMrmY7GI, -S98unxGFow at 424 s; frame-to-frame difference 0.000 against 5–9 on live play). Node and the browser both apply it; dropped spans are in `metrics.stillBattles`.
+
 ### HP bars, damage trails and the dense pass
 
 ![Dense pass: HP bars found with fill, trail and outline score; the effect-text strip above each bar; the Shadow aura regions below](docs/frame-bars.jpg)

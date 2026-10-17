@@ -186,6 +186,8 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // Focus shots during charged attacks (camera on one Pokémon) for the Shadow classifier (aura.js focusMoments).
  // Results from the timeline once the HP series exist (core.js inferResult). The centred cutscene bar around each
  // battle's end is kept too (hp.js centredReadings): a knockout in the final cutscene shows only there (rule 'knockout').
+ // A still image of a battle (title card, screenshot) is not footage (core.js stillBattle).
+ {const still=C.dropStillBattles(finished);if(still.length)metrics.stillBattles=still;}
  for(const b of finished)b.cutsceneBar=Hp.centredReadings(window(b.end-8,b.end+4),W);
  C.applyInferredResults(finished,{videoEnd});
  for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);b.focus=Aura.focusMoments(b,window(b.start-2,b.end+8).map(f=>barP===Hp.BAR?f:{...f,bars:forFocus(f.bars)}),W);}

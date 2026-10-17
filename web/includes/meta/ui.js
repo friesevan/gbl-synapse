@@ -161,6 +161,8 @@ async function analyzeMatchups(battles){const league=Number($('metaLeague').valu
   b.evidence=MetaCombat.battleEvidence(b,movesById,fight);for(const side of ['my','opponent'])for(const [key,info] of Object.entries(b.evidence[side]))MetaCombat.applyBattleEvidence(b.matchups.filter(g=>g[side]===key).map(g=>g.result),side,info,byId,rankings,movesById,fitP);}
  const pooled=MetaCombat.poolMine(battles),learned=window.MetaValidation?.learned();for(const b of battles){MetaCombat.attachInference(b,pooled,fitP);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=MetaCombat.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit:fitP});}MetaAura.applyToBattle(b,undefined,learned);}for(const b of battles){b.focus=MetaAura.focusMoments(b,(b.focusFrames||[]).sort((x,y)=>x.t-y.t),SW());delete b.focusFrames;}window.MetaShadow?.applyToBattles(battles,undefined,{learned,rankings,moveTypes:new Map(game.moves.map(m=>[m.moveId,m.type]))});for(const b of battles){b.effects=effectsIn('my',b.start,b.end+1).concat(effectsIn('opponent',b.start,b.end+1)).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=MetaHp.hpTimeline(b);}
  // Results from the timeline (core.js inferResult) now that the matchups' HP series exist.
+ // A still image of a battle (title card, screenshot) is not footage (core.js stillBattle).
+ {const still=C.dropStillBattles(battles);if(still.length)metrics.stillBattles=still;}
  C.applyInferredResults(battles,{videoEnd:analysisEnd});
  for(const b of battles)for(const g of b.matchups){delete g.result;delete g.visible;delete g.series;}}
 // Everything the analysis isn't sure of (below the question thresholds in questions.js) goes to the

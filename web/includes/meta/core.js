@@ -368,6 +368,18 @@ function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.e
 // Re-derives every battle result that didn't come from a result screen or a reviewer (idempotent; saved runs
 // get the current rules on every refit). promoted: rules the learning loop found ≥95% right on the owner's answers;
 // they are confident (resultSource = the rule). Returns the battles.
+// A battle that never moves is a still image of one (a screenshot on a title card or in a talking-head video,
+// INMpMrmY7GI), not footage. On real footage the HP readings jitter with compression and animation; on a still one
+// value repeats, apart from a few frames of the cut into it. In the 2026-10-17 harvest (4,678 battles) the most common
+// reading made up ≤ 67% of a side's readings in every hitless real battle, and 96–100% on the two stills found
+// (frame-to-frame difference 0.000 against 5–9 on live play). Hits or banners mean play.
+function stillBattle(b,{minReadings=20,share=.9}={}){let n=0;const values={my:[],opponent:[]};
+ if((b.events||[]).some(e=>e.kind==='move'||e.kind==='go'))return false;
+ for(const g of b.matchups||[]){if((g.hitsOnMy||[]).length||(g.hitsOnOpp||[]).length)return false;for(const side of ['my','opponent'])for(const v of g.series?.[side]||[])if(v!=null){n++;values[side].push(v);}}
+ if(n<minReadings)return false;
+ return Object.values(values).every(v=>{if(!v.length)return true;const c=new Map();for(const x of v)c.set(x,(c.get(x)||0)+1);return Math.max(...c.values())>=share*v.length;});}
+// Drops still battles in place (run-node and the browser, once the matchups' HP series exist); returns their spans.
+function dropStillBattles(battles){const out=[];for(let i=battles.length-1;i>=0;i--)if(stillBattle(battles[i])){out.unshift({start:battles[i].start,end:battles[i].end});battles.splice(i,1);}return out;}
 function applyInferredResults(battles,{videoEnd=null,promoted=null}={}){(battles||[]).forEach((b,i)=>{if(!INFERRED_SOURCES.has(b.resultSource||''))return;
   let r=inferResult(b,{next:battles[i+1]?.start??null,videoEnd});delete b.resultGuess;
   if(r?.source==='guess'){if(promoted&&(promoted.has?promoted.has(r.rule):promoted.includes(r.rule))){const [res,ending]=r.value.split(':');r={result:res,ending,source:r.rule,reason:r.reason};}
@@ -474,5 +486,5 @@ HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null){const b=
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={stillBattle,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);
