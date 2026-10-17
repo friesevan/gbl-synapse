@@ -162,11 +162,28 @@ function clockFight(b,{perCharged=FIT.energy.perCharged}={}){const changes={my:[
  return (side,key,t)=>{const c=changes[side];let n=0;for(let i=0;i<c.length;i++){if(c[i][1]!==key)continue;const a=c[i][0];if(a>=t)break;const z=Math.min(t,i+1<c.length?c[i+1][0]:(b.end??t)+.5);if(z<=a)continue;n+=z-a-perCharged*moves.filter(x=>x>=a&&x<z).length;}return Math.max(0,n);};}
 function energyFactor(move,checks){if(!move?.energyGain||!checks?.length)return 1;const d=(move.turns||1)*.5;
  for(const c of checks){const most=move.energyGain*(Math.floor((c.fight+2)/d)+1);if(c.spent>most)return .05;}return 1;}
+// In-battle form changers are ONE species whose form is a battle state, never a "which form?" question:
+// Cramorant starts in its base form and turns Gulping/Gorging only after Dive or Surf; Mimikyu starts
+// Disguised and turns Busted when hit by an unshielded charged attack; Morpeko alternates Full Belly / Hangry
+// with each Aura Wheel (the move's type alternates with it); Aegislash and Darmanitan change the same way.
+// Value = the form PvPoke ranks for the base state (the trainer pool and rankings need a specific id).
+// Mirrored in scripts/yt-harvest/observed.py (BATTLE_FORMS); a test keeps the two equal.
+const BATTLE_STATES={cramorant_gulping:'cramorant',cramorant_gorging:'cramorant',mimikyu_busted:'mimikyu',morpeko_hangry:'morpeko_full_belly',aegislash_blade:'aegislash_shield',darmanitan_zen:'darmanitan_standard',darmanitan_galarian_zen:'darmanitan_galarian_standard'};
+// Forms that look identical on screen, so neither the icons nor a reviewer can tell them apart: Gourgeist and
+// Pumpkaboo sizes. They are settled by the ranking prior and the damage evidence, and never asked.
+const LOOKALIKE=/^(gourgeist|pumpkaboo)_(small|average|large|super)$/;
+const lookAlikeFamily=id=>{const m=LOOKALIKE.exec(String(id||'').replace(/_shadow$/,''));return m?m[1]:null;};
+const battleStateBase=id=>{const b=String(id||'').replace(/_shadow$/,'');return (BATTLE_STATES[b]||b)+(/_shadow$/.test(id)?'_shadow':'');};
+// Aura Wheel is one move whose type follows Morpeko's form (AURA_WHEEL_ELECTRIC / AURA_WHEEL_DARK).
+const moveAlias=m=>/^AURA_WHEEL_/.test(m)?'AURA_WHEEL':m;
+const knows=(list,m)=>(list||[]).some(x=>moveAlias(x)===moveAlias(m));
+// Collapses a form distribution [{value,p}] onto battle states, summing probabilities.
+function collapseForms(forms){const by=new Map();for(const f of forms||[])by.set(battleStateBase(f.value),(by.get(battleStateBase(f.value))||0)+(f.p||0));return [...by].sort((a,b)=>b[1]-a[1]).map(([value,p])=>({value,p}));}
 // Movesets: a charged move the form can't learn rules the form out; Frustration means Shadow, Return
 // means not Shadow; charged moves matching PvPoke's recommended set favour its fast move (×2).
 function movesetFactor(p,fastId,seen,ranking){if(!seen?.length||!p)return 1;const shadow=/_shadow$/.test(p.speciesId);let f=1;
- for(const m of seen){if(m==='FRUSTRATION'){f*=shadow?1:.02;continue;}if(m==='RETURN'){f*=shadow?.05:1;continue;}if(!(p.chargedMoves||[]).includes(m)&&!(p.eliteMoves||[]).includes(m))return .02;}
- const rec=ranking?.moveset;if(rec&&rec[0]===fastId&&seen.every(m=>rec.includes(m)))f*=2;return f;}
+ for(const m of seen){if(m==='FRUSTRATION'){f*=shadow?1:.02;continue;}if(m==='RETURN'){f*=shadow?.05:1;continue;}if(!knows(p.chargedMoves,m)&&!knows(p.eliteMoves,m))return .02;}
+ const rec=ranking?.moveset;if(rec&&rec[0]===fastId&&seen.every(m=>knows(rec,m)))f*=2;return f;}
 // Per battle and Pokémon: charged moves seen (banners) and, at each, the energy spent so far and the
 // seconds it has fought since entering. fightUntil(side, key, t) supplies the fighting time (frames with
 // its HP bar visible while on the field), from whatever frames the caller sampled.
@@ -198,11 +215,14 @@ function priorInference(candidates,{learned,rankings,typeLL,fit,learnedMoves}={}
  return {allRows:rows,rows,forms:[...forms].sort((x,y)=>y[1]-x[1]).map(([value,p])=>({value,p})),moves:marg('move'),shadowP,matchups:0};}
 // Forms the type icons can't separate (identical types, e.g. Morpeko's Full Belly / Hangry modes):
 // when exactly one of them appears in PvPoke's league rankings, that is the form in use.
-function narrowByRankings(member,rankings){const base=id=>id.replace(/_shadow$/,''),c=member.candidates||[],forms=[...new Set(c.map(x=>base(x.id)))].filter(f=>!/_(mega|primal)$/.test(f));if(forms.length<2||!rankings)return;
+function collapseStates(member){const c=member.candidates||[],ids=new Set(c.map(x=>x.id));if(!c.some(x=>battleStateBase(x.id)!==x.id))return;const seen=new Set(),out=[];
+ for(const x of c){const b=battleStateBase(x.id);if(b!==x.id&&ids.has(b))continue;if(seen.has(b))continue;seen.add(b);out.push(b===x.id?x:{...x,id:b,name:String(x.name||'').replace(/ \((Gulping|Gorging|Busted|Hangry|Blade|Zen)\)/,'')});}
+ member.candidates=out;member.formNote='A battle state of one species, not a separate form (Cramorant, Mimikyu, Morpeko)';const bases=[...new Set(out.map(x=>x.id.replace(/_shadow$/,'')))];if(bases.length===1)member.formId=bases[0];}
+function narrowByRankings(member,rankings){collapseStates(member);const base=id=>id.replace(/_shadow$/,''),c=member.candidates||[],forms=[...new Set(c.map(x=>base(x.id)))].filter(f=>!/_(mega|primal)$/.test(f));if(forms.length<2||!rankings)return;
  const key=f=>[...(c.find(x=>base(x.id)===f)?.types||[])].filter(t=>t&&t!=='none').sort().join('/');if(new Set(forms.map(key)).size!==1)return;
  const ranked=forms.filter(f=>rankings.has(f)||rankings.has(f+'_shadow'));if(ranked.length!==1)return;member.candidates=c.filter(x=>base(x.id)===ranked[0]);member.formNote=`Only ${ranked[0]} is ranked in this league; its other forms look identical`;}
 // Groups your Pokémon's matchup results across all battles (same key = same Pokémon).
 function poolMine(battles){const m=new Map();for(const b of battles)for(const g of b.matchups||[])if(g.result){if(!m.has(g.my))m.set(g.my,[]);m.get(g.my).push(g.result);}return m;}
-const api={channelMoves,priorInference,ICON_CONFUSION,iconCounts,iconModel,iconLogL,FIT,gapLogL,energyLogL,clockFight,effectLogL,battleEvidence,energyFactor,movesetFactor,applyBattleEvidence,CPM,TRAITS,MULT:M,effectiveness,statCombos,defaultStats,damage,types,isShadow,hitRange,inferMatchup,combineMatchups,summarizeHits,movePrior,formPrior,attachInference,poolMine,narrowByRankings};
+const api={channelMoves,priorInference,ICON_CONFUSION,iconCounts,iconModel,iconLogL,FIT,gapLogL,energyLogL,clockFight,effectLogL,battleEvidence,energyFactor,movesetFactor,applyBattleEvidence,CPM,TRAITS,MULT:M,effectiveness,statCombos,defaultStats,damage,types,isShadow,hitRange,inferMatchup,combineMatchups,summarizeHits,movePrior,formPrior,attachInference,poolMine,narrowByRankings,collapseStates,collapseForms,battleStateBase,lookAlikeFamily,moveAlias,knows,BATTLE_STATES};
 if(typeof module!=='undefined')module.exports=api;root.MetaCombat=api;
 })(typeof window==='undefined'?globalThis:window);

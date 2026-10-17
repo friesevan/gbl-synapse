@@ -32,6 +32,49 @@ def stamp(path):
         return (str(path), None, None)
 
 
+# In-battle form changers are ONE species whose form is a battle state, never a "which form?" question: Cramorant starts
+# in its base form and turns Gulping / Gorging only after Dive or Surf; Mimikyu starts Disguised and turns Busted when hit
+# by an unshielded charged attack; Morpeko alternates Full Belly / Hangry with each Aura Wheel (the move's type follows).
+# Value = the form PvPoke ranks for the base state (the trainer pool's id). Mirrors BATTLE_STATES in
+# includes/meta/combat.js (test_observed.py keeps them equal).
+BATTLE_FORMS = {'cramorant_gulping': 'cramorant', 'cramorant_gorging': 'cramorant',
+                'morpeko_hangry': 'morpeko_full_belly', 'aegislash_blade': 'aegislash_shield',
+                'mimikyu_busted': 'mimikyu', 'darmanitan_zen': 'darmanitan_standard',
+                'darmanitan_galarian_zen': 'darmanitan_galarian_standard'}
+# Forms that look identical on screen (Gourgeist and Pumpkaboo sizes): settled by the ranking prior and the damage
+# evidence, never asked. Mirrors LOOKALIKE in combat.js.
+LOOKALIKE_FAMILIES = ('gourgeist', 'pumpkaboo')
+LOOKALIKE_SIZES = ('small', 'average', 'large', 'super')
+
+
+def battle_form(identity):
+    """The base-state form id of an in-battle form (Gulping Cramorant -> cramorant); other ids are unchanged."""
+    return BATTLE_FORMS.get(identity, identity) if isinstance(identity, str) else identity
+
+
+def lookalike_family(identity):
+    """'gourgeist' / 'pumpkaboo' for a size form of either, else None."""
+    family, _, size = str(identity or '').removesuffix('_shadow').rpartition('_')
+    return family if family in LOOKALIKE_FAMILIES and size in LOOKALIKE_SIZES else None
+
+
+def settle_forms(forms):
+    """Form distribution [{id|value, p}] with battle states merged into their base state (probabilities summed).
+    Returns (forms, settled). When every remaining form is a look-alike size of one species nothing can tell them
+    apart, so the model's top pick stands at p = 1 (settled True)."""
+    merged = {}
+    for f in forms or []:
+        if not isinstance(f, dict):
+            continue
+        fid = battle_form(f.get('id') or f.get('value'))
+        merged[fid] = merged.get(fid, 0) + (f.get('p') or 0)
+    out = sorted(({'id': k, 'p': v} for k, v in merged.items()), key=lambda f: -f['p'])
+    families = {lookalike_family(f['id']) for f in out}
+    if len(out) > 1 and len(families) == 1 and None not in families:
+        return [dict(out[0], p=1)], True
+    return out, False
+
+
 MODEL_KINDS = {'shadow': 'shadow', 'fast': 'fastMove', 'form': 'form'}
 # League answers that name no cup: "rocket" (a battle type) and "gbl" (the Rocket question's "not a Rocket battle").
 NOT_A_LEAGUE = ('rocket', 'gbl')
@@ -472,11 +515,11 @@ class ObservedCatalog:
     def _member(member, detail, side, answers, battle, questions=None):
         m = member if isinstance(member, dict) else {'name': member}
         inference = m.get('inference') or {}
-        forms = inference.get('forms') or []
+        forms, _ = settle_forms(inference.get('forms') or [])
         form = (forms[0] if forms else None) or detail.get('form') or {}
-        identity = form.get('id') or form.get('value') or m.get('id')
+        identity = battle_form(form.get('id') or form.get('value') or m.get('id'))
         if not identity and len(m.get('candidates') or []) == 1:
-            identity = m['candidates'][0].get('id')
+            identity = battle_form(m['candidates'][0].get('id'))
         shadow_p = inference.get('shadowP', detail.get('shadowP'))
         shadow = True if isinstance(shadow_p, (int, float)) and shadow_p >= .98 else False if isinstance(shadow_p, (int, float)) and shadow_p <= .02 else None
         if identity and identity.endswith('_shadow'):
@@ -491,7 +534,7 @@ class ObservedCatalog:
                 continue
             kind = a.get('kind')
             if kind == 'form':
-                identity = str(a['value']).removesuffix('_shadow')
+                identity = battle_form(str(a['value']).removesuffix('_shadow'))
                 form = {'id': identity, 'p': 1}
                 if str(a['value']).endswith('_shadow'):
                     shadow = True
