@@ -2,7 +2,7 @@
 """Download specifically requested YouTube videos through Tornado API (https://docs.tornadoapi.io).
 
 Owner's rules (2026-10-15): use Tornado only for downloads the owner asked for (first: this week's
-Little Cup videos), and never let the total downloaded through it pass 20 GB. The running total is kept
+Little Cup videos), and never let the total downloaded through it pass 100 GB (raised from 20 GB on 2026-10-16: the free trial includes 100 GB). The running total is kept
 in WORK/tornado-usage.json; a video is only requested while the total stays under the cap, and the run
 stops as soon as a file would take it over.
 
@@ -30,7 +30,7 @@ sys.path.insert(0, HERE)
 import harvest as H  # noqa: E402
 
 API = "https://api.tornadoapi.io"
-CAP_BYTES = 20 * 10**9
+CAP_BYTES = 100 * 10**9
 ENV = os.path.expanduser("~/.config/gbl-synapse/env")
 UA = "gbl-synapse-harvester/1.0 (+curl-compatible)"  # Python-urllib's default agent is refused (403)
 
