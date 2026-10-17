@@ -1,0 +1,88 @@
+{
+ "sha": "f627e89e53c0c7b903fff097df7a0ad0ac95decc",
+ "defaults": {
+  "500": "little",
+  "1500": "all",
+  "2500": "all",
+  "10000": "all"
+ },
+ "cups": {
+  "all": [
+   500,
+   1500,
+   2500,
+   10000
+  ],
+  "battlefrontiermaster": [
+   10000
+  ],
+  "catch": [
+   1500
+  ],
+  "cauldron": [
+   2500
+  ],
+  "chrysalis": [
+   1500
+  ],
+  "classic": [
+   500,
+   1500,
+   2500,
+   10000
+  ],
+  "colormega": [
+   1500
+  ],
+  "copadiluvio": [
+   1500
+  ],
+  "coupedusillage": [
+   10000
+  ],
+  "fantasy": [
+   2500
+  ],
+  "gymbreakers": [
+   1500
+  ],
+  "laic2027": [
+   1500
+  ],
+  "ligaultra": [
+   2500
+  ],
+  "little": [
+   500
+  ],
+  "mega": [
+   1500,
+   2500,
+   10000
+  ],
+  "premier": [
+   500,
+   1500,
+   2500,
+   10000
+  ],
+  "remix": [
+   1500
+  ],
+  "retro": [
+   1500
+  ],
+  "spectral": [
+   1500
+  ],
+  "trail": [
+   1500
+  ],
+  "tsuki": [
+   1500
+  ],
+  "willpower": [
+   1500
+  ]
+ }
+}

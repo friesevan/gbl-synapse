@@ -58,6 +58,7 @@ includes/pro/README.html
 includes/pro/README.md
 includes/pro/benchmark-report.json
 includes/pro/core.js
+includes/pro/cups.js
 includes/pro/data/gamemaster.json
 includes/pro/data/league-10000.json
 includes/pro/data/league-1500.json
@@ -71,6 +72,7 @@ includes/pro/data/overrides-10000.json
 includes/pro/data/overrides-1500.json
 includes/pro/data/overrides-2500.json
 includes/pro/data/overrides-500.json
+includes/pro/data/published-cups.json
 includes/pro/data/team-search.json
 includes/pro/data/team-teams/0.json
 includes/pro/data/team-teams/1.json
