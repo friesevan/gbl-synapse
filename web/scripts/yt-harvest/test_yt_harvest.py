@@ -635,6 +635,27 @@ class TestNewQuestions(unittest.TestCase):
             left_open = sorted(v for v in os.listdir(os.path.join(d, "validation")) if os.listdir(os.path.join(d, "validation", v)))
             self.assertEqual(left_open, ["done", "weak1"])
 
+    def test_withdraw_form_questions_for_lookalike_sizes_and_battle_states(self):
+        with tempfile.TemporaryDirectory() as d:
+            def put(vid, options, n=0):
+                os.makedirs(os.path.join(d, "validation", vid), exist_ok=True)
+                qid = f"youtube-harvest:{vid}.mp4:{n}:opponent:x:form"
+                json.dump({"qid": qid, "kind": "form", "options": [{"value": o} for o in options]},
+                          open(os.path.join(d, "validation", vid, f"q{n}.json"), "w"))
+                return qid
+            put("pump", ["pumpkaboo_average", "pumpkaboo_large", "pumpkaboo_small", "pumpkaboo_super"])
+            put("gour", ["gourgeist_small_shadow", "gourgeist_super"])
+            put("cram", ["cramorant", "cramorant_gulping", "cramorant_gorging"])
+            put("kyurem", ["kyurem", "kyurem_black", "kyurem_white"])              # real forms: kept
+            put("mixed", ["pumpkaboo_small", "gourgeist_small"])                  # two families: kept
+            done = put("pump", ["pumpkaboo_small", "pumpkaboo_large"], 1)
+            json.dump({"answers": {done: {"value": "pumpkaboo_large"}}}, open(os.path.join(d, "feedback.json"), "w"))
+            self.assertEqual(V.withdraw_form_questions(d, dry_run=True)["withdrawn"], 3)
+            out = V.withdraw_form_questions(d)
+            self.assertEqual((out["withdrawn"], out["keptAnswered"]), (3, 1))
+            left = sorted(f"{v}/{f}" for v in os.listdir(os.path.join(d, "validation")) for f in os.listdir(os.path.join(d, "validation", v)))
+            self.assertEqual(left, ["kyurem/q0.json", "mixed/q0.json", "pump/q1.json"])
+
     def test_lead_labels_show_the_full_identity_and_keep_member_keys(self):
         names = {"ninetales_alolan": "Ninetales (Alolan)", "lugia": "Lugia", "azumarill": "Azumarill"}
         self.assertEqual(V.lead_label("Ninetales", {"form": {"id": "ninetales_alolan", "p": 1}, "shadowP": .99}, names),

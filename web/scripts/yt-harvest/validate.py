@@ -313,6 +313,31 @@ def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_ru
             "backup": backup_dir if records and not dry_run else None, "dryRun": dry_run}
 
 
+FORM_WITHDRAWN_REASON = "withdrawn: forms that look the same, or battle states of one species, are never asked"
+
+
+def is_unaskable_form_question(q):
+    """A "which form?" question the 2026-10-17 rule no longer asks (combat.js LOOKALIKE / BATTLE_STATES, mirrored in
+    observed.py): every option is a size of one look-alike family (Gourgeist, Pumpkaboo), or the options collapse onto
+    one species' battle states (Cramorant, Mimikyu, Morpeko, Aegislash, Darmanitan). Questions asked before the rule
+    stayed in the queue."""
+    from observed import BATTLE_FORMS, LOOKALIKE_FAMILIES
+    if q.get("kind") != "form":
+        return False
+    ids = [re.sub(r"_shadow$", "", str(o.get("value") or "")) for o in q.get("options") or [] if isinstance(o, dict) and o.get("value")]
+    if len(ids) < 2:
+        return False
+    family = {next((f for f in LOOKALIKE_FAMILIES if re.fullmatch(f + r"_(small|average|large|super)", i)), None) for i in ids}
+    return (len(family) == 1 and None not in family) or len({BATTLE_FORMS.get(i, i) for i in ids}) == 1
+
+
+def withdraw_form_questions(work_dir, inbox_path=None, backup_dir=None, dry_run=False):
+    """Takes the open form questions the look-alike and battle-state rule no longer asks out of the Validate queue (same
+    reversible move as withdraw_league_questions; answered ones stay)."""
+    return withdraw_league_questions(work_dir, inbox_path, backup_dir, dry_run, lambda vid, q, settled: is_unaskable_form_question(q),
+                                     FORM_WITHDRAWN_REASON, "validation-withdrawn-forms-")
+
+
 PERSPECTIVE_WITHDRAWN_REASON = "withdrawn: the left screen is the creator's by default"
 
 
@@ -356,12 +381,12 @@ if __name__ == "__main__":
     import argparse
     import sys
     ap = argparse.ArgumentParser(prog="validate.py withdraw-league", description=withdraw_league_questions.__doc__)
-    ap.add_argument("command", choices=["withdraw-league", "withdraw-perspective"])
+    ap.add_argument("command", choices=["withdraw-league", "withdraw-perspective", "withdraw-forms"])
     ap.add_argument("work_dir")
     ap.add_argument("--inbox", default=os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
                                                                      "tests", "meta-benchmark", "results", "validation-inbox.json")))
     ap.add_argument("--backup-dir", default=None)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(sys.argv[1:])
-    fn = withdraw_perspective_questions if a.command == "withdraw-perspective" else withdraw_league_questions
+    fn = {"withdraw-perspective": withdraw_perspective_questions, "withdraw-forms": withdraw_form_questions}.get(a.command, withdraw_league_questions)
     print(json.dumps(fn(a.work_dir, a.inbox, a.backup_dir, a.dry_run), indent=1))
