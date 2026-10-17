@@ -8,7 +8,10 @@
 
   const SERVER = 'GitHub', OWNER = 'pvpoke', REPO = 'pvpoke', BRANCH = 'master';
   const BUNDLED_SHA = 'f627e89e53c0c7b903fff097df7a0ad0ac95decc';
-  const GROUPS = {500: 'littlegeneral', 1500: 'great', 2500: 'ultra', 10000: 'master'};
+  // Meta groups and default ranking cups per CP (web/scripts/fetch-pro-pvpoke-data.py): GBL's Little Cup is PvPoke's
+  // "little" (its "all" at 500 CP is a different format); the other open leagues are "all".
+  const GROUPS = {500: 'little', 1500: 'great', 2500: 'ultra', 10000: 'master'};
+  const RANKING_CUPS = {500: 'little', 1500: 'all', 2500: 'all', 10000: 'all'};
   const CATEGORIES = ['overall', 'leads', 'closers', 'switches', 'chargers', 'attackers'];
   const MODE_KEY = 'pvp-iv-pro:data-source';
   const nativeFetch = window.fetch.bind(window);
@@ -125,7 +128,7 @@
     if (file === 'gamemaster.json') return {kind: 'gamemaster', path: 'src/data/gamemaster.min.json'};
     if ((m = /^league-(\d+)\.json$/.exec(file)) && GROUPS[m[1]]) return {kind: 'league', cp: m[1]};
     if ((m = /^meta-(\d+)\.json$/.exec(file)) && GROUPS[m[1]]) return {kind: 'meta', path: 'src/data/groups/' + GROUPS[m[1]] + '.json'};
-    if ((m = /^overrides-(\d+)\.json$/.exec(file)) && GROUPS[m[1]]) return {kind: 'overrides', path: 'src/data/overrides/all/' + m[1] + '.json'};
+    if ((m = /^overrides-(\d+)\.json$/.exec(file)) && GROUPS[m[1]]) return {kind: 'overrides', path: 'src/data/overrides/' + RANKING_CUPS[m[1]] + '/' + m[1] + '.json'};
     return null;
   }
 
@@ -141,7 +144,7 @@
     const sha = state.sha;
     if (source.kind === 'gamemaster') return liveGamemaster();
     if (source.kind === 'league') {
-      const parts = await Promise.all(CATEGORIES.map(c => liveFile(sha, 'src/data/rankings/all/' + c + '/rankings-' + source.cp + '.json')));
+      const parts = await Promise.all(CATEGORIES.map(c => liveFile(sha, 'src/data/rankings/' + RANKING_CUPS[source.cp] + '/' + c + '/rankings-' + source.cp + '.json')));
       return JSON.stringify(Object.fromEntries(CATEGORIES.map((c, i) => [c, JSON.parse(parts[i])])));
     }
     return liveFile(sha, source.path);

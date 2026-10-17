@@ -10,6 +10,10 @@
   // Cup presets (GBL schedule) and observed usage weights (Meta Extractor); see observed-weights.js and README 4e.
   const O=window.PvPObserved,USAGE_KEY='pvp-pro-observed-usage-v1';
   let scheduleData=null,presetList=null,preset=null,presetNone=false,cupRosterState=null,gmMap=null,usage=null,usageSource='none',usageError='',observedReady=null,lastObserved=null;
+  // One cup list (cups.js catalog) for Current › Cup, the builder's Cup and the cup presets. cupEntry is the cup whose
+  // published rankings are the population; published describes how they loaded (bundled, fetched, missing, error).
+  const C=window.PvPCups;
+  let cupIndex=null,cupList=null,cupListKey=[],cupEntry=null,cupAuto=true,published=null,loadedCup='';const cupCache=new Map();
   const isCustom=()=>$('proSource').value!=='published';
   const types='bug dark dragon electric fairy fighting fire flying ghost grass ground ice normal poison psychic rock steel water'.split(' ');
   const filterTypes=[['type','Type'],['tag','Tag'],['id','Species'],['dex','Pokédex Number'],['move','Move'],['moveType','Move Type'],['cost','Charged Move Cost'],['distance','Buddy Walk Distance'],['evolution','Evolution']];
@@ -100,6 +104,7 @@
   function ensureObserved(){
     if(!observedReady)observedReady=Promise.all([
       fetch('scripts/yt-harvest/data/gbl-schedule.json').then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(s=>{scheduleData=s;presetList=O.presets(s);}).catch(()=>{scheduleData=null;presetList=null;}),
+      json('published-cups.json').then(x=>{cupIndex=x;}).catch(()=>{cupIndex=null;}),
       fetchUsage()
     ]).then(()=>syncPreset(true));
     return observedReady;
@@ -107,31 +112,56 @@
   let cupDirty=false;
   // Keeps the preset on the loaded CP (else the latest season's open league of that CP, unless the user chose none).
   function syncPreset(refilter){
-    if(presetList){if(preset&&preset.cp!==cp())preset=null;if(!preset&&!presetNone)preset=O.defaultPreset(presetList,cp());}else preset=null;
+    const list=cups();
+    if(preset&&preset.cp!==cp())preset=null;else if(preset)preset=list.find(preset.key)||preset;
+    if(!preset&&!presetNone&&presetList){const d=O.defaultPreset(presetList,cp());preset=d?list.find(d.key):null;}
+    if(cupEntry&&cupEntry.cp!==cp())cupEntry=null;else if(cupEntry)cupEntry=list.find(cupEntry.key)||cupEntry;
+    // Until a cup is chosen, Current › Cup follows the builder's default preset (this season's open league) when it shares the rankings.
+    if(!cupEntry||cupAuto&&preset&&preset!==cupEntry&&preset.rankingCup===cupEntry.rankingCup){cupAuto=true;cupEntry=preset&&preset.rankingCup===(published?.cup||C.DEFAULT_CUPS[cp()])?preset:C.defaultEntry(list,cp());}
     computeCupRoster();renderCupSelect();
     if(refilter&&leagueData&&data&&loadedCp===cp()){if(custom){cupDirty=true;applyWeightMode();}else scheduleFilter();}
     else{applyWeightMode();if(leagueData&&loadedCp===cp())renderRoster();}
   }
   let gmSource=null;
   function computeCupRoster(){
-    cupRosterState=null;if(!preset||!data||!leagueData||!scheduleData||loadedCp!==cp())return;
+    cupRosterState=null;if(!preset||!data||!leagueData||loadedCp!==cp())return;
+    const ids=leagueData.overall.map(r=>r.speciesId);
+    // The cup's own published rankings already are PvPoke's eligible roster for it (every species its rules allow).
+    if(ownRankings(preset)){cupRosterState={key:preset.key,allowed:new Set(ids),unknown:0,rulesUnknown:false,fromRankings:true};return;}
     if(gmSource!==data){gmMap=new Map(data.pokemon.map(p=>[p.speciesId,p]));gmSource=data;}
-    cupRosterState={key:preset.key,...O.cupRoster(scheduleData,preset.cup,preset.cp,leagueData.overall.map(r=>r.speciesId),gmMap)};
+    cupRosterState={key:preset.key,...O.cupRoster(scheduleData,preset.cup,preset.cp,ids,gmMap,preset.rules)};
+  }
+  // The shared cup list as <option>s; GBL presets show their observed battle counts.
+  function cups(){const key=[presetList,data,cupIndex,scheduleData];if(!cupList||key.some((v,i)=>v!==cupListKey[i])){cupList=C.catalog({presets:presetList,gamemaster:data,index:cupIndex,schedule:scheduleData});cupListKey=key;}return cupList;}
+  const ownRankings=e=>!!(e&&published&&loadedCp===e.cp&&published.cp===e.cp&&published.cup===e.rankingCup&&(published.status==='bundled'||published.status==='fetched'));
+  function cupOptions(withNone,current){
+    const options=[];if(withNone){const none=el('option','None · manual filters only');none.value='';options.push(none);}
+    const list=cups();if(current&&!list.find(current.key)){const o=el('option',C.optionLabel(current));o.value=current.key;options.push(o);}
+    for(const g of list.groups){const group=document.createElement('optgroup');group.label=g.label;
+      for(const e of g.entries)if(C.CP_LABELS[e.cp]){const u=O.group(usage,e.cp,e.cup,e.season);const o=el('option',C.optionLabel(e,u?' · '+u.battles.toLocaleString()+' battles':''));o.value=e.key;group.append(o);}
+      if(group.children.length)options.push(group);}
+    return options;
   }
   function renderCupSelect(){
-    const select=$('proCup'),none=el('option','None · manual filters only');none.value='';const options=[none];
-    const label=e=>{const g=O.group(usage,e.cp,e.cup,e.season);return e.name+' · '+cpLabels[e.cp]+(g?' · '+g.battles.toLocaleString()+' battles':'');};
-    const add=(title,entries)=>{const group=document.createElement('optgroup');group.label=title;for(const e of entries)if(cpLabels[e.cp]){const o=el('option',label(e));o.value=e.key;group.append(o);}if(group.children.length)options.push(group);};
-    if(presetList){for(const s of presetList.seasons)add('Season '+s.season+(s.name?' · '+s.name:''),s.entries);add('All seasons · pooled (metas change)',presetList.all);}
-    select.replaceChildren(...options);select.value=preset?.key||'';select.disabled=!presetList;renderCupInfo();
+    const select=$('proCup'),pub=$('proPublishedCup'),list=cups();
+    select.replaceChildren(...cupOptions(true,preset));select.value=preset?.key||'';select.disabled=!list.entries.length;
+    pub.replaceChildren(...cupOptions(false,cupEntry));pub.value=cupEntry?.key||'';pub.disabled=!cupEntry;
+    renderCupInfo();renderPublishedInfo();
+  }
+  function renderPublishedInfo(){
+    const info=$('proPublishedInfo'),e=cupEntry,p=published;if(!info)return;
+    if(!e||!p){info.textContent='';return;}
+    const file='src/data/rankings/'+p.cup+'/<category>/rankings-'+p.cp+'.json',gbl=e.season!=null?' · '+O.presetLabel(e)+(C.OPEN_LEAGUES[e.cup]?' uses PvPoke’s open “all” rankings':''):'';
+    info.textContent=p.status==='bundled'?'Published PvPoke rankings, bundled: '+file+' at '+C.SHA.slice(0,7)+gbl+'.':p.status==='fetched'?'Published PvPoke rankings read from PvPoke’s repository: '+file+' at '+C.SHA.slice(0,7)+gbl+'.':p.status==='missing'?'No published PvPoke rankings for this cup at '+C.SHA.slice(0,7)+'.':p.status==='error'?'PvPoke’s repository could not be read.':'';
   }
   function periodList(list){const text=list.map(p=>O.range(p.start,p.end)+(p.battles!=null?' ('+p.battles.toLocaleString()+')':''));return text.length>6?[...text.slice(0,3),'… '+(text.length-5)+' more …',...text.slice(-2)].join(', '):text.join(', ');}
   function renderCupInfo(){
     const info=$('proCupInfo');
-    if(!presetList){info.textContent=observedReady&&!scheduleData?'The GBL schedule is unavailable here; use the Pokémon filters.':'Loading the GBL schedule…';return;}
+    if(!presetList&&!cups().entries.length){info.textContent=observedReady&&!scheduleData?'The GBL schedule is unavailable here; use the Pokémon filters.':'Loading the GBL schedule…';return;}
     if(!preset){const s=selection();info.textContent='No cup: the roster is the published '+leagueName()+' population, narrowed by your filters.'+(s?' Observed weights use '+O.presetLabel(s)+'.':'');return;}
-    const g=O.group(usage,preset.cp,preset.cup,preset.season),parts=[O.presetLabel(preset)+' · '+(preset.periods.length>1?preset.periods.length+' schedule periods pooled: ':'schedule period: ')+periodList(preset.periods)];
-    if(cupRosterState)parts.push(cupRosterState.rulesUnknown?'Cup rules can’t be checked from a team (for example, caught-during-season), so the roster is not restricted':cupRosterState.allowed.size.toLocaleString()+' of '+leagueData.overall.length.toLocaleString()+' ranked Pokémon meet the cup rules'+(cupRosterState.unknown?' ('+cupRosterState.unknown+' not checkable, kept)':''));
+    const g=O.group(usage,preset.cp,preset.cup,preset.season),parts=[O.presetLabel(preset)+(preset.periods.length?' · '+(preset.periods.length>1?preset.periods.length+' schedule periods pooled: ':'schedule period: ')+periodList(preset.periods):'')];
+    if(cupRosterState?.fromRankings)parts.push('Roster: all '+leagueData.overall.length.toLocaleString()+' Pokémon in PvPoke’s published '+preset.name+' rankings (the cup’s eligible roster)');
+    else if(cupRosterState)parts.push((preset.rankingCup!==loadedCup?'No published rankings for this cup: its rules are applied to the '+openName()+' population · ':'')+(cupRosterState.rulesUnknown?'Cup rules can’t be checked from a team (for example, caught-during-season), so the roster is not restricted':cupRosterState.allowed.size.toLocaleString()+' of '+leagueData.overall.length.toLocaleString()+' ranked Pokémon meet the cup rules'+(cupRosterState.unknown?' ('+cupRosterState.unknown+' not checkable, kept)':'')));
     parts.push(g?'Weights from '+g.battles.toLocaleString()+' observed battles ('+g.lineups.toLocaleString()+' settled lineups) in '+periodList(g.periods):usage?'No observed battles for this cup and season yet: weights are PvPoke’s':'Observed usage unavailable: weights are PvPoke’s');
     if(preset.season==='all')parts.push('Pools every season; metas change between seasons');
     info.textContent=parts.join(' · ')+'.';
@@ -161,7 +191,14 @@ selection:{cp:m.selection.cp,cup:m.selection.cup,season:m.selection.season,label
     if(usage&&usageSource==='local'&&stored)notes.push('An imported file is stored in this browser; the local app’s live data is used instead.');
     $('proObservedNote').textContent=notes.join(' ');
   }
-  $('proCup').addEventListener('change',()=>{const e=O.find(presetList,$('proCup').value);preset=e;presetNone=!e;if(e&&e.cp!==cp()){$('proLeague').value=String(e.cp);sourceRequest++;load();return;}computeCupRoster();renderCupInfo();scheduleFilter();});
+  // Choosing a cup in either selector selects it in both and loads its published rankings when they are not loaded.
+  function chooseCup(e){
+    if(!e)return;preset=e;presetNone=false;cupEntry=e;cupAuto=false;
+    if(e.cp!==cp()||!published||published.cp!==e.cp||published.cup!==e.rankingCup){$('proLeague').value=String(e.cp);sourceRequest++;load();return;}
+    computeCupRoster();renderCupSelect();scheduleFilter();if(leagueData){$('proSource').querySelector('option[value=published]').textContent=leagueName();render();}
+  }
+  $('proCup').addEventListener('change',()=>{const e=cups().find($('proCup').value);if(!e){preset=null;presetNone=true;computeCupRoster();renderCupInfo();scheduleFilter();return;}chooseCup(e);});
+  $('proPublishedCup').addEventListener('change',()=>chooseCup(cups().find($('proPublishedCup').value)));
   $('proPriorStrength').addEventListener('input',()=>{applyWeightMode();invalidate();if(leagueData)renderRoster();});
   $('proUsageImport').addEventListener('change',async event=>{
     const file=event.target.files[0];event.target.value='';if(!file)return;let message;
@@ -191,8 +228,10 @@ selection:{cp:m.selection.cp,cup:m.selection.cup,season:m.selection.season,label
   const name=id=>data?.pokemon.find(p=>p.speciesId===id)?.speciesName || id;
   const move=id=>data?.moves.find(m=>m.moveId===id)?.name || (id==='none'?'None':id || '—');
   const cp=()=>Number($('proLeague').value);
-  const leagueName=()=>({500:'Little Cup',1500:'Great League',2500:'Ultra League',10000:'Master League'})[cp()];
-  function rows(){return isCustom() && custom ? custom[$('proCategory').value] || [] : leagueData?.[$('proCategory').value] || [];}
+  const openName=()=>({500:'Little Cup',1500:'Great League',2500:'Ultra League',10000:'Master League'})[cp()];
+  // The loaded population's name: the selected cup when its own published rankings are loaded, else the open league.
+  const leagueName=()=>ownRankings(cupEntry)?cupEntry.name:openName();
+  function rows(){if(!isCustom()&&published?.message)return [];return isCustom() && custom ? custom[$('proCategory').value] || [] : leagueData?.[$('proCategory').value] || [];}
   function eligibleRoster(){return [...weights].filter(([,value])=>value.accepted).map(([speciesId,value])=>({speciesId,weight:value.weight}));}
   function roster(){const eligible=eligibleRoster();return PvPPro.chooseCandidates(eligible,leagueData?.overall||[],$('proAllCandidates').checked?null:Math.max(2,Math.min(10000,Math.floor(Number($('proCandidateLimit').value)||2))));}
   function previewOpponents(){return PvPPro.chooseOpponents(roster(),$('proAllOpponents').checked?null:Math.max(2,Math.min(10000,Math.floor(Number($('proOpponentLimit').value)||2))),Object.fromEntries(overrides.map(r=>[r.speciesId,r.weight??1])));}
@@ -201,27 +240,44 @@ selection:{cp:m.selection.cp,cup:m.selection.cup,season:m.selection.season,label
   function invalidate(){generatedSnapshot=null;activeSaved='';updateSavedControls();stop();custom=null;$('proSource').value='published';$('proSource').querySelector('option[value=custom]').disabled=true;$('proSource').querySelector('option[value=custom]').hidden=true;$('proRunSummary').textContent='';updateSavedControls();if(leagueData)render();status('Roster changed. Generate rankings to apply your selection and weights.');}
   function prepareSearch(league,request){
     if(searchWorker){searchWorker.terminate();searchWorker=null;}
-    searchError='';searchIndex=searchCache.get(league)||null;$('proSearchStatus').textContent=searchIndex?'PvPoke search syntax supported.':'Preparing PvPoke search…';
+    searchError='';searchIndex=searchCache.get(league+'|'+loadedCup)||null;$('proSearchStatus').textContent=searchIndex?'PvPoke search syntax supported.':'Preparing PvPoke search…';
     if(searchIndex)return;
     const current=new Worker('includes/pro/worker.js');searchWorker=current;
     current.onmessage=event=>{if(current!==searchWorker||loading!==request)return;const result=event.data;current.terminate();searchWorker=null;
       if(result.type==='error'){searchError='Search unavailable: '+result.error;$('proSearchStatus').textContent=searchError;render();return;}
-      searchIndex=new Map(result.records.map(record=>[record.id,record]));searchCache.set(league,searchIndex);$('proSearchStatus').textContent='PvPoke search syntax supported.';render();
+      searchIndex=new Map(result.records.map(record=>[record.id,record]));searchCache.set(league+'|'+loadedCup,searchIndex);$('proSearchStatus').textContent='PvPoke search syntax supported.';render();
     };
     current.onerror=event=>{current.terminate();searchWorker=null;searchError='Search unavailable: '+event.message;$('proSearchStatus').textContent=searchError;render();};
     current.postMessage({mode:'searchIndex',data,cp:league,published:leagueData.overall,meta:leagueMeta});
   }
   let leagueMeta=[];
+  const bundledFor=league=>Promise.all([json('league-'+league+'.json'),json('overrides-'+league+'.json')]);
+  // Published rankings for a cup: bundled for the CP's default cup, else read from PvPoke at the pinned commit (cached).
+  async function publishedFor(cup,league){
+    const key=cup+'|'+league;if(cupCache.has(key))return cupCache.get(key);
+    let result;
+    try{result=await C.loadPublished({cup,cp:league,index:cupIndex,bundled:()=>bundledFor(league),fetch:url=>fetch(url)});cupCache.set(key,result);}
+    catch(error){result={status:'error',error:error.message};}
+    return result;
+  }
   async function load(){
     ensureObserved();cupDirty=false;
     PvPProDetail.cancel();$('proBattlePanel').hidden=true;renderedDetail=null;
     if(searchWorker){searchWorker.terminate();searchWorker=null;}searchIndex=null;
     generatedSnapshot=null;activeSaved='';updateSavedControls();
-    clearTimeout(filterTimer);if(filterWorker){filterWorker.terminate();filterWorker=null;}filterPending=false;selectedKey='';loadedCp=0;selected='';leagueData=null;weights.clear();calculatedModel=null;stop();$('proRankings').textContent='Loading league…';$('proDetail').textContent='Loading Pokémon details…';const league=cp(),request=++loading;status('Loading published PvPoke rankings…');$('proGenerate').disabled=true;
+    clearTimeout(filterTimer);if(filterWorker){filterWorker.terminate();filterWorker=null;}filterPending=false;selectedKey='';loadedCp=0;selected='';leagueData=null;weights.clear();calculatedModel=null;stop();$('proRankings').textContent='Loading league…';$('proDetail').textContent='Loading Pokémon details…';const league=cp(),request=++loading,entry=cupEntry&&cupEntry.cp===league?cupEntry:null,want=entry?entry.rankingCup:C.DEFAULT_CUPS[league];
+    status(C.isBundled(want,league)?'Loading published PvPoke rankings…':'Loading published '+entry.name+' rankings from PvPoke’s repository…');$('proGenerate').disabled=true;
     try{
-      const result=await Promise.all([data?Promise.resolve(data):json('gamemaster.json'),json('league-'+league+'.json'),json('overrides-'+league+'.json'),json('meta-'+league+'.json')]);
+      const result=await Promise.all([data?Promise.resolve(data):json('gamemaster.json'),publishedFor(want,league),json('meta-'+league+'.json')]);
       if(loading!==request)return;
-      [data,leagueData,overrides,leagueMeta]=result;loadedCp=league;custom=null;page=0;selected='';$('proSource').value='published';$('proSource').querySelector('option[value=custom]').disabled=true;$('proSource').querySelector('option[value=custom]').hidden=true;
+      let pub;[data,pub,leagueMeta]=result;
+      // No published rankings for the cup (or GitHub failed): the population is the CP's bundled default, so the
+      // builder can still apply the cup's rules; the published view shows the message instead of a table.
+      const base=pub.league?pub:await bundledFor(league).then(([l,o])=>({league:l,overrides:o}));
+      if(loading!==request)return;
+      leagueData=base.league;overrides=base.overrides;loadedCup=pub.league?want:C.DEFAULT_CUPS[league];
+      published={...pub,cup:want,cp:league,message:pub.status==='missing'?C.missingMessage(entry||{name:want,cp:league,rankingCup:want},openName()):pub.status==='error'?'Could not load PvPoke’s published '+(entry?.name||want)+' rankings: '+pub.error+' Create custom rankings to rank the cup from the '+openName()+' population.':''};
+      loadedCp=league;custom=null;page=0;selected='';$('proSource').value='published';$('proSource').querySelector('option[value=custom]').disabled=true;$('proSource').querySelector('option[value=custom]').hidden=true;
       weights=new Map(leagueData.overall.map((row,i)=>[row.speciesId,{accepted:true,weight:1}]));
       $('proCategory').replaceChildren(...Object.keys(leagueData).map(category=>{const option=el('option',category[0].toUpperCase()+category.slice(1));option.value=category;return option;}));
       filters=[{filterType:'type',values:[...choices.type]}];syncPreset(false);
@@ -229,13 +285,13 @@ selection:{cp:m.selection.cp,cup:m.selection.cup,season:m.selection.season,label
       $('proSpeciesIds').replaceChildren(...leagueData.overall.map(row=>{const option=el('option',row.speciesName);option.value=row.speciesId;return option;}));
       $('proMoveIds').replaceChildren(...data.moves.map(row=>{const option=el('option',row.name);option.value=row.moveId;return option;}));
       $('proSearchTraits').textContent=[...data.pokemonTraits.pros,...data.pokemonTraits.cons].join(' · ');
-      prepareSearch(league,request);renderFilters();renderRoster();render();scheduleFilter();status(leagueName()+' rankings loaded.');
+      prepareSearch(league,request);renderFilters();renderRoster();render();scheduleFilter();status(published.message?(published.status==='missing'?'No published rankings for '+(entry?.name||want)+'.':'Published rankings unavailable.'):leagueName()+' rankings loaded'+(published.status==='fetched'?' from PvPoke’s repository at '+C.SHA.slice(0,7)+'.':'.'));
       $('proGenerate').disabled=filterPending;
     }catch(error){if(loading===request)status(error.message);}
   }
   // The app router (includes/app-tabs.js) announces each view; published rankings load on the first visit to Current.
   document.addEventListener('pvp-view-change',event=>{const route=event.detail||{};if(route.app==='pro'&&route.proView==='rankings'&&route.mode==='current'&&!data)load();});
-  $('proLeague').addEventListener('change',()=>{sourceRequest++;load();});
+  $('proLeague').addEventListener('change',()=>{cupEntry=null;cupAuto=true;sourceRequest++;load();});
   function toggleSpecies(id){
     const accepted=weights.get(id).accepted;let filter=filters.find(f=>f.filterType==='id');if(!filter){filter={filterType:'id',values:[],excludedValues:[]};filters.push(filter);}
     filter.excludedValues=filter.excludedValues||[];filter.raw=undefined;filter.error='';
@@ -331,7 +387,7 @@ selection:{cp:m.selection.cp,cup:m.selection.cup,season:m.selection.season,label
   // rankings on an earlier date, loaded with the Historical engine (includes/analysis/data.js and core.js).
   // Off by default; nothing is fetched until the columns are added. Each league and category loads once.
   const compare={info:null,tables:new Map(),controller:null};
-  const compareKey=()=>cp()+'|'+$('proCategory').value;
+  const compareKey=()=>cp()+'|'+loadedCup+'|'+$('proCategory').value;
   const compareTable=()=>compare.info?compare.tables.get(compareKey()):undefined;
   const compareStatus=text=>{$('proCompareStatus').textContent=text;};
   const categoryName=()=>$('proCategory').selectedOptions[0]?.textContent||'Overall';
@@ -352,7 +408,7 @@ selection:{cp:m.selection.cp,cup:m.selection.cup,season:m.selection.season,label
     const info=compare.info,tables=compare.tables,key=compareKey(),category=$('proCategory').value,league=cp();
     if(!info||tables.has(key))return;
     tables.set(key,'loading');compareStatus('Loading '+leagueName()+' · '+categoryName()+' rankings from '+info.date+'…');
-    try{const rankings=await PvPokeData.loadRankings(info,league,category,compare.controller.signal);tables.set(key,rankings?PvPokeAnalysis.snapshotLookup(rankings):null);}
+    try{const rankings=await PvPokeData.loadRankings({...info,cup:loadedCup||'all'},league,category,compare.controller.signal);tables.set(key,rankings?PvPokeAnalysis.snapshotLookup(rankings):null);}
     catch(error){if(error.name==='AbortError'){tables.delete(key);return;}tables.set(key,{error:error.message});}
     if(compare.info!==info)return;
     if(leagueData)render();else if(compareKey()===key)compareStatus(describeCompare());
@@ -393,7 +449,7 @@ selection:{cp:m.selection.cp,cup:m.selection.cup,season:m.selection.season,label
   $('proOpenHistorical').addEventListener('click',()=>{if(compare.info||$('proCompareDate').value)$('previousDate').value=compare.info?.date||$('proCompareDate').value;globalThis.PvPTabs?.show({app:'pro',proView:'rankings',mode:'historical'});});
   function render(){
     updateSavedControls();
-    let list=rows();if(!list.length){$('proRankings').textContent='Load a league to view rankings.';$('proDetailParking').hidden=true;document.querySelector('.pro-layout').classList.remove('pro-has-details','pro-has-battle');PvPProDetail.cancel();renderedDetail=null;return;}
+    let list=rows();if(!list.length){$('proRankings').textContent=!isCustom()&&published?.message?published.message:'Load a league to view rankings.';$('proDetailParking').hidden=true;document.querySelector('.pro-layout').classList.remove('pro-has-details','pro-has-battle');PvPProDetail.cancel();renderedDetail=null;return;}
     const query=$('proSearch').value.trim().toLowerCase();
     if(!selected || !list.some(row=>row.speciesId===selected))selected=list[0].speciesId;
     if(!list.some(row=>rowKey(row)===selectedKey))selectedKey=rowKey(list.find(row=>row.speciesId===selected)||list[0]);

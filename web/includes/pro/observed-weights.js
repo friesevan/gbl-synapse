@@ -12,7 +12,9 @@
   const BASE_CUPS={500:'little',1500:'great',2500:'ultra',10000:'master'};
   const MEGA_CUPS=['mega','catchmega'];
   // ---- cup rules (league.py) ----
-  function stage(mon,gm){let n=1;const seen=new Set();while(mon&&mon.family&&mon.family.parent&&n<4){const parent=mon.family.parent;if(seen.has(parent))break;seen.add(parent);mon=gm?gm.get(parent):null;n++;}return n;}
+  // PvPoke's Pokemon.getEvolutionStage(): 0 doesn't evolve and has no pre-evolution, 1 evolves and has no pre-evolution
+  // (Little Cup's rule), 2 evolves and has a pre-evolution, 3 fully evolved with a pre-evolution.
+  function stage(mon){const f=mon&&mon.family;if(!f)return 0;const evolves=!!(f.evolutions&&f.evolutions.length),parent=!!f.parent;return evolves?(parent?2:1):parent?3:0;}
   function matches(filter,sid,mon,moves,gm){
     const type=filter.filterType,values=filter.values||[];
     if(!values.length)return null;
@@ -50,8 +52,9 @@
     return c?{...c,cp}:null;
   }
   // The preset roster: allowed ids among `ids` (the ranked population). Unknown (null) counts as allowed.
-  function cupRoster(schedule,cupId,cp,ids,gm){
-    const cup=cupDefinition(schedule,cupId,cp);if(!cup)return {allowed:new Set(ids),unknown:ids.length,rulesUnknown:true,cup:null};
+  // rules: an explicit {include, exclude} definition (a PvPoke gamemaster cup), else the schedule's cup definition.
+  function cupRoster(schedule,cupId,cp,ids,gm,rules=null){
+    const cup=rules?{...rules,cp}:cupDefinition(schedule,cupId,cp);if(!cup)return {allowed:new Set(ids),unknown:ids.length,rulesUnknown:true,cup:null};
     const allowed=new Set();let unknown=0;
     for(const id of ids){const mon=gm.get(id)||gm.get(id.replace(/_shadow$/,''));if(!mon){unknown++;allowed.add(id);continue;}const ok=rosterAllowed(cupId,cup,id,mon,gm);if(ok===null)unknown++;if(ok!==false)allowed.add(id);}
     return {allowed,unknown,rulesUnknown:!!cup.rulesUnknown,cup};
@@ -114,7 +117,7 @@
   }
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function range(a,b){const p=d=>{const m=/^(\d{4})-(\d\d)-(\d\d)$/.exec(d||'');return m?[m[1],MONTHS[m[2]-1],+m[3]]:null;},x=p(a),y=p(b);if(!x||!y)return a||b||'dates unknown';if(x[0]!==y[0])return `${x[1]} ${x[2]}, ${x[0]} – ${y[1]} ${y[2]}, ${y[0]}`;return x[1]===y[1]?`${x[1]} ${x[2]}–${y[2]}, ${x[0]}`:`${x[1]} ${x[2]} – ${y[1]} ${y[2]}, ${x[0]}`;}
-  function presetLabel(e){return e?(e.season==='all'?'All seasons':'Season '+e.season+(e.seasonName?' · '+e.seasonName:''))+' › '+e.name:'';}
+  function presetLabel(e){return e?(e.season==='all'?'All seasons':e.season==null?'PvPoke cup':'Season '+e.season+(e.seasonName?' · '+e.seasonName:''))+' › '+e.name:'';}
   const api={PRIOR_STRENGTH,LEAD_BONUS,SHADOW_PSEUDO,FORMAT,BASE_CUPS,MEGA_CUPS,stage,speciesAllowed,rosterAllowed,cupDefinition,cupRoster,presets,find,defaultPreset,parseUsage,group,weights,range,presetLabel};
   if(typeof module!=='undefined')module.exports=api;root.PvPObserved=api;
 })(typeof window==='undefined'?globalThis:window);

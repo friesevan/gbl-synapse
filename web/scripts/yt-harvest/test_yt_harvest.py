@@ -15,10 +15,10 @@ import ytapi  # noqa: E402
 
 GM = {
     "medicham": {"speciesId": "medicham", "dex": 308, "types": ["fighting", "psychic"], "tags": [], "family": {"parent": "meditite"}},
-    "meditite": {"speciesId": "meditite", "dex": 307, "types": ["fighting", "psychic"], "tags": [], "family": {}},
+    "meditite": {"speciesId": "meditite", "dex": 307, "types": ["fighting", "psychic"], "tags": [], "family": {"evolutions": ["medicham"]}},
     "azumarill": {"speciesId": "azumarill", "dex": 184, "types": ["water", "fairy"], "tags": [], "family": {"parent": "marill"}},
-    "marill": {"speciesId": "marill", "dex": 183, "types": ["water", "fairy"], "tags": [], "family": {"parent": "azurill"}},
-    "azurill": {"speciesId": "azurill", "dex": 298, "types": ["normal", "fairy"], "tags": [], "family": {}},
+    "marill": {"speciesId": "marill", "dex": 183, "types": ["water", "fairy"], "tags": [], "family": {"parent": "azurill", "evolutions": ["azumarill"]}},
+    "azurill": {"speciesId": "azurill", "dex": 298, "types": ["normal", "fairy"], "tags": [], "family": {"evolutions": ["marill"]}},
     "lugia": {"speciesId": "lugia", "dex": 249, "types": ["psychic", "flying"], "tags": ["legendary"], "family": {}},
     "charizard": {"speciesId": "charizard", "dex": 6, "types": ["fire", "flying"], "tags": [], "family": {}},
     "sableye": {"speciesId": "sableye", "dex": 302, "types": ["dark", "ghost"], "tags": [], "family": {}},

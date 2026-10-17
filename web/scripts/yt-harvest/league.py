@@ -565,16 +565,12 @@ def load_gamemaster(path=GAMEMASTER_PATH):
     return {p["speciesId"]: p for p in g["pokemon"]}
 
 
-def _stage(mon, gm):
-    n, seen = 1, set()
-    while mon and (mon.get("family") or {}).get("parent") and n < 4:
-        par = mon["family"]["parent"]
-        if par in seen:
-            break
-        seen.add(par)
-        mon = gm.get(par) if gm else None
-        n += 1
-    return n
+def _stage(mon, gm=None):
+    """PvPoke's Pokemon.getEvolutionStage(): 0 doesn't evolve and has no pre-evolution, 1 evolves and has no
+    pre-evolution (Little Cup's rule), 2 evolves and has a pre-evolution, 3 fully evolved with a pre-evolution."""
+    fam = (mon or {}).get("family") or {}
+    evolves, parent = bool(fam.get("evolutions")), bool(fam.get("parent"))
+    return (1 if evolves and not parent else 2 if evolves and parent else 3 if parent else 0)
 
 
 def _matches(filt, sid, mon, moves, gm=None):

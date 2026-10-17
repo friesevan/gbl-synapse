@@ -19,8 +19,9 @@
   <script defer src="includes/pro/saved.js"></script>
   <script defer src="includes/pro/search.js?v=team-comparison-1"></script>
   <script defer src="includes/pro/detail.js?v=theme-1"></script>
-  <script defer src="includes/pro/observed-weights.js"></script>
-  <script defer src="includes/pro/ui.js?v=observed-1"></script>
+  <script defer src="includes/pro/observed-weights.js?v=cups-1"></script>
+  <script defer src="includes/pro/cups.js"></script>
+  <script defer src="includes/pro/ui.js?v=cups-1"></script>
   <script defer src="includes/pro/team-comparison-core.js"></script>
   <script defer src="includes/pro/team-comparison.js?v=theme-1"></script>
   <script defer src="includes/pro/team-browser.js?v=theme-1"></script>
@@ -104,12 +105,14 @@
     <h2 class="visually-hidden">Current Pokémon rankings</h2>
     <div class="pro-toolbar">
       <label>League<select id="proLeague"><option value="500">Little · 500 CP</option><option value="1500" selected>Great · 1,500 CP</option><option value="2500">Ultra · 2,500 CP</option><option value="10000">Master · Unlimited</option></select></label>
+      <label class="pro-rank-control">Cup<select id="proPublishedCup" aria-describedby="proPublishedInfo" disabled><option value="">Loading cups…</option></select></label>
       <label class="pro-rank-control">Rankings<select id="proSource"><option value="published">Great League</option><option value="custom" disabled hidden>Generated custom roster</option></select></label>
       <label class="pro-rank-control">Category<select id="proCategory"><option value="overall">Overall</option></select></label>
 
     </div>
 
-    <p class="hint">Published open-league rankings from <a href="https://github.com/pvpoke/pvpoke/tree/f627e89e53c0c7b903fff097df7a0ad0ac95decc" target="_blank" rel="noopener">PvPoke · f627e89</a>, including editor adjustments. Select a Pokémon to see its moves, matchups and battle graph.</p>
+    <p class="hint">Published rankings from <a href="https://github.com/pvpoke/pvpoke/tree/f627e89e53c0c7b903fff097df7a0ad0ac95decc" target="_blank" rel="noopener">PvPoke · f627e89</a>, including editor adjustments. Choose a cup to load its published rankings: GBL cups by season and every PvPoke cup, the same list as the custom-rankings builder. Select a Pokémon to see its moves, matchups and battle graph.</p>
+    <p id="proPublishedInfo" class="hint" role="status" aria-live="polite"></p>
     <div class="pro-builder-actions"><button id="proCompareToggle" type="button" class="secondary" aria-expanded="false" aria-controls="proComparePanel">Compare with snapshot</button><button id="proOpenBuilder" type="button" class="secondary" aria-expanded="false" aria-controls="proBuilder">Create custom rankings</button></div>
     <section id="proComparePanel" class="pro-roster-card pro-compare-card" hidden aria-labelledby="proCompareTitle"><div class="pro-builder-heading"><div><h2 id="proCompareTitle">Compare with a PvPoke snapshot</h2><p class="hint">Adds Old rank, Old score and Change columns from PvPoke’s published rankings for this league and category on the chosen date. Custom rankings compare each row with its species’ published score.</p></div><button id="proCloseCompare" type="button" class="secondary">Close</button></div><div class="pro-compare-fields"><label>Snapshot date<input id="proCompareDate" type="date"></label><button id="proCompareApply" type="button">Add comparison columns</button><button id="proCompareClear" type="button" class="secondary" hidden>Remove columns</button></div><p id="proCompareStatus" class="hint" role="status" aria-live="polite">Uses the latest PvPoke commit on or before that UTC day. Nothing loads until you add the columns.</p><p class="hint">For move changes, new entrants and type summaries across branches and cups, open <button id="proOpenHistorical" type="button" class="pro-link-button">Historical</button>.</p></section>
     <section id="proBuilder" class="pro-roster-card" hidden aria-labelledby="proBuilderTitle"><div class="pro-builder-heading"><div><h2 id="proBuilderTitle">Create custom rankings</h2><p class="hint">Choose your roster, set moveset limits, then generate.</p></div><button id="proCloseBuilder" type="button" class="secondary">Close</button></div>
