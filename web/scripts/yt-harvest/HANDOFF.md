@@ -550,3 +550,33 @@ Details: `includes/meta/README.md` §5 (*Answers follow their battle…*) and th
   `src/remap-realign-2026-10-17/`. Undo: `remap_battles.py WORK --restore <backup>` with the app stopped. Refit queued.
 - Restarting the app from zsh: start it through `/bin/bash -c 'nohup … &'`. zsh's BG_NICE runs `&` jobs at nice 5, and
   under a 12-worker harvest the app then took minutes per Validate request.
+
+## Status 2026-10-17 (screen placements)
+
+Details: `includes/meta/README.md` §3 *Locating the phone screen* (Placements) and §10. Takes effect on the next harvester start.
+
+- **Measured** (every keyframe; the phone's left edge from its six Poké Balls, at 960 wide): the four Npoke uploads place
+  the phone 4–5 ways (M5ED7uc0aao 429.3/438.2/431.7/435.7/431.7; -QiUVfUf8jo 428.9/430.9/433.6/430.9/434.9; SwlQC3kwKIs
+  432.1/434.1/431.0/427.5; avOqMEM2QmA 430.1/433.9/436.5/438.3). Same width, ±0.3 px inside a clip, changes only in the
+  11–35 s without a HUD between battles (clip cuts). The located box reads nothing 5–6.5 px away, about half at 3.6–4.5 px.
+- **Fix:** `screen.js` `placements` (keyframes the box misses; the box moved sideways ≤ 4% and fitted to the balls),
+  `probe.cjs` (each candidate scanned; each HUD keyframe to the nearest placement; `placements` [{box, hits, stretches}]
+  only when ≥ 2, each ≥ 4 keyframes), `harvest.py` (`CROPS` in the probe plan and on the requeue path, `media.crops`,
+  `probe.placements`), `run-node.cjs` + `placement-plan.cjs` (a decode per placement stretch into the same 886-wide frame,
+  a HUD offset per placement, one tracker; the result's `crop` stays the located box and `placements` are listed).
+  Single-placement videos: no `placements`, no `CROPS`, unchanged output. Browser: known placements are tried when the
+  HUD doesn't read, and the frame is searched after 10 s without one.
+- **Before → after** (main's code, harvest path and requeue path alike): battles 17 → 21, opponent species 45 → 56, full
+  teams 13 → 16, results 1 → 2 (M5ED7uc0aao 4 → 6, avOqMEM2QmA 4 → 5, -QiUVfUf8jo 4 → 5; SwlQC3kwKIs 5 → 5 with the two
+  battles of its last clip now seen from the start).
+- **Survey** (the placement step on the 256 retained single-screen uploads with a cached probe box; 112 wide uploads
+  without a local file were not checked): placements in 7, the four plus eQphfsMBt_A (3 → 4 battles, species 8 → 12,
+  full teams 2 → 4), tePa5aI85zY (El Tío Boris; 4 → 5, a merged battle split) and 0rJx8daiA3U (counts unchanged; its box
+  read a clip 13 px away through the balls one slot over, which flagged that battle "starts mid-battle"). On the 7:
+  battles 29 → 35, opponent species 80 → 98, full teams 24 → 30, 8 mid-battle / too-many-species flags → 0. The other 249
+  have none; ten retained single-placement videos give byte-identical probes; parity.cjs 7/7 identical.
+- **Requeue** (not done; the work dir was read only for this session): M5ED7uc0aao avOqMEM2QmA -QiUVfUf8jo SwlQC3kwKIs
+  eQphfsMBt_A tePa5aI85zY 0rJx8daiA3U. Possibly also kel7h_I9kxw (Npoke layout, 0 battles from 70 HUD keyframes; not
+  local, so a re-download).
+- **Left:** a clip that also changes the phone's size (eQphfsMBt_A's last: 240.7 px wide at 359.6 of 960, the rest 260
+  at 431) is not a placement and stays unread; `CROP=auto` without a probe has one box.

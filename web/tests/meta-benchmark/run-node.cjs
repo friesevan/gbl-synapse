@@ -11,6 +11,8 @@
 //   GAMEMASTER=path   PvPoke game data from the recording's date (default: current)
 //   LEAGUE=1500|2500|10000|500
 //   CROP=auto | x0,y0,x1,y1   phone screen inside a wide video (YouTube etc.), scaled to 886 wide
+//   CROPS=x0,y0,x1,y1@s-e,s-e;…   the screen placed differently per stretch (probe.cjs placements; placement-plan.cjs),
+//                     every box the size of CROP; each stretch decodes with its own box and HUD offset, one tracker
 //   START=s END=s     analyse part of the file (run-batch.cjs splits long files this way)
 //   RANGES=s-e,s-e    analyse only these stretches (probe.cjs battle ranges), one tracker throughout
 //   FFMPEG_THREADS=n  decoder and filter threads (default: ffmpeg's auto)
@@ -22,7 +24,7 @@
 //   NAME_LANGUAGE=ko  preset the nameplate language; LATE_LANGUAGE=45  re-run with it when it was decided more
 //                     than this many s after the first nameplate (-1: never)
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
-const Decode=require('./decode-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs'),Dialog=require('./surrender-cache.cjs'),Calibration=require('./calibration-cache.cjs');
+const Decode=require('./decode-plan.cjs'),Placement=require('./placement-plan.cjs'),Ocr=require('./ocr-cache.cjs'),Range=require('./range-plan.cjs'),Dialog=require('./surrender-cache.cjs'),Calibration=require('./calibration-cache.cjs');
 const Aura=require('../../includes/meta/aura.js'),Shadow=require('../../includes/meta/shadow-model.js'),C=require('../../includes/meta/core.js'),K=require('../../includes/meta/combat.js'),Hp=require('../../includes/meta/hp.js');
 const gm=(()=>{const g=process.env.GAMEMASTER?JSON.parse(fs.readFileSync(process.env.GAMEMASTER,'utf8')):require('../../includes/pro/data/gamemaster.json');for(const m of g.moves)if(m.turns===undefined&&m.cooldown)m.turns=Math.round(m.cooldown/500);return g;})();
 const byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),movesById=new Map(gm.moves.map(m=>[m.moveId,m]));
@@ -65,6 +67,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
 (async()=>{const started=Date.now();
  const [W0,H0]=execFileSync('ffprobe',['-v','error','-select_streams','v','-show_entries','stream=width,height','-of','csv=p=0',video]).toString().trim().split(',').map(Number);
  let crop=null;if(process.env.CROP==='auto'){const r=require('./locate-screen.cjs').locateVideo(video);crop=r.box;metrics.screen=r;}else if(process.env.CROP)crop=process.env.CROP.split(',').map(Number);
+ const placements=Placement.parseCrops(process.env.CROPS,crop);
  const decodeFull=Decode.plan({width:W0,height:H0,crop,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),W=decodeFull.width,H=decodeFull.height;
  // Bars and aura use the classifier's current reference band.
  const Y0=Math.round(Hp.BAND[0]*W/886),Hh=Math.min(H-Y0,Math.round((Hp.BAND[1]-Hp.BAND[0])*W/886));
@@ -74,8 +77,10 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // surrender band (700–1180 of 1920) or the top half (HUD, banners at any calibrated offset). Lower rows
  // aren't decoded into the frame (they stay 0); DECODE_ROWS=full restores them.
  const rowsUsed=process.env.DECODE_ROWS==='full'?H:Math.min(H,Math.max(Y0+Hh,Math.ceil(H*1180/1920)+1,Math.ceil(H/2))),decode=Decode.keepRows(decodeFull,rowsUsed);
+ // Each placement decodes its own box into the same 886-wide frame (all boxes have CROP's size).
+ const decodes=placements?.map(p=>Decode.keepRows(Decode.plan({width:W0,height:H0,crop:p.box,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),rowsUsed));
  const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=C.NameCache.names(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
- const hudOffset=new C.HudOffset();
+ let hudOffset=new C.HudOffset();
  // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
  // HUD_LLM=1: the local vision model reads plates the OCR is unsure of (hud-llm.cjs; YouTube footage only).
  const second=require('./hud-llm.cjs').createSecondReader({C,video,box:crop||[0,0,W0,H0],dict,locales,language:nameLanguage,enabled:process.env.HUD_LLM==='1',budget:Number(process.env.HUD_LLM_BUDGET||30)});
@@ -98,9 +103,12 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  }
  // RANGES (from probe.cjs): decode only these stretches, in order, with one tracker; frame times stay
  // video times, so the gap between ranges looks like footage without a HUD.
- const ranges=RANGES||[[START,END]];let base=START,k0=0,waitFrom=now();
- for(const [rs,re] of ranges){base=rs||0;k0=k;filled=0;
- const args=['-v','error',...THREADS,...decode.inputArgs,...(rs?['-ss',String(rs)]:[]),...(re!=null?['-t',String(re-(rs||0))]:[]),'-i',video,'-vf',decode.filters.join(','),'-f','rawvideo','-pix_fmt','rgba','-'];
+ // CROPS: each range is cut where the placement changes. Every placement keeps its own HUD offset (dy, HudOffset):
+ // an offset proven in one clip is never tried on another clip's box.
+ const ranges=RANGES||[[START,END]],offsets=new Map();let base=START,k0=0,waitFrom=now(),at=null;
+ for(const [rs,re,pi] of Placement.pieces(ranges,placements)){base=rs||0;k0=k;filled=0;
+ if(pi!==at){offsets.set(at,{dy,hudOffset});({dy,hudOffset}=offsets.get(pi)||{dy:null,hudOffset:new C.HudOffset()});at=pi;}
+ const dec=pi===null?decode:decodes[pi],args=['-v','error',...THREADS,...dec.inputArgs,...(rs?['-ss',String(rs)]:[]),...(re!=null?['-t',String(re-(rs||0))]:[]),'-i',video,'-vf',dec.filters.join(','),'-f','rawvideo','-pix_fmt','rgba','-'];
  // fps first: crop/scale only the frames that are kept (+26% throughput on 60 fps sources).
  const ff=spawn('ffmpeg',args,{stdio:['ignore','pipe','inherit']}),finishedDecode=new Promise(resolve=>{ff.on('error',error=>resolve({error}));ff.on('close',code=>resolve({code}));});
  for await(const chunk of ff.stdout){let off=0;
@@ -205,6 +213,8 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,decoding:{width:W,height:H,rows:rowsUsed,fps:FPS,hudEvery:HUD_EVERY,hwaccel:decode.hwaccel,experimental:!!(process.env.ANALYSIS_WIDTH||process.env.FFMPEG_HWACCEL)},calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
  // Matchup fits are kept (compactly) so pooling and priors can be re-evaluated without re-decoding.
  out.full=finished.map(b=>({...b,matchups:b.matchups.map(({result,...g})=>g)}));
+ // All placements (crop stays the main one), with the HUD offset each ended on.
+ if(placements){offsets.set(at,{dy,hudOffset});out.placements=placements.map((p,i)=>({box:p.box,stretches:p.stretches,dy:offsets.get(i)?.dy??null}));}
  // The nameplate language, when it isn't English (absent = English).
  if(nameLanguage.lang!=='en')out.nameLanguage=nameLanguage.lang;
  if(presetLanguage)metrics.nameLanguagePreset={lang:presetLanguage,decidedAt:Number(process.env.NAME_LANGUAGE_AT)||null,firstPassSeconds:Number(process.env.NAME_LANGUAGE_FIRST_PASS)||null};

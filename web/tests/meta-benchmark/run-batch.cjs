@@ -4,7 +4,8 @@
 // finished outputs are skipped, so an interrupted batch picks up where it stopped.
 //
 // Usage: node run-batch.cjs JOBS.txt OUTDIR
-//   JOBS.txt: path|league|gamemaster|crop|ranges (optional fifth JSON range column).
+//   JOBS.txt: path|league|gamemaster|crop|ranges|crops (optional fifth JSON range column; optional sixth CROPS,
+//             placement-plan.cjs: the screen placed differently per stretch).
 //             ranges use original source seconds; legacy four-column jobs stay full-file.
 //   JOBS=n         parallel workers (default: cores ÷ 3; each ffmpeg decodes with several threads)
 //   SPLIT=minutes  split files longer than this into chunks (default 20; 0 = never)
@@ -18,7 +19,7 @@ const Range=require('./range-plan.cjs');
 const [jobsFile,outDir]=process.argv.slice(2);
 const JOBS=Number(process.env.JOBS||Math.max(1,Math.floor(os.cpus().length/3))),SPLIT=Number(process.env.SPLIT??20)*60,OVERLAP=360;
 fs.mkdirSync(outDir,{recursive:true});
-const jobs=fs.readFileSync(jobsFile,'utf8').split('\n').map(l=>l.trim()).filter(l=>l&&!l.startsWith('#')).map(l=>{const [video,league='1500',gm='',crop='',ranges]=l.split('|');return {video,league,gm,crop,ranges:Range.parseRanges(ranges??process.env.RANGES,{forceFull:process.env.FORCE_FULL==='1'})};});
+const jobs=fs.readFileSync(jobsFile,'utf8').split('\n').map(l=>l.trim()).filter(l=>l&&!l.startsWith('#')).map(l=>{const [video,league='1500',gm='',crop='',ranges,crops]=l.split('|');return {video,league,gm,crop,crops:crops??process.env.CROPS??'',ranges:Range.parseRanges(ranges??process.env.RANGES,{forceFull:process.env.FORCE_FULL==='1'})};});
 const name=v=>path.basename(v,path.extname(v));
 const duration=v=>Number(execFileSync('ffprobe',['-v','error','-show_entries','format=duration','-of','csv=p=0',v]).toString());
 // Expand to tasks (whole files or chunks).
@@ -29,7 +30,7 @@ for(const t of tasks)t.plan=Range.planWindow({ranges:t.job.ranges,start:t.start?
 const todo=tasks.filter(t=>!fs.existsSync(t.out));
 console.log(`${jobs.length} videos (${(jobs.reduce((a,j)=>a+j.duration,0)/3600).toFixed(2)} h) → ${tasks.length} tasks, ${tasks.length-todo.length} already done · ${JOBS} workers`);
 const started=Date.now();let videoSecondsDone=0;
-function runTask(t){return new Promise(resolve=>{const env={...process.env,LEAGUE:t.job.league,GAMEMASTER:t.job.gm,CROP:t.job.crop,RANGES:t.plan.RANGES,START:String(t.plan.start),END:String(t.plan.end)};
+function runTask(t){return new Promise(resolve=>{const env={...process.env,LEAGUE:t.job.league,GAMEMASTER:t.job.gm,CROP:t.job.crop,CROPS:t.job.crops,RANGES:t.plan.RANGES,START:String(t.plan.start),END:String(t.plan.end)};
  if(t.plan.mode==='empty'){
   const result={pipeline:'v3 single-pass · empty planned window',recording:path.basename(t.job.video),seconds:0,videoSeconds:0,realtime:0,start:t.plan.start,end:t.plan.end,ranges:[],crop:t.job.crop,battles:[],full:[],metrics:{}};
   fs.writeFileSync(t.out+'.tmp',JSON.stringify(result));fs.renameSync(t.out+'.tmp',t.out);console.log(`skipped ${t.label}: no planned footage`);resolve();return;

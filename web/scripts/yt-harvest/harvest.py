@@ -953,6 +953,7 @@ class Harvester:
         learned = read_json(LEARNED, {})
         atomic_json(learned_snapshot, learned)
         env = {**os.environ, "LEAGUE": str(cp), "GAMEMASTER": gm, "CROP": "auto", "LEARNED_PATH": learned_snapshot}
+        env.pop("CROPS", None)   # placements come only from this video's probe
         if getattr(self.a, "ffmpeg_threads", 1):
             env["FFMPEG_THREADS"] = str(getattr(self.a, "ffmpeg_threads", 1))
         ok = os.path.exists(res) and not requested
@@ -974,10 +975,11 @@ class Harvester:
                 # Screens only; the whole video is analysed. The probe's search (32 keyframes, then 16 seeks) finds
                 # screens run-node's CROP=auto (16 seeks) misses, e.g. a faint phone edge on a dark backdrop.
                 probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)
-                plan = {"CROP": probe["box"] and ",".join(map(str, probe["box"]))} if probe and probe.get("box") else {}
+                plan = {"CROP": ",".join(map(str, probe["box"])), **placement_crops(probe)} if probe and probe.get("box") else {}
             crop = perspective_crop(probe, labels.get("perspective") or ("gbl" if labels.get("championship") is False else None))
             if crop and plan is not None:
                 plan["CROP"] = crop
+                plan.pop("CROPS", None)   # placements belong to the probe's own box
             if plan is None:
                 # No battle HUD in any keyframe: the full pass is skipped; the footage question still asks.
                 self.inc("probeSkipped")
@@ -1046,6 +1048,8 @@ class Harvester:
                                    "sizeBytes": os.path.getsize(path), "retained": self.a.keep,
                                    "crop": env.get("CROP", "auto"), "ranges": env.get("RANGES", ""),
                                    "timestampBasis": "original-source-seconds"}
+                if env.get("CROPS"):
+                    result["media"]["crops"] = env["CROPS"]
             atomic_json(res, result)
             try:
                 refined = write_league_refinement(res, lg, self.schedule, r["upload_date"], json.loads(r["meta"] or "{}"))
@@ -1392,12 +1396,22 @@ def probe_plan(probe, full_above=0.8, max_key_interval=12):
     box = probe.get("box")
     crop = ",".join(str(v) for v in box) if box else None
     if probe.get("keyInterval") and probe["keyInterval"] > max_key_interval:
-        return {"CROP": crop or "auto"}   # keyframes too sparse for a trustworthy scan
+        return {"CROP": crop or "auto", **placement_crops(probe)}   # keyframes too sparse for a trustworthy scan
     if not box or not probe.get("ranges"):
         return None
     if (probe.get("coverage") or 0) >= full_above:
-        return {"CROP": crop}
-    return {"CROP": crop, "RANGES": ",".join(f"{r['start']}-{r['end']}" for r in probe["ranges"])}
+        return {"CROP": crop, **placement_crops(probe)}
+    return {"CROP": crop, "RANGES": ",".join(f"{r['start']}-{r['end']}" for r in probe["ranges"]), **placement_crops(probe)}
+
+
+def placement_crops(probe):
+    """The phone placed differently per clip (probe.cjs placements, at least two): {"CROPS": "box@s-e,s-e;..."} for
+    run-node.cjs (tests/meta-benchmark/placement-plan.cjs), else {}. Each stretch decodes with its own box."""
+    placements = (probe or {}).get("placements") or []
+    if len(placements) < 2 or not probe.get("box"):
+        return {}
+    return {"CROPS": ";".join(",".join(str(v) for v in p["box"]) + "@" + ",".join(f"{s['start']}-{s['end']}" for s in p["stretches"])
+                              for p in placements)}
 
 
 def perspective_crop(probe, perspective):
@@ -1417,7 +1431,7 @@ def perspective_crop(probe, perspective):
 def probe_summary(probe):
     if not probe:
         return None
-    keep = ("version", "box", "screens", "samples", "hits", "keyInterval", "ranges", "coverage", "seconds", "reason")
+    keep = ("version", "box", "screens", "samples", "hits", "keyInterval", "ranges", "coverage", "seconds", "reason", "placements")
     return {k: probe.get(k) for k in keep if k in probe}
 
 

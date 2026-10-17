@@ -7,7 +7,7 @@
 // shadow-dataset.cjs and learning-loop.cjs read these sidecars when a run has no b.focus of its own.
 //   node focus-backfill.cjs [--force] [--shard K/N] [--video-dir DIR]... [ID ...]   (default: every labelled video found)
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),{spawn,execFileSync}=require('node:child_process');
-const Aura=require('../../includes/meta/aura.js'),Hp=require('../../includes/meta/hp.js');
+const Aura=require('../../includes/meta/aura.js'),Hp=require('../../includes/meta/hp.js'),Placement=require('./placement-plan.cjs');
 const WORK=process.env.WORK||path.join(os.homedir(),'Desktop/Projects/PoGo Recorder/src/yt-harvest');
 const SRC=path.join(os.homedir(),'Desktop/Projects/PoGo Recorder/src');
 const VERSION=2,FPS=10;
@@ -23,7 +23,8 @@ async function measureRun(raw,video){const [W0,H0]=execFileSync('ffprobe',['-v',
  const crop=raw.crop||null,W=crop?886:W0,H=crop?Math.round((crop[3]-crop[1])*886/(crop[2]-crop[0])/2)*2:H0,Y0=Math.round(450*W/886),Hh=Math.min(H-Y0,Math.round(900*W/886));
  const out=[];let frames=0;
  for(const b of raw.full||[]){const wins=Number.isFinite(b.start)&&Number.isFinite(b.end)?[[Math.max(0,b.start-1),b.end+8]]:[];
-  const dense=[];for(const [a,z] of wins)frames+=await decode(video,a,z,crop,W,H,img=>{const band={data:img.data.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0);
+  // A run with placements (run-node CROPS) decodes each battle with the box of its start.
+  const dense=[];for(const [a,z] of wins)frames+=await decode(video,a,z,Placement.cropAt(raw.placements,b.start,crop),W,H,img=>{const band={data:img.data.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0);
    dense.push({t:img.t,bars:bars.map(({x0,x1,y0,y1,fill,trail})=>({x0,x1,y0,y1,fill,trail})),focus:Aura.measureFocus(band,bars,Y0)});});
   out.push(Aura.focusMoments(b,dense,W));}
  return {version:VERSION,builtAt:new Date().toISOString(),frames,battles:out};}

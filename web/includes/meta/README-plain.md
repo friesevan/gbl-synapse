@@ -32,7 +32,7 @@ The game draws the same things in the same places on every phone, so the extract
 
 - **The result screen** (YOU WIN or GOOD EFFORT), the "Surrender and exit?" dialog, and the fade to black at the end of a battle. When an upload cuts the result screen, the Poké Balls and the last HP bars usually still say who lost.
 
-If the phone screen is only part of the video, as in most YouTube uploads, the extractor first finds the phone's rectangle by looking for the place where the nameplates read correctly.
+If the phone screen is only part of the video, as in most YouTube uploads, the extractor first finds the phone's rectangle by looking for the place where the nameplates read correctly. Some edited uploads place the phone a few pixels differently in each clip, and a rectangle that far off reads nothing; the extractor then finds each placement from the Poké Balls and reads every clip with its own rectangle.
 
 ![A YouTube upload with the phone screen in the centre column, found automatically](docs/frame-screen-pokedeego.jpg)
 
