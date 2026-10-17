@@ -344,7 +344,13 @@ class TestProbePlan(unittest.TestCase):
         self.assertEqual(H.perspective_crop(two, "left"), "440,0,940,1080")
         self.assertEqual(H.perspective_crop(two, "right"), "980,0,1480,1080")
         self.assertIsNone(H.perspective_crop(two, "switches"))
+        self.assertIsNone(H.perspective_crop(two, "single"))
+        self.assertIsNone(H.perspective_crop(two, "gbl"))
         self.assertIsNone(H.perspective_crop(self.PROBE, "left"))
+        # No answer: the LEFT screen is the creator's; one screen or overlapping boxes change nothing.
+        self.assertEqual(H.perspective_crop(two, None), "440,0,940,1080")
+        self.assertIsNone(H.perspective_crop(self.PROBE, None))
+        self.assertIsNone(H.perspective_crop({"screens": [{"box": [0, 0, 500, 1080]}, {"box": [100, 0, 600, 1080]}]}, None))
         self.assertNotIn("hitTimes", H.probe_summary({**self.PROBE, "hitTimes": [1, 2]}))
 
     def test_default_workers(self):
@@ -526,6 +532,9 @@ class TestBattleTypes(unittest.TestCase):
                 self.assertEqual([x.get("battleType") for x in doc["battles"]], [None, "rocket"])
                 self.assertTrue(doc["video"]["possibleChampionship"])   # two phone screens
                 self.assertFalse(doc["video"]["championship"])
+                # Weak championship words plus two distinguishable screens: the format is championship without a question.
+                doc = H.write_league_refinement(p, {"leagueId": "great", "possibleChampionship": True}, SCHED, "20250103")
+                self.assertTrue(doc["video"]["championship"])
                 doc = H.write_league_refinement(p, {"leagueId": "great", "championship": True}, SCHED, "20250103")
                 self.assertEqual(doc["battles"][0]["best"], "championship")
                 self.assertEqual(doc["battles"][0]["battleType"], "championship")
@@ -571,14 +580,60 @@ class TestNewQuestions(unittest.TestCase):
         qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.95}, refined)
         self.assertEqual([q["allBattles"] for q in qs if q["kind"] == "league"], [True])
         # Championship: perspective question, no GBL league question.
+        two = [{"box": [100, 0, 600, 1080]}, {"box": [700, 0, 1200, 1080]}]
+        one = [{"box": [100, 0, 600, 1080]}]
         refined = {"video": {"championship": True, "screens": 2, "championshipEvidence": ["title: regional championship"]},
                    "battles": [{"best": "championship", "options": opts}, {"best": "championship", "options": opts}]}
-        qs = V.harvest_questions("v1", {"battles": battles}, self.META, {"leagueConfidence": 0.2}, refined)
+        guess = {"leagueConfidence": 0.2}
+        # Two distinguishable screens: no question, the left screen is the creator's.
+        qs = V.harvest_questions("v1", {"battles": battles, "probe": {"screens": two}}, self.META, guess, refined)
+        self.assertEqual([q["kind"] for q in qs if q["kind"] in ("perspective", "league")], [])
+        # Two screens reported but the probe could not tell them apart: ask.
+        blurred = [{"box": [100, 0, 600, 1080]}, {"box": [150, 0, 650, 1080]}]
+        qs = V.harvest_questions("v1", {"battles": battles, "probe": {"screens": blurred}}, self.META, guess, refined)
         kinds = [q["kind"] for q in qs]
         self.assertIn("perspective", kinds)
         self.assertNotIn("league", kinds)
         p = next(q for q in qs if q["kind"] == "perspective")
         self.assertEqual([o["value"] for o in p["options"]], ["left", "right", "single", "switches", "gbl"])
+        # Strong evidence and one screen: nothing to choose. Weak evidence and one screen: ask.
+        strong1 = {**refined, "video": {**refined["video"], "screens": 1}}
+        qs = V.harvest_questions("v1", {"battles": battles, "probe": {"screens": one}}, self.META, guess, strong1)
+        self.assertNotIn("perspective", [q["kind"] for q in qs])
+        weak = {"video": {"possibleChampionship": True, "screens": 1, "championshipEvidence": ["title (weak): regional"]},
+                "battles": [{"best": "master", "options": opts}, {"best": "master", "options": opts}]}
+        qs = V.harvest_questions("v1", {"battles": battles, "probe": {"screens": one}}, self.META, {"leagueConfidence": 0.95}, weak)
+        self.assertEqual(next(q for q in qs if q["kind"] == "perspective")["modelTop"], "single")
+        # Weak evidence but two distinguishable screens: no question.
+        qs = V.harvest_questions("v1", {"battles": battles, "probe": {"screens": two}}, self.META, {"leagueConfidence": 0.95}, weak)
+        self.assertNotIn("perspective", [q["kind"] for q in qs])
+
+    def test_withdraw_perspective_questions(self):
+        with tempfile.TemporaryDirectory() as d:
+            two = [{"box": [100, 0, 600, 1080]}, {"box": [700, 0, 1200, 1080]}]
+
+            def put(vid, screens, crop, rv):
+                os.makedirs(os.path.join(d, "validation", vid), exist_ok=True)
+                os.makedirs(os.path.join(d, "results"), exist_ok=True)
+                qid = f"youtube-harvest:{vid}.mp4:perspective"
+                json.dump({"qid": qid, "kind": "perspective"}, open(os.path.join(d, "validation", vid, qid + ".json"), "w"))
+                json.dump({"crop": crop, "probe": {"screens": screens}}, open(os.path.join(d, "results", vid + ".json"), "w"))
+                json.dump({"video": rv}, open(os.path.join(d, "results", vid + ".leagues.json"), "w"))
+                return qid
+            put("right", two, [700, 0, 1200, 1080], {"championship": True})             # analysed on the right: requeue
+            put("left", two, [100, 0, 600, 1080], {"possibleChampionship": True})        # already left
+            put("strong1", two[:1], [100, 0, 600, 1080], {"championship": True})         # one screen, strong
+            put("weak1", two[:1], [100, 0, 600, 1080], {"possibleChampionship": True})   # kept: genuinely ambiguous
+            done = put("done", two, [700, 0, 1200, 1080], {"championship": True})
+            json.dump({"answers": {done: {"value": "right"}}}, open(os.path.join(d, "feedback.json"), "w"))
+            dry = V.withdraw_perspective_questions(d, dry_run=True)
+            self.assertEqual((dry["withdrawn"], dry["dryRun"]), (3, True))
+            self.assertTrue(os.path.exists(os.path.join(d, "validation", "right")))
+            out = V.withdraw_perspective_questions(d)
+            self.assertEqual(sorted(out["videoIds"]), ["left", "right", "strong1"])
+            self.assertEqual(out["reanalyse"], ["right"])
+            left_open = sorted(v for v in os.listdir(os.path.join(d, "validation")) if os.listdir(os.path.join(d, "validation", v)))
+            self.assertEqual(left_open, ["done", "weak1"])
 
     def test_lead_labels_show_the_full_identity_and_keep_member_keys(self):
         names = {"ninetales_alolan": "Ninetales (Alolan)", "lugia": "Lugia", "azumarill": "Azumarill"}

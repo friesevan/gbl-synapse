@@ -114,9 +114,14 @@ Takes effect when the harvester is restarted.
   - Strong title or channel evidence (regional/international/world championship, NAIC/EUIC/LAIC/OCIC, top
     cut, grand final, Play! Pokémon) sets the `championship` format. Battles are `championship[@cp]`,
     shown as their own "Championship" league in observed meta.
-  - Weaker words, or two phone screens found by the probe, only ask the "perspective" question.
-  - The perspective question offers left / right / single / switches / not a championship. Left or right
-    re-analyses that phone. "Not a championship" returns the video to GBL.
+  - Two phone screens the probe can tell apart: no question. The LEFT screen is analysed as the creator's
+    battle (`harvest.perspective_crop`, `league.left_screen`). Weak words plus two screens also set the
+    championship format. An existing human perspective answer still wins.
+  - The "perspective" question is asked only for one screen with weak evidence, or two screens the probe
+    could not tell apart (`validate.perspective_reason`). It offers left / right / single / switches / not
+    a championship. Left or right re-analyses that phone. "Not a championship" returns the video to GBL.
+  - `validate.py withdraw-perspective <work dir> [--dry-run]` closes open questions the rule no longer asks
+    (reversible) and lists `reanalyse` (videos whose stored crop is not the left screen) to requeue.
 - **Obscured.** The footage answer "obscured" sets `labels.videoType`. No requeue is created, and later
   requeue requests are refused (`.obscured`).
 - **New Validate questions:**

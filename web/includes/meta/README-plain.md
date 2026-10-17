@@ -57,6 +57,8 @@ The **Validate** tab shows a short queue of questions: "Is the opponent's Sabley
 
 It only asks when it is genuinely unsure: a fast move below 85% confidence, a Shadow estimate between 15% and 85%, a form it could not settle, a result it could not read. Everything else is recorded without bothering you.
 
+Championship broadcasts that show two phones side by side no longer get a "whose screen" question: the left phone is treated as the creator's battle, every time, so results are consistent. If you already answered that question, your answer still decides. It asks only when one phone is shown and the championship evidence is weak (it may be an ordinary battle video), or when two phones were found but could not be told apart.
+
 ## How it learns
 
 Your answers do three things:
