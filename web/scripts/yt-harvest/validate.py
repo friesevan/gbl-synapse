@@ -13,6 +13,8 @@ import json
 import os
 import re
 
+import league as L
+
 SOURCE = "youtube-harvest"
 # Footage answers. "rocket" and "championship" battles look like GBL and train the extractor (fast
 # moves, Shadow, outcomes) but never count toward the GBL meta; championships get their own format.
@@ -75,6 +77,23 @@ def _rocket_options():
     return [ROCKET_OPTION, NOT_ROCKET_OPTION]
 
 
+def perspective_reason(championship, possible, probe_screens, result_screens=None):
+    """Why the perspective question is genuinely needed, or None. The default is no question: with two distinguishable phone
+    screens the LEFT one is the creator's battle (league.left_screen; a reviewer's earlier left/right/single answer still
+    wins). A question remains only when (1) the evidence is weak (title words only, not strong championship words) and a
+    single screen is shown, so it may be ordinary GBL; or (2) two screens were reported but the probe could not tell them
+    apart, so there is no reliable left one."""
+    if not possible:
+        return None
+    if L.left_screen(probe_screens):
+        return None
+    if len(probe_screens or []) >= 2 or (result_screens or 0) >= 2:
+        return "Two phone screens were found but they could not be told apart, so the left one could not be chosen."
+    if championship:
+        return None   # strong evidence and one screen: nothing to choose
+    return "Only one phone screen is shown and the championship evidence is weak: is it a championship at all?"
+
+
 def harvest_questions(vid, result, meta, video_league, refined, schedule=None):
     """Harvester-level questions for one analysed video. Returns question documents (undecorated)."""
     out = []
@@ -101,17 +120,18 @@ def harvest_questions(vid, result, meta, video_league, refined, schedule=None):
     rb = (refined or {}).get("battles") or []
     rv = (refined or {}).get("video") or {}
     championship = bool(rv.get("championship") or video_league.get("championship"))
-    if championship or rv.get("possibleChampionship") or video_league.get("possibleChampionship"):
+    possible = championship or bool(rv.get("possibleChampionship") or video_league.get("possibleChampionship"))
+    reason = perspective_reason(championship, possible, probe.get("screens"), rv.get("screens"))
+    if reason:
         b = battles[0]
         why = "; ".join((rv.get("championshipEvidence") or video_league.get("championshipEvidence") or [])[:2])
         screens = rv.get("screens") or len(probe.get("screens") or [])
-        out.append(_q(vid, "perspective", "perspective", "Championship footage: whose team is the creator side?",
-                      ("This looks like a championship or tournament broadcast"
-                       + (f" ({why})" if why else "") + (f"; {screens} phone screens were found" if screens >= 2 else "") + ". "
-                       "Championship battles get their own format, separate from GBL. Pick the player whose screen should count as "
-                       "‘my’ team; a left/right answer re-analyses that screen."),
+        out.append(_q(vid, "perspective", "perspective", "Championship footage: is this a championship, and whose screen?",
+                      ("This may be a championship or tournament broadcast" + (f" ({why})" if why else "") + ". " + reason + " "
+                       "Championship battles get their own format, separate from GBL. When two phones are shown the left "
+                       "screen is analysed as the creator's by default; a right answer re-analyses the other screen."),
                       PERSPECTIVE_OPTIONS, [b.get("start", 0), b.get("start", 0) + 15], battle=0, allBattles=True,
-                      modelTop="left" if screens >= 2 else "single", modelP=None))
+                      modelTop="single" if screens < 2 else "left", modelP=None))
     rocket = [i for i, r in enumerate(rb[:len(battles)]) if r.get("rocket")]
     if rocket:
         # Auto-flagged Team Rocket battles: one question when every battle is flagged, else per battle.
@@ -234,7 +254,7 @@ def is_cup_question(q):
     return q.get("kind") == "league" and not str(q.get("qid") or "").endswith(":rocket")
 
 
-def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_run=False):
+def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_run=False, match=None, reason=None, prefix="validation-withdrawn-"):
     """Takes the open league/cup questions out of the Validate queue (policy: a reviewer cannot verify a cup; the cup
     comes from the video's text). Each question file is MOVED from validation/<id>/ into backup_dir, which keeps a
     manifest of {"qid", "reason", "source": "policy"} records: reversible (move the files back, rebuild the inbox), and
@@ -248,7 +268,9 @@ def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_ru
     except (OSError, ValueError):
         fb = {}
     settled = set(fb.get("answers") or {}) | set(fb.get("resolutions") or {})
-    backup_dir = backup_dir or os.path.join(work_dir, "validation-withdrawn-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    match = match or (lambda vid, q, settled: is_cup_question(q))
+    reason = reason or WITHDRAWN_REASON
+    backup_dir = backup_dir or os.path.join(work_dir, prefix + dt.datetime.now().strftime("%Y%m%d-%H%M%S"))
     records, kept = [], 0
     for vid in sorted(os.listdir(qroot)) if os.path.isdir(qroot) else []:
         d = os.path.join(qroot, vid)
@@ -262,12 +284,12 @@ def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_ru
                     q = json.load(f)
             except (OSError, ValueError):
                 continue
-            if not isinstance(q, dict) or not is_cup_question(q):
+            if not isinstance(q, dict) or not match(vid, q, settled):
                 continue
             if q.get("qid") in settled:
                 kept += 1
                 continue
-            records.append({"qid": q.get("qid"), "videoId": vid, "file": os.path.join(vid, name), "reason": WITHDRAWN_REASON,
+            records.append({"qid": q.get("qid"), "videoId": vid, "file": os.path.join(vid, name), "reason": reason,
                             "source": "policy", "withdrawnAt": dt.datetime.now().isoformat(timespec="seconds")})
             if not dry_run:
                 os.makedirs(os.path.join(backup_dir, vid), exist_ok=True)
@@ -275,7 +297,7 @@ def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_ru
     removed = 0
     if records and not dry_run:
         with open(os.path.join(backup_dir, "withdrawn.json"), "w", encoding="utf-8") as f:
-            json.dump({"reason": WITHDRAWN_REASON, "source": "policy", "questions": records}, f, ensure_ascii=False, indent=1)
+            json.dump({"reason": reason, "source": "policy", "questions": records}, f, ensure_ascii=False, indent=1)
         if inbox_path and os.path.exists(inbox_path):
             with open(inbox_path, encoding="utf-8") as f:
                 inbox = json.load(f)
@@ -291,15 +313,55 @@ def withdraw_league_questions(work_dir, inbox_path=None, backup_dir=None, dry_ru
             "backup": backup_dir if records and not dry_run else None, "dryRun": dry_run}
 
 
+PERSPECTIVE_WITHDRAWN_REASON = "withdrawn: the left screen is the creator's by default"
+
+
+def withdraw_perspective_questions(work_dir, inbox_path=None, backup_dir=None, dry_run=False):
+    """Takes the open championship perspective questions that perspective_reason() no longer asks out of the Validate
+    queue (same reversible move as withdraw_league_questions). Judged from the stored result's probe screens and the
+    video's refined league document; answered or resolved questions keep their labels. Returns the usual summary plus
+    "videoIds" (withdrawn) and "reanalyse" (those whose stored crop is not the left screen: requeue them)."""
+    results = os.path.join(work_dir, "results")
+    withdrawn, reanalyse = [], []
+
+    def read(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    def match(vid, q, settled):
+        if q.get("kind") != "perspective" or q.get("qid") in settled:
+            return False
+        res, ref = read(os.path.join(results, vid + ".json")), read(os.path.join(results, vid + ".leagues.json"))
+        rv = ref.get("video") or {}
+        probe = res.get("probe") or {}
+        championship = bool(rv.get("championship"))
+        possible = championship or bool(rv.get("possibleChampionship"))
+        if perspective_reason(championship, possible, probe.get("screens"), rv.get("screens")):
+            return False
+        withdrawn.append(vid)
+        left = L.left_screen(probe.get("screens"))
+        if left and res.get("crop") != left:
+            reanalyse.append(vid)
+        return True
+
+    out = withdraw_league_questions(work_dir, inbox_path, backup_dir, dry_run, match, PERSPECTIVE_WITHDRAWN_REASON,
+                                    "validation-withdrawn-perspective-")
+    return {**out, "videoIds": withdrawn, "reanalyse": reanalyse}
+
+
 if __name__ == "__main__":
     import argparse
     import sys
     ap = argparse.ArgumentParser(prog="validate.py withdraw-league", description=withdraw_league_questions.__doc__)
-    ap.add_argument("command", choices=["withdraw-league"])
+    ap.add_argument("command", choices=["withdraw-league", "withdraw-perspective"])
     ap.add_argument("work_dir")
     ap.add_argument("--inbox", default=os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
                                                                      "tests", "meta-benchmark", "results", "validation-inbox.json")))
     ap.add_argument("--backup-dir", default=None)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(sys.argv[1:])
-    print(json.dumps(withdraw_league_questions(a.work_dir, a.inbox, a.backup_dir, a.dry_run), indent=1))
+    fn = withdraw_perspective_questions if a.command == "withdraw-perspective" else withdraw_league_questions
+    print(json.dumps(fn(a.work_dir, a.inbox, a.backup_dir, a.dry_run), indent=1))
