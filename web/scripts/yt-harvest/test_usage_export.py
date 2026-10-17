@@ -126,6 +126,13 @@ class UsageExportTests(unittest.TestCase):
                                                  {'result': 'Win', 'resultSource': 'knockout'})],
                          ['inferred', 'human', 'read', 'unresolvable', 'unknown', 'inferred'])
 
+    def test_in_battle_forms_map_to_the_form_ranked_for_the_base_state(self):
+        pool = {'cramorant', 'mimikyu', 'morpeko_full_belly', 'gourgeist_large'}
+        for identity, expected in (('cramorant_gulping', 'cramorant'), ('cramorant_gorging', 'cramorant'), ('mimikyu_busted', 'mimikyu'),
+                                   ('morpeko_hangry', 'morpeko_full_belly'), ('morpeko_full_belly', 'morpeko_full_belly'),
+                                   ('gourgeist_large', 'gourgeist_large')):
+            self.assertEqual(ue.map_member({'id': identity, 'shadow': False}, pool)[0], expected, identity)
+
     def test_eligibility_rules_and_reasons(self):
         usage, report = self.build()
         ex = {k: v['count'] for k, v in report['exclusions'].items()}

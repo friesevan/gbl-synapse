@@ -478,3 +478,46 @@ class ObservedUsageTests(unittest.TestCase):
         for cup_id, cp, sid, expected in cases:
             mon = gm.get(sid) or gm.get(sid.removesuffix('_shadow'))
             self.assertEqual(league.roster_allowed(cup_id, dict(schedule['cups'][cup_id], cp=cp), sid, mon, gm), expected, (cup_id, cp, sid))
+
+
+class BattleStateTests(unittest.TestCase):
+    """In-battle form changers are one species; look-alike sizes are never an open form question."""
+
+    def member(self, forms, **kw):
+        return ObservedCatalog._member({'key': 'm', **kw, 'inference': {'shadowP': 0, 'forms': forms}}, {}, 'opponent', [], {})
+
+    def test_battle_states_merge_into_the_base_state(self):
+        m = self.member([{'value': 'cramorant_gulping', 'p': .55}, {'value': 'cramorant', 'p': .4}, {'value': 'cramorant_gorging', 'p': .05}])
+        self.assertEqual((m['id'], m['formConfidence'], m['uncertain']), ('cramorant', 1, False))
+        self.assertEqual(self.member([{'value': 'morpeko_hangry', 'p': 1}])['id'], 'morpeko_full_belly')
+        self.assertEqual(self.member([{'value': 'mimikyu_busted', 'p': .6}, {'value': 'mimikyu', 'p': .4}])['id'], 'mimikyu')
+
+    def test_look_alike_sizes_are_settled_by_the_top_pick_and_regional_forms_still_ask(self):
+        import observed
+        sizes = [{'value': 'gourgeist_large', 'p': .4}, {'value': 'gourgeist_small', 'p': .3}, {'value': 'gourgeist_average', 'p': .2}, {'value': 'gourgeist_super', 'p': .1}]
+        m = self.member(sizes)
+        self.assertEqual((m['id'], m['uncertain'], m['why']), ('gourgeist_large', False, []))
+        r = self.member([{'value': 'marowak_alolan', 'p': .6}, {'value': 'marowak', 'p': .4}])
+        self.assertTrue(r['uncertain'])
+        self.assertEqual(r['why'][0]['kind'], 'form')
+        _, settled = observed.settle_forms([{'id': 'gourgeist_small', 'p': .5}, {'id': 'pumpkaboo_small', 'p': .5}])
+        self.assertFalse(settled)   # two species are not look-alikes of each other
+
+    def test_reviewer_form_answer_for_a_battle_state_maps_to_the_base_state(self):
+        a = {'side': 'opponent', 'key': 'm', 'kind': 'form', 'value': 'cramorant_gorging'}
+        m = ObservedCatalog._member({'key': 'm', 'inference': {'forms': []}}, {}, 'opponent', [a], {})
+        self.assertEqual(m['id'], 'cramorant')
+
+    def test_python_and_javascript_agree(self):
+        import shutil
+        import subprocess
+        import observed
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        combat = Path(__file__).resolve().parents[2] / 'includes/meta/combat.js'
+        script = ('const k=require(process.argv[1]);console.log(JSON.stringify({s:k.BATTLE_STATES,'
+                  'l:["gourgeist_small","pumpkaboo_super","gourgeist","marowak_alolan"].map(k.lookAlikeFamily)}))')
+        js = json.loads(subprocess.run([node, '-e', script, str(combat)], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(js['s'], observed.BATTLE_FORMS)
+        self.assertEqual(js['l'], [observed.lookalike_family(x) for x in ('gourgeist_small', 'pumpkaboo_super', 'gourgeist', 'marowak_alolan')])

@@ -74,7 +74,7 @@ import tempfile
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from observed import ObservedCatalog, human, read, date as iso_date  # noqa: E402
+from observed import ObservedCatalog, human, read, date as iso_date, BATTLE_FORMS  # noqa: E402
 import league as league_rules  # noqa: E402
 
 WEB = HERE.parents[1]
@@ -89,11 +89,7 @@ EXCLUDED_FOOTAGE = ('none', 'obscured')
 BOUNDARY_FLAG = 'More than three opponent species'
 MY_BOUNDARY_FLAG = 'More than three my species'
 MID_START_FLAG = 'Recording starts mid-battle'
-# In-battle form changes of one Pokemon -> the form PvPoke ranks (the trainer's pool IDs).
-BATTLE_FORMS = {'cramorant_gulping': 'cramorant', 'cramorant_gorging': 'cramorant',
-                'morpeko_hangry': 'morpeko_full_belly', 'aegislash_blade': 'aegislash_shield',
-                'mimikyu_busted': 'mimikyu', 'darmanitan_zen': 'darmanitan_standard',
-                'darmanitan_galarian_zen': 'darmanitan_galarian_standard'}
+# In-battle form changes of one Pokemon -> the form PvPoke ranks (the trainer's pool IDs): observed.BATTLE_FORMS.
 UNKNOWN_IDS = (None, '', 'other', 'none', 'None', 'unknown')
 FAST_CONFIDENCE = .90        # the extractor's top fast-move inference counts as observed from this probability on
 MAX_CHARGED = 2              # a Pokemon in this pool has two charged moves; more distinct moves seen is a detection error

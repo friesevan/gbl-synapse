@@ -57,6 +57,8 @@ The **Validate** tab shows a short queue of questions: "Is the opponent's Sabley
 
 It only asks when it is genuinely unsure: a fast move below 85% confidence, a Shadow estimate between 15% and 85%, a form it could not settle, a result it could not read. Everything else is recorded without bothering you.
 
+Some things it deliberately never asks. Forms that look exactly the same on screen (Gourgeist and Pumpkaboo in their four sizes) cannot be told apart by anyone watching, so the extractor settles them from how well each ranks and from the damage it measured. Pokémon that change form during the battle are one Pokémon, not several to choose from: Cramorant starts normal and turns Gulping or Gorging only after Dive or Surf, Mimikyu starts Disguised and turns Busted when a charged attack hits it, and Morpeko flips between Full Belly and Hangry with every Aura Wheel (which changes that move's type). The fast-move question lists the moves of every form still possible, so a move only one form learns is never missing; for example Thunder Shock, which only Hisuian Electrode has. Choosing a move that only one form learns also settles the form. Moves beyond the leading choices sit under an "Other move" list.
+
 Championship broadcasts that show two phones side by side no longer get a "whose screen" question: the left phone is treated as the creator's battle, every time, so results are consistent. If you already answered that question, your answer still decides. It asks only when one phone is shown and the championship evidence is weak (it may be an ordinary battle video), or when two phones were found but could not be told apart.
 
 ## How it learns
