@@ -738,6 +738,21 @@ def refine_battle_league(observed, candidates=None, schedule=None, gamemaster=No
 
 # ---------------------------------------------------------------- video-level document and bulk rewrite
 
+def left_screen(screens):
+    """The left phone of a two-screen frame (championship broadcasts), as a box, or None when the probe found fewer than
+    two screens or could not tell them apart (the two leftmost boxes overlap by more than 30% of their width, the probe's
+    own rule for a second phone). Boxes are [x0, y0, x1, y1]. The creator's battle is the LEFT screen by default."""
+    boxes = sorted((s.get("box") for s in screens or [] if isinstance(s, dict) and s.get("box") and len(s["box"]) == 4),
+                   key=lambda b: b[0])
+    if len(boxes) < 2:
+        return None
+    a, b = boxes[0], boxes[1]
+    width = min(a[2] - a[0], b[2] - b[0])
+    if width <= 0 or max(0, min(a[2], b[2]) - max(a[0], b[0])) > width * 0.3:
+        return None
+    return a
+
+
 def refine_video(res, video_league, schedule, gamemaster, upload_date=None, lag_days=UPLOAD_LAG_DAYS, meta=None):
     """The *.leagues.json document of one analysed video (what harvest.write_league_refinement stores). Per battle:
     the league from the CPs it shows, the cup from the video's text (battle_cup: title, tags, chapters, description;
@@ -754,6 +769,9 @@ def refine_video(res, video_league, schedule, gamemaster, upload_date=None, lag_
     screens = len(((res.get("probe") or {}).get("screens")) or [])
     championship = bool(video_league.get("championship"))
     possible = championship or bool(video_league.get("possibleChampionship")) or screens >= 2
+    # Weak championship words plus two distinguishable phone screens: no question, the left screen is analysed as a championship.
+    if not championship and video_league.get("possibleChampionship") and left_screen((res.get("probe") or {}).get("screens")):
+        championship = True
     out = []
     for b in res.get("battles", []):
         def team(side):

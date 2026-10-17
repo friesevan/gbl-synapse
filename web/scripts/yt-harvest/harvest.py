@@ -975,7 +975,7 @@ class Harvester:
                 # screens run-node's CROP=auto (16 seeks) misses, e.g. a faint phone edge on a dark backdrop.
                 probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)
                 plan = {"CROP": probe["box"] and ",".join(map(str, probe["box"]))} if probe and probe.get("box") else {}
-            crop = perspective_crop(probe, labels.get("perspective"))
+            crop = perspective_crop(probe, labels.get("perspective") or ("gbl" if labels.get("championship") is False else None))
             if crop and plan is not None:
                 plan["CROP"] = crop
             if plan is None:
@@ -1401,12 +1401,17 @@ def probe_plan(probe, full_above=0.8, max_key_interval=12):
 
 
 def perspective_crop(probe, perspective):
-    """Championship broadcasts show two phones: the reviewer's 'perspective' answer picks one."""
+    """Two phones side by side (championship broadcasts): the creator's battle is the LEFT screen by default. A reviewer's
+    'perspective' answer wins: left/right pick that screen; single, switches and gbl (not a championship) leave the
+    probe's own screen. Only a probe that found two distinguishable screens (L.left_screen) changes the crop."""
     screens = (probe or {}).get("screens") or []
-    if perspective not in ("left", "right") or len(screens) < 2:
-        return None
-    box = sorted(screens, key=lambda x: x["box"][0])[0 if perspective == "left" else -1]["box"]
-    return ",".join(str(v) for v in box)
+    if perspective in (None, "", "left"):
+        box = L.left_screen(screens)
+    elif perspective == "right":
+        box = sorted((x["box"] for x in screens if x.get("box")), key=lambda b: b[0])[-1] if L.left_screen(screens) else None
+    else:
+        box = None
+    return ",".join(str(v) for v in box) if box else None
 
 
 def probe_summary(probe):
