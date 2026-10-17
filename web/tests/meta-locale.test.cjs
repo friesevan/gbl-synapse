@@ -62,7 +62,7 @@ test('banners in other UI languages resolve to English keys and PvPoke moves; En
  const moveMaps=Object.fromEntries(Object.keys(C.LOCALES).map(l=>[l,C.moveDictionary(gm.moves,require('../includes/meta/move-names.json').names,l)]));
  const ctx=lang=>({lang,locales,moveMaps,moves:gm.moves,dict}),lb=(t,l)=>C.localBanner(t,ctx(l));
  assert.deepEqual(lb('ゼクロムはワイルドボルトを使った！','ja'),{kind:'move',actor:'zekrom',move:'Wild Charge',lang:'ja'});
- assert.deepEqual(lb('ゆけっ！ルギア！','ja'),{kind:'go',name:'lugia'});
+ assert.deepEqual(lb('ゆけっ！ルギア！','ja'),{kind:'go',name:'lugia',side:'my'});
  assert.deepEqual(lb('메타그로스(은)는 코멧펀치 (을)를 썼다!','ko'),{kind:'move',actor:'metagross',move:'Meteor Mash',lang:'ko'});
  assert.deepEqual(lb('路卡利歐 使出了\n波導彈！','zh-Hant'),{kind:'move',actor:'lucario',move:'Aura Sphere',lang:'zh-Hant'});
  assert.deepEqual(lb('Glurak hat Lohekanonade eingesetzt!','de'),{kind:'move',actor:'charizard',move:'Blast Burn',lang:'de'});

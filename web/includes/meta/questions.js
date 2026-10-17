@@ -104,7 +104,8 @@ function questions(battles,{pokemon,moves,confident=.85,shadowBand=[.15,.85]}={}
    options:RESULT_OPTIONS,...(g?{modelTop:g.value,modelP:g.p,resultRule:g.rule}:{})});}});
  // Species and the model's leading answer travel with each question, so answers can train priors
  // and measure accuracy later.
- for(const q of out){if(!q.side)continue;const m=battles[q.battle][q.side].find(p=>p.key===q.key),inf=m.inference;
+ // A species read from the banners (core.js bannerTeam: nameplates cropped off) is less certain: the question says so.
+ for(const q of out){if(!q.side)continue;const m=battles[q.battle][q.side].find(p=>p.key===q.key),inf=m.inference;if(m.speciesFrom==='banners'){q.speciesFrom='banners';q.detail+=' The species and its side were read from the battle banners, not the nameplate (cropped off in this upload): check them too.';}
   q.species=m.answers?.form||inf?.forms?.[0]?.value||m.formId||base(m.candidates?.[0]?.id||'');q.speciesName=displayName(m,byId,q.kind==='form');
   if(q.kind==='shadow'&&inf){q.modelTop=inf.shadowP>=.5;q.modelP=Math.max(inf.shadowP,1-inf.shadowP);if(inf.visual)q.purple=inf.visual.purple;}
   if(q.kind==='fastMove'&&inf){q.modelTop=inf.moves[0].value;q.modelP=inf.moves[0].p;}

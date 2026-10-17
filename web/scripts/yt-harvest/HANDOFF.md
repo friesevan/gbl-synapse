@@ -580,3 +580,35 @@ Details: `includes/meta/README.md` §3 *Locating the phone screen* (Placements) 
   local, so a re-download).
 - **Left:** a clip that also changes the phone's size (eQphfsMBt_A's last: 240.7 px wide at 359.6 of 960, the rest 260
   at 431) is not a placement and stays unread; `CROP=auto` without a probe has one box.
+
+## Status 2026-10-17 (species from banners)
+
+Details: `includes/meta/README.md` §3 *Species from banners when the names are cropped off*, §6 *Language from banners*,
+§10 gaps. Takes effect on the next harvester start.
+
+- **Problem**: uploads that crop the phone's top cut the nameplate names off (K7vaQKc1Gxs, dy −144: only the ball row;
+  te5W8Jrc-Mk, −136: names cut in half; both Brooke Channel, Japanese Master League). The HUD tracked their battles but
+  no plate named a species, so they gave 0 battles, and their banners were never read with the Japanese model.
+- **Fix** (`core.js` NameLanguage.bannerVote/bannerEvidence, HudTracker sightings + `bannerTeam`, `barDefender`,
+  `wideBannerBox`; `run-node.cjs` banner search and the HP-bar cue; `ui.js` the same without the HP-bar cue): while
+  English has named nothing, banners are read with the CJK models and two "X used Y!" parses switch the language; a
+  battle whose nameplates named nothing takes its species from send-out banners (with their side) and attacks (side from
+  the species' send-out and the defender's shield, faint or HP drop, which must agree). Flagged "Species from banners",
+  confidence 40, `speciesFrom: 'banners'`; questions about such Pokémon say so. Battles named by a plate are unchanged.
+- **Measured** (YouTube refused every download on 2026-10-17/18, so K7vaQKc1Gxs and te5W8Jrc-Mk themselves weren't
+  re-run): synthetic crops of iC4-0ss8p40 (to dy −142 and −134) and cc1z7nZJbgk (−142): 0 → 6 battles each, 17 opponent
+  species and 5 full teams per video (the uncropped nameplate run of iC4-0ss8p40: 17 and 5; 16 of its 17 found, plus a
+  Ho-Oh the frames show and no plate did); your side 9–10 of 17, none wrong; 27 of 33 attack sides right, 2 wrong.
+  Real: y_ubrafzmFI (half-cut names, 720p) 3 → 4 battles, L2Iyrc06j00 6 → 7 (the new battles' species checked on frames).
+- **Unchanged**: the 9 labelled recordings give identical JSON (timings excluded; even the metrics match: no banner was
+  read with a CJK model) and identical score.cjs output; parity.cjs 7/7 identical; ziHxrgo-lw4, Df7OyCA55CI (ja) and
+  9KDK30i9hOI (ko, 288×640) identical (9KDK30i9hOI now decides Korean from banners at 82.5 s instead of 336 s; its
+  second pass is identical); cc1z7nZJbgk identical. In y_ubrafzmFI and L2Iyrc06j00 the battles named by a plate are
+  unchanged, except that L2Iyrc06j00's first battle now closes its result as unresolvable (the newly found battle's HUD
+  follows 9 s later without a fade: the hard-cut rule).
+- **Requeue**: K7vaQKc1Gxs te5W8Jrc-Mk (0 battles, names cropped off), GbQsEozkbAk (English, dy −140, 0 species),
+  y_ubrafzmFI and L2Iyrc06j00 (+1 battle each). Brooke Channel's other cut-top uploads (8i23znoWmes, dy −121) may gain
+  battles too.
+- **Open** (README §10): battles in which one half-cut name reads keep their one or two plate species and take nothing
+  from banners (y_ubrafzmFI, cc1z7nZJbgk, L2Iyrc06j00); mirror matchups leave some attacks unassigned; the browser has
+  no HP-bar cue.
