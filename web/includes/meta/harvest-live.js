@@ -133,7 +133,7 @@ function promptSignIn(view,{blocked=false}={}){
  return new Promise(resolve=>{
   const d=view.signInDialog||(view.signInDialog=buildDialog(view));d.resolve=resolve;
   d.title.textContent=blocked?'YouTube is blocking downloads':'Sign in to YouTube before downloading';
-  d.lead.textContent=blocked?'YouTube asked the harvester to sign in (“confirm you’re not a bot”). Downloads pause until a working sign-in is saved.':'Downloads go through your YouTube sign-in, which keeps YouTube’s bot check from blocking them. Make sure you are signed in to YouTube in the browser chosen below, then test it.';
+  d.lead.textContent=blocked?'YouTube asked the harvester to sign in (“confirm you’re not a bot”). Downloads pause until a working sign-in is saved.':'Downloads go through your YouTube sign-in, which keeps YouTube’s bot check from blocking them. Make sure you are signed in to YouTube in the browser named here, then test it.';
   d.go.textContent=blocked?'Test sign-in':'Test sign-in and start';d.anyway.hidden=true;d.anyway.textContent=blocked?'Dismiss':'Start without a working sign-in';
   d.msg.textContent='';d.msg.className='hl-auth-result';d.state.textContent='Loading the saved sign-in…';d.blocked=blocked;
   loadAuth(view,true).then(()=>{const c=view.auth?.config||{};d.state.textContent='Saved sign-in: '+(c.label||'none')+(c.mode&&c.mode!=='none'?'':'. Choose a browser in “YouTube sign-in” below.');d.state.className='hl-auth-state '+(c.mode&&c.mode!=='none'?'hl-good':'hl-bad');});
