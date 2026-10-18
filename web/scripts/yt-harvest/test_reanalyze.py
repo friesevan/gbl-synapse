@@ -270,7 +270,8 @@ class MembersOnlyTest(unittest.TestCase):
         for title in ("（メンバー限定）レトロカップで爆勝ち", "【メン限定動画】レジェンド常連は", "【メンバー限定】緊急配信！",
                       "Members only: my Great League team", "멤버십 전용 영상", "Solo miembros - Liga Super Ball"):
             self.assertEqual(H.restricted_reason({"title": title}), "members-only (title)", title)
-        for title in ("Pokemon GO Great League", "メンバー紹介！", "Mega Ohrdoch so bulky"):
+        for title in ("Pokemon GO Great League", "メンバー紹介！", "Mega Ohrdoch so bulky", "【メン限特別公開】日本酒試飲会",
+                      "MEMBERS-ONLY Q&A ANSWERS OCTOBER 2024!", "メン限についてのお話！"):
             self.assertEqual(H.restricted_reason({"title": title}), "", title)
 
     def test_mark_restricted_takes_videos_off_the_queues(self):

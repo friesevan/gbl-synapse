@@ -284,15 +284,24 @@ def consume_requeue_files(work_dir, state, inflight=()):
         return RQ.consume_requests(work_dir, state.db, inflight, log)
 
 
+# Titles that mention members-only but are public: a members video released to everyone, or public answers to
+# members' questions.
+MEMBERS_PUBLIC_RE = re.compile(r"公開|public|q\s*&\s*a\s*answ|answers?\b|についての", re.I)
+
+
 def restricted_reason(entry):
     """Why a listed video can't be downloaded without a membership, before anything is requested for it, or ''."""
     availability = (entry or {}).get("availability")
     if availability in RESTRICTED:
         return {"subscriber_only": "members-only (listing badge)", "premium_only": "YouTube Premium only (listing badge)",
                 "needs_auth": "sign-in required (listing badge)"}[availability]
-    if MEMBERS_TITLE_RE.search((entry or {}).get("title") or ""):
+    if members_title((entry or {}).get("title")):
         return "members-only (title)"
     return ""
+
+
+def members_title(title):
+    return bool(title) and bool(MEMBERS_TITLE_RE.search(title)) and not MEMBERS_PUBLIC_RE.search(title)
 
 
 class Backoff:
@@ -636,30 +645,23 @@ class Harvester:
         return n
 
     def skip_members_only(self):
-        """Startup sweep: (1) queued videos whose title says members-only; (2) for each channel that has served a
-        members-only video, its members-only playlist (UUMO + channel id), which lists every such video in one
-        request. Each channel's playlist is read at most once a week."""
+        """Startup sweep: queued videos whose title says members-only. (A channel's members-only playlist, UUMO + id,
+        was tried on 2026-10-18 and YouTube answered "The playlist does not exist" even for a channel that had served
+        a members-only video, so it is not used; the listing badge covers videos discovered from now on.)"""
         n = 0
         for row in self.state.q("SELECT id, title FROM videos WHERE dl_status IS NULL AND x_status IS NULL AND "
                                 "meta_status IN ('todo','done') AND title IS NOT NULL"):
-            if MEMBERS_TITLE_RE.search(row["title"]):
+            if members_title(row["title"]):
                 n += self.mark_restricted(row["id"], "members-only (title)")
-        if n:
-            log.info("members-only: %d queued videos skipped by title", n)
-        self.state.x("CREATE TABLE IF NOT EXISTS members_checked(channel_id TEXT PRIMARY KEY, checked REAL, n INTEGER)")
-        channels = self.state.q(
-            "SELECT DISTINCT channel_id FROM videos WHERE channel_id LIKE 'UC%' AND (err LIKE '%Join this channel%' OR "
-            "err LIKE '%members-only%' OR err LIKE '%members only%') AND channel_id NOT IN "
-            "(SELECT channel_id FROM members_checked WHERE checked > ?)", (time.time() - 7 * 86400,))
-        for ch in channels:
-            if not self.alive():
-                return
-            cid = ch["channel_id"]
-            es = self._iter_flat("https://www.youtube.com/playlist?list=UUMO" + cid[2:], 5000)
-            k = sum(self.mark_restricted(e["id"], "members-only (channel members playlist)") for e in es if e and e.get("id"))
-            self.state.x("INSERT OR REPLACE INTO members_checked(channel_id, checked, n) VALUES(?,?,?)", (cid, time.time(), len(es)))
-            log.info("members-only: channel %s lists %d members-only videos; %d were queued and are now skipped", cid, len(es), k)
-            self.stop.wait(self.a.pace)
+        # A title the rule no longer matches goes back to the metadata queue (its download decision is made again).
+        back = 0
+        for row in self.state.q("SELECT id, title FROM videos WHERE err='unavailable: members-only (title)' AND "
+                                "dl_status IS NULL"):
+            if not members_title(row["title"]):
+                back += self.state.x("UPDATE videos SET meta_status='todo', allowed=NULL, err=NULL, updated=? WHERE id=?",
+                                     (time.time(), row["id"]))
+        if n or back:
+            log.info("members-only: %d queued videos skipped by title%s", n, f"; {back} released by the narrower rule" if back else "")
 
     def discover_search(self):
         modes = [("date", True, self.a.search_limit, 12 * 3600), ("relevance", False, self.a.search_limit * 2, 7 * 86400)]
@@ -840,8 +842,9 @@ class Harvester:
 
     def backlog_hours(self):
         """Estimated hours of extraction work already downloaded and waiting (or running)."""
+        # Queued re-analyses are reanalyze.py's work, not this harvester's: they never hold up downloads.
         queued = self.state.q("SELECT COALESCE(SUM(duration),0) s FROM videos WHERE dl_status='done' AND deleted_date IS NULL "
-                              "AND (x_status IS NULL OR x_status IN ('working','reworking') OR " + REPROCESS + ")")[0]["s"]
+                              "AND (x_status IS NULL OR x_status='working') AND NOT " + REPROCESS)[0]["s"]
         with self.clock:
             vs, busy = self.c["xVideoS"], self.c["xBusyS"]
         # Measured video-seconds per busy worker-second once enough work is done (the probe makes
