@@ -91,6 +91,8 @@ def file_lock(path):
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
+LEARNING_TIMEOUT_S = 7200   # learning-loop.cjs refit (see FeedbackService._fit)
+
 class FeedbackUnavailable(Exception):
     """503: a different local server owns validation, or this instance was closed."""
 
@@ -551,8 +553,10 @@ class FeedbackService:
                           # Archived human labels train the Shadow classifier only (their priors are in the baseline).
                           "labelsDir": str(self.work / "labels"),
                           "workDir": str(self.work), "fitParams": str(context / "movefit-params.json")})
+        # About 13 CPU-minutes on an idle machine (845 runs, 2026-10-18); the 30-minute limit it had stopped the 2026-10-18 refit
+        # while 8 re-analysis workers ran, so the limit allows for a busy machine.
         proc = subprocess.run(["node", str(self.web / "tests/meta-benchmark/learning-loop.cjs"), str(src), str(dst)],
-                              capture_output=True, text=True, timeout=1800, cwd=self.web)
+                              capture_output=True, text=True, timeout=LEARNING_TIMEOUT_S, cwd=self.web)
         if proc.returncode:
             raise RuntimeError(proc.stderr[-500:] or "Offline model refit failed")
         return json.loads(dst.read_text(encoding="utf-8"))
