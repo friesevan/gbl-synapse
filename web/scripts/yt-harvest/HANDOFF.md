@@ -506,3 +506,17 @@ Details: `includes/meta/README.md` §6 *At harvest scale, and the language searc
   GT2HaKrxyDc cVMJbsB5l9c tPEBKgLqMuA KC_-Hc-Uj7U glOZKkCcUq0 u3bK2DIXDSM YwlLsjFhjGc Aw-3ZxU19TE 6XaqQ19ad80 tETcuI22o4Y
   RdVQ_zzDwPE l8IDt433dcU PwxEzXhu0HY). Held out by video, refit 60 → 61: fast moves 169 → 171/197 (log-loss 0.322 →
   0.316), forms 25/31 (0.302 → 0.299), Shadow 321/395 (log-loss 0.421 → 0.405, AUC 0.888 → 0.896).
+
+## Status 2026-10-17 (owner reports: still images, look-alike form questions, Corvisquire)
+
+- **Still images counted as battles** (owner: INMpMrmY7GI has no footage, only a battle screenshot): `core.js stillBattle`
+  drops a battle without hits or banners whose HP readings are ≥ 90% one value per side (README §3). Of 4,678 saved
+  battles it matches only the two stills (INMpMrmY7GI #0, -S98unxGFow #1). Their 3 open questions were withdrawn
+  (`validation-withdrawn-still-20261017-132025/`) and both videos requeued.
+- **Form questions for Gourgeist/Pumpkaboo sizes and battle states** still open from before db92e47:
+  `python3 -s validate.py withdraw-forms WORK_DIR [--dry-run]` withdrew 84 (12 answered kept;
+  `validation-withdrawn-forms-20261017-131409/`).
+- **Corvisquire for Zekrom (7qqbqf5Mb7E)**: caused by the 2026-10-13 Korean jamo matcher (채크로우 is 2 jamo from
+  Corvisquire's 푸크로우, 3 from Zekrom's 제크로무). The fix is the owner-request branch "WIP nameplate checks"
+  (worktree-agent-acc132cc82ce829aa, another session). After it merges, requeue the CJK videos with suggestion-quality
+  members.

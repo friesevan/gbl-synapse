@@ -5,11 +5,20 @@ function distance(a,b){const row=Array.from({length:b.length+1},(_,i)=>i);for(le
 // The nameplate shows Mega and Primal forms as "Mega Garchomp", "Mega Mewtwo X", "Primal Kyogre"; PvPoke
 // names them "Garchomp (Mega)", "Mewtwo (Mega X)", "Kyogre (Primal)". Both spellings map to that form only.
 const inGameName=p=>{const m=/^(.*) \((Mega|Primal)( [XY])?\)$/.exec(p.speciesName);return m?`${m[2]} ${m[1]}${m[3]||''}`:null;};
-function dictionary(pokemon){const map=new Map();for(const p of pokemon){const shown=inGameName(p),visible=shown||p.speciesName.replace(/\s*\([^)]*\)/g,'').replace(/\s*Shadow$/i,'');for(const name of [p.speciesName,visible,p.speciesId.replace(/_/g,' ')]){const key=normalize(name);if(!map.has(key))map.set(key,[]);if(!map.get(key).some(x=>x.speciesId===p.speciesId))map.get(key).push(p);}}return map;}
+// PvPoke's brackets name forms, except "Mime (Jr)", whose bracket is part of the name: dropping it made "Mime" a
+// dictionary name, one letter from a covered "Melmet" plate (read "Meime").
+const visibleName=p=>inGameName(p)||p.speciesName.replace(/\s*\(Jr\)/,' Jr.').replace(/\s*\([^)]*\)/g,'').replace(/\s*Shadow$/i,'');
+function dictionary(pokemon){noteDexMax(pokemon);const map=new Map();for(const p of pokemon){const visible=visibleName(p);for(const name of [p.speciesName,visible,p.speciesId.replace(/_/g,' ')]){const key=normalize(name);if(!map.has(key))map.set(key,[]);if(!map.get(key).some(x=>x.speciesId===p.speciesId))map.get(key).push(p);}}return map;}
 function match(text,dict){const key=normalize(text.replace(/\bCP\s*\d+/gi,''));if(key.length<3)return null;let candidates=dict.get(key),quality='exact';if(!candidates){let best=99;for(const [name,items] of dict){if(Math.abs(name.length-key.length)>1)continue;const d=distance(key,name);if(d<best){best=d;candidates=items;}else if(d===best)candidates=[...candidates,...items];}if(best>1||key.length<5)return null;quality='suggestion';}return hitOf(text,candidates,quality);}
 // Match result; `key` is always the English visible name, whatever language the nameplate used.
-const englishKey=p=>normalize(inGameName(p)||p.speciesName.replace(/\s*\([^)]*\)/g,'').replace(/\s*Shadow$/i,''));
-function hitOf(text,candidates,quality){candidates=[...new Map(candidates.map(p=>[p.speciesId,p])).values()];return {label:text.trim(),candidates:candidates.map(p=>({id:p.speciesId,name:p.speciesName,types:p.types,dex:p.dex})),key:englishKey(candidates[0]),quality,id:quality==='exact'&&candidates.length===1?candidates[0].speciesId:''};}
+const englishKey=p=>normalize(visibleName(p));
+// Highest CP a species can show (level 51, perfect IVs), over every form of its Pokédex number (a plate's name
+// can't tell Zacian from Zacian Crowned Sword, ~4,380 vs ~5,700); null without base stats. PvPoke's Mega stats are
+// a little below the game's (Mega Mewtwo Y computes to 7,354 but plates read 7,529), hence CP_SLACK in plateHit.
+const CPM_MAX=.84529999,DEX_MAX=new Map(),formMaxCp=p=>{const b=p.baseStats;return b?Math.floor((b.atk+15)*Math.sqrt(b.def+15)*Math.sqrt(b.hp+15)*CPM_MAX*CPM_MAX/10):null;};
+function noteDexMax(pokemon){for(const p of pokemon){const m=formMaxCp(p);if(m&&p.dex!=null&&!(DEX_MAX.get(p.dex)>=m))DEX_MAX.set(p.dex,m);}}
+const maxCp=p=>{const m=Math.max(formMaxCp(p)||0,DEX_MAX.get(p.dex)||0);return m||null;};
+function hitOf(text,candidates,quality){candidates=[...new Map(candidates.map(p=>[p.speciesId,p])).values()];return {label:text.trim(),candidates:candidates.map(p=>({id:p.speciesId,name:p.speciesName,types:p.types,dex:p.dex,maxCp:maxCp(p)})),key:englishKey(candidates[0]),quality,id:quality==='exact'&&candidates.length===1?candidates[0].speciesId:''};}
 // ---- Other UI languages (2026-10-11) ----
 // Nameplates follow the phone's language: 101 of 102 harvested videos with Japanese titles and 39 of 41
 // with Korean ones gave no battle, because no name matched the English list. species-names.json
@@ -25,7 +34,7 @@ function nameKey(text,lang){const loc=LOCALES[lang];if(!loc?.script)return norma
  return s.replace(/[^\p{L}\p{N}]/gu,'');}
 // Localised name → the same PvPoke entries as the English visible name. Latin-script names equal to an
 // English name (most Spanish and Italian ones) are left to the English dictionary.
-function localeDictionary(pokemon,names,lang,english=null){const loc=LOCALES[lang],table=names?.[lang];if(!loc||!table)return null;const map=new Map();
+function localeDictionary(pokemon,names,lang,english=null){const loc=LOCALES[lang],table=names?.[lang];if(!loc||!table)return null;noteDexMax(pokemon);const map=new Map();
  for(const p of pokemon){const local=table[p.dex];if(!local)continue;const m=/^(.*) \((Mega|Primal)( [XY])?\)$/.exec(p.speciesName);let shown=local;
   if(m){const pre=m[2]==='Mega'?loc.mega:loc.primal;if(!pre)continue;shown=pre+local+(m[3]?m[3].trim():'');}
   const key=nameKey(shown,lang);if(key.length<(loc.script?2:3)||english?.has(key))continue;if(!map.has(key))map.set(key,[]);if(!map.get(key).some(x=>x.speciesId===p.speciesId))map.get(key).push(p);}
@@ -36,18 +45,33 @@ function localeDictionary(pokemon,names,lang,english=null){const loc=LOCALES[lan
 // English read of the same plate (latin) usually still ends in it.
 const jamo=s=>{let o='';for(const c of s){const i=c.charCodeAt(0)-0xAC00;o+=i<0||i>11171?c:String.fromCharCode(0x1100+Math.floor(i/588),0x1161+Math.floor(i%588/28))+(i%28?String.fromCharCode(0x11A7+i%28):'');}return o;},jamoNames=new WeakMap();
 function matchJamo(key,map,latin){const kj=jamo(key),tol=Math.max(1,kj.length>>2);if(kj.length<6)return null;let names=jamoNames.get(map);if(!names)jamoNames.set(map,names=[...map].map(([name,items])=>[jamo(name),name,items]));
- let best=Infinity,found=[];for(const [nj,name,items] of names){if(Math.abs(nj.length-kj.length)>tol)continue;const d=distance(kj,nj);if(d>tol||d>best)continue;if(d<best){best=d;found=[];}found.push([name,items]);}
+ // Beyond one jamo, another species within one more jamo is a rival (2026-10-17): 채크로우 (Zekrom's 제크로무 with three
+ // look-alike strokes wrong) was 2 jamo from Corvisquire's 푸크로우 and 3 from 제크로무, and was read as Corvisquire.
+ // Returns {items, rivals}: with rivals the read is ambiguous and the plate's CP must decide (core.js plateHit).
+ let best=Infinity,found=[],near=[];for(const [nj,name,items] of names){if(Math.abs(nj.length-kj.length)>tol+1)continue;const d=distance(kj,nj);if(d>tol+1)continue;near.push([d,items]);if(d>tol||d>best)continue;if(d<best){best=d;found=[];}found.push([name,items]);}
  const tail=/([a-z])[^a-z]*$/i.exec(String(latin||''))?.[1]?.toLowerCase();if(found.length>1&&(tail==='x'||tail==='y')&&found.every(([n])=>/[xy]$/.test(n))){const pick=found.filter(([n])=>n.endsWith(tail));if(pick.length)found=pick;}
- return found.length&&found.every(([,items])=>englishKey(items[0])===englishKey(found[0][1][0]))?found[0][1]:null;}
+ if(!found.length||!found.every(([,items])=>englishKey(items[0])===englishKey(found[0][1][0])))return null;const key0=englishKey(found[0][1][0]);
+ const twin=k=>/[xy]$/.test(key0)&&k.slice(0,-1)===key0.slice(0,-1);   // Mega X/Y: decided by the English read's last letter
+ const rivals=best>=2?near.filter(([d,items])=>d<=best+1&&englishKey(items[0])!==key0&&!twin(englishKey(items[0]))).map(([,items])=>items):[];
+ return {items:found[0][1],rivals};}
 // Exact match, or one wrong character for longer names when exactly one species is that close (Korean: matchJamo).
+// Stricter for CJK (2026-10-17): a 4-character name one character off, with another species within two (ゼラロム is one
+// from ゼクロム but two from ゼラオラ), is ambiguous: the hit lists the rivals (`alternatives`) and the plate's CP must
+// single one out (core.js plateHit), as for Korean jamo rivals. A Japanese read that is mostly hiragana (species names
+// are katakana) gives no suggestion and no exact name under 4 characters: しまま (a hiragana nickname) folded to
+// シママ, Blitzle, and ますます to デスマス, Yamask.
 function matchLocale(text,map,lang,latin=null){if(!map)return null;const cjk=!!LOCALES[lang]?.script;let key=nameKey(String(text).replace(/\bCP\s*\d+/gi,''),lang);if(key.length<(cjk?2:3))return null;
+ const hira=lang==='ja'?(String(text).match(/[ぁ-ゖ]/g)||[]).length:0,kana=hira+(lang==='ja'?(String(text).match(/[ァ-ヺー]/g)||[]).length:0),hiraganaRead=hira>0&&hira*2>=kana;
  let candidates=map.get(key),quality='exact';
  // CJK OCR often adds a stray digit or Latin letter at either end (the CP's first digit, a ball's edge).
  if(!candidates&&cjk){const core=key.replace(/^[0-9a-z]+|[0-9a-z]+$/g,'');if(core!==key&&core.length>=2){candidates=map.get(core);if(!candidates&&core.length>=4)key=core;}}
- if(!candidates&&lang==='ko'){candidates=matchJamo(key,map,latin);quality='suggestion';}
- if(!candidates){if(key.length<(cjk?4:5))return null;let found=null,ambiguous=false;for(const [name,items] of map){if(Math.abs(name.length-key.length)>1||distance(key,name)>1)continue;if(found&&englishKey(found[0])!==englishKey(items[0]))ambiguous=true;found=found||items;}
-  if(!found||ambiguous)return null;candidates=found;quality='suggestion';}
- return {...hitOf(text,candidates,quality),lang};}
+ if(candidates&&hiraganaRead&&[...nameKey(text,lang).replace(/^[0-9a-z]+|[0-9a-z]+$/g,'')].length<4)return null;
+ let rivals=[];if(!candidates&&lang==='ko'){const j=matchJamo(key,map,latin);if(j){candidates=j.items;rivals=j.rivals;}quality='suggestion';}
+ if(!candidates){if(key.length<(cjk?4:5)||hiraganaRead)return null;let found=null,ambiguous=false;
+  const near2=[];for(const [name,items] of map){if(Math.abs(name.length-key.length)>2)continue;const d=distance(key,name);if(d>2)continue;if(d===2){near2.push(items);continue;}if(found&&englishKey(found[0])!==englishKey(items[0]))ambiguous=true;found=found||items;}
+  if(!found||ambiguous)return null;if(cjk&&key.length<5)rivals=near2.filter(items=>englishKey(items[0])!==englishKey(found[0]));candidates=found;quality='suggestion';}
+ const hit={...hitOf(text,candidates,quality),lang};if(rivals.length){const seen=new Set([hit.key]);hit.alternatives=[];for(const items of rivals){const h=hitOf(text,items,'suggestion');if(!seen.has(h.key)){seen.add(h.key);hit.alternatives.push({key:h.key,candidates:h.candidates});}}}
+ return hit;}
 // Which language a video's nameplates use, from exact matches of distinct species. It starts as English
 // and switches once to a language with two exact matches, or one long one (≥ 3 CJK characters / 5 letters)
 // while English has none. Until then other languages are only consulted, never used, so English videos
@@ -156,9 +180,29 @@ const shieldOn=([r,g,b])=>b>180&&r>170&&g<200;
 // fingerprint; a plate with no contrast gives an empty one, which the name cache never matches.
 function nameBits(img,box){const [x0,y0,x1,y1]=box,cols=64,rows=12,lum=new Float32Array(cols*rows),bits=new Uint8Array(cols*rows),w=img.width,d=img.data;for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const x=Math.floor(x0+(c+.5)*(x1-x0)/cols),y=Math.floor(y0+(r+.5)*(y1-y0)/rows),i=(y*w+x)*4;lum[r*cols+c]=(d[i]+d[i+1]+d[i+2])/3;}
  const sorted=[...lum].sort((a,b)=>a-b),bg=sorted[sorted.length>>1],ink=sorted[Math.floor(sorted.length*.05)];if(bg-ink<40)return bits;const cut=Math.min(bg-20,(bg+ink)/2);for(let i=0;i<bits.length;i++)bits[i]=lum[i]<cut?1:0;return bits;}
+// Covered plates (2026-10-17): a stream overlay, a chat pop-up or a sticker over a nameplate leaves part of the name
+// unreadable ("Melmet" under a panda sticker read as "Meime", matched to Mime Jr.). The plate rows just above and
+// below the name hold no text, so a column whose margin pixels are dark or coloured against the plate's own margin
+// colour is covered. Returns the number of covered columns (of 64) over the name or next to it (0 on a clean plate).
+function plateCover(img,dy,side,bits=null){const s=img.width/REF_W,[x0,,x1]=HUD.name[side],w=img.width,d=img.data,cols=64,rows=COVER.rows.map(y=>Math.round((y+dy)*s)).filter(y=>y>=0&&y<img.height);if(!rows.length)return 0;
+ const px=[];for(let c=0;c<cols;c++){const x=Math.min(w-1,Math.floor((x0+(c+.5)*(x1-x0)/cols)*s));for(const y of rows){const i=(y*w+x)*4;px.push([d[i],d[i+1],d[i+2],c]);}}
+ const lum=p=>(p[0]+p[1]+p[2])/3,spread=p=>Math.max(p[0],p[1],p[2])-Math.min(p[0],p[1],p[2]),ref=px.map(lum).sort((a,b)=>a-b)[px.length>>1];
+ // Only columns over the name or within 4 of its ends count (bits: the name fingerprint, same 64 columns): a crop wider
+ // than the phone puts sky and the grey bezel past the plate's end (Mxwep4-3rVI), away from the text, while a sticker
+ // that truncates a name sits right where its ink stops. Uniform grey or near-black columns (the bezel, the screen's
+ // edge) are never cover.
+ const bad=new Uint8Array(cols),grey=new Uint8Array(cols);for(const p of px){if(lum(p)<ref-COVER.dark||spread(p)>COVER.spread)bad[p[3]]++;if((spread(p)<20&&lum(p)<ref-COVER.dark)||lum(p)<70)grey[p[3]]++;}
+ // The bezel also inks the fingerprint; it doesn't extend the name.
+ let lo=0,hi=cols-1;if(bits){const ink=[];for(let c=0;c<cols;c++){if(grey[c]===rows.length)continue;for(let r=0;r<bits.length/cols;r++)if(bits[r*cols+c]){ink.push(c);break;}}if(!ink.length)return 0;lo=ink[0]-4;hi=ink[ink.length-1]+4;}
+ // The plate's rounded corners show the background within ~20 px of its ends (maw_a7oKYMM: 鳳王 starts there).
+ const [p0,,p1]=HUD.panel[side],colX=c=>x0+(c+.5)*(x1-x0)/cols;
+ let n=0;for(let c=Math.max(0,lo);c<=Math.min(cols-1,hi);c++)if(bad[c]>=2&&grey[c]<rows.length&&colX(c)>p0+20&&colX(c)<p1-20)n++;return n;}
+// rows: plate margins (reference px) above and below the name; a column is covered when ≥ 2 of its margin pixels are
+// foreign (a blurred plate edge on a 288-wide upload darkens one row, a sticker or chat box spans them).
+const COVER={rows:[120,123,158,161],dark:60,spread:60,max:3};
 function readHud(img,dy=0){const out={};for(const side of ['my','opponent']){const p=meanRgb(img,scaleBox(HUD.panel[side],img.width,dy));const panel=Math.min(...p)>170&&Math.max(...p)-Math.min(...p)<60;if(!panel){out[side]=null;continue;}const balls=HUD.balls[side].map(b=>ballState(meanRgb(img,scaleBox(inset(b),img.width,dy))));
  // A pale menu card can pass the panel test; real nameplates always show readable Poké Balls.
- if(balls.every(b=>b==='?')){out[side]=null;continue;}out[side]={balls,fainted:balls.filter(b=>b==='fainted').length,shields:HUD.shields[side].filter(b=>shieldOn(meanRgb(img,scaleBox(inset(b),img.width,dy)))).length,bits:nameBits(img,scaleBox(HUD.name[side],img.width,dy)),nameBox:scaleBox(HUD.name[side],img.width,dy),cpBits:nameBits(img,scaleBox(HUD.cp[side],img.width,dy)),cpBox:scaleBox(HUD.cp[side],img.width,dy),types:readTypes(img,dy,side)};}return out.my&&out.opponent?out:null;}
+ if(balls.every(b=>b==='?')){out[side]=null;continue;}out[side]={balls,fainted:balls.filter(b=>b==='fainted').length,shields:HUD.shields[side].filter(b=>shieldOn(meanRgb(img,scaleBox(inset(b),img.width,dy)))).length,bits:nameBits(img,scaleBox(HUD.name[side],img.width,dy)),cover:0,nameBox:scaleBox(HUD.name[side],img.width,dy),cpBits:nameBits(img,scaleBox(HUD.cp[side],img.width,dy)),cpBox:scaleBox(HUD.cp[side],img.width,dy),types:readTypes(img,dy,side)};out[side].cover=plateCover(img,dy,side,out[side].bits);}return out.my&&out.opponent?out:null;}
 // Finds the vertical offset that best fits both nameplates; img must cover y = 0..hudBand(width, maxDy).
 // Calibration: the Poké Balls read correctly over a band of offsets, which proves a battle HUD is
 // on screen (red balls are required: dark menus otherwise read as fainted balls). The exact
@@ -205,9 +249,20 @@ const isSurrender=text=>/surrend|won.?t receive any rewards/i.test(text)||/aufge
 // Reuses one OCR result for near-identical fingerprints. Two fingerprints match when they differ in at most
 // `limit` of all cells AND in at most 30% of their ink: with faint text the first test alone would let
 // every name match every other. Fingerprints with almost no ink are never cached.
-const MIN_INK=12,inkOf=b=>{let n=0;for(let i=0;i<b.length;i++)n+=b[i];return n;};
-class NameCache{constructor(limit=.06,retries=3){this.entries=[];this.limit=limit;this.retries=retries;}
- find(bits){const ink=inkOf(bits);if(ink<MIN_INK)return null;for(const e of this.entries){let diff=0;for(let i=0;i<bits.length;i++)diff+=bits[i]!==e.bits[i];if(diff/bits.length<=this.limit&&diff<=.3*Math.max(ink,e.ink))return e;}return null;}
+const NAME_FAR=4,MIN_INK=12,inkOf=b=>{let n=0;for(let i=0;i<b.length;i++)n+=b[i];return n;};
+// Cells that differ between two fingerprints with no ink of the other print next to them (±1 row and column):
+// blur and re-encoding move stroke edges by a cell, a different name puts ink where there was none. Stops counting
+// past `stop`. On a 572-wide Japanese upload (Mxwep4-3rVI) the same name differed in 0–2 such cells and different
+// names in 8–22, while their plain differences overlapped (same name 18 cells; マッギョ vs ワタッコ 29, under the 6%
+// and 30%-of-ink limits): Jumpluff, Magnezone, Cramorant and Jellicent plates all reused Stunfisk's read.
+function farCells(a,b,cols,stop=Infinity){const rows=a.length/cols;let n=0;for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c;if(a[i]===b[i])continue;const other=a[i]?b:a;let near=false;
+ for(let dr=-1;dr<=1&&!near;dr++){const rr=r+dr;if(rr<0||rr>=rows)continue;for(let dc=-1;dc<=1;dc++){const cc=c+dc;if(cc>=0&&cc<cols&&other[rr*cols+cc]){near=true;break;}}}if(!near&&++n>stop)return n;}return n;}
+// limit: share of differing cells; retries: reads of an unreadable plate; far (names only): at most this many
+// farCells, and the closest entry wins instead of the first.
+class NameCache{constructor(limit=.06,retries=3,{far=null,cols=64}={}){this.entries=[];this.limit=limit;this.retries=retries;this.far=far;this.cols=cols;}
+ static names(){return new NameCache(.06,3,{far:NAME_FAR});}
+ find(bits){const ink=inkOf(bits);if(ink<MIN_INK)return null;let best=null,bestFar=Infinity,bestDiff=Infinity;for(const e of this.entries){let diff=0;for(let i=0;i<bits.length;i++)diff+=bits[i]!==e.bits[i];if(!(diff/bits.length<=this.limit&&diff<=.3*Math.max(ink,e.ink)))continue;if(this.far===null)return e;
+  const f=farCells(bits,e.bits,this.cols,this.far);if(f>this.far)continue;if(f<bestFar||(f===bestFar&&diff<bestDiff)){best=e;bestFar=f;bestDiff=diff;}}return best;}
  get(bits){const e=this.find(bits);if(!e||(e.value===null&&e.misses<this.retries))return undefined;return e.value;}
  set(bits,value){const ink=inkOf(bits);if(ink<MIN_INK)return;const e=this.find(bits);if(e){e.value=value;e.misses=value===null?e.misses+1:0;return;}this.entries.push({bits,ink,value,misses:value===null?1:0});if(this.entries.length>400)this.entries.shift();}
  // After the nameplate language is recognised, plates cached as unreadable are read again.
@@ -215,8 +270,38 @@ class NameCache{constructor(limit=.06,retries=3){this.entries=[];this.limit=limi
 
 // Battle tracker driven by HUD state. Within one battle, fainted Poké Balls and used shields
 // only ever increase, so a reset to a fresh HUD marks the next battle without needing results.
+// Consistency of a nameplate read with the rest of the plate (2026-10-17). A sighting is not used when the plate is
+// covered (core.js plateCover) or when a suggestion's CP on the same frame, a plausible 2–4 digit number, is above every candidate's
+// highest CP: Zekrom at CP 4545 read in Korean as Corvisquire (at most 1,6xx), a covered Melmetal as Mime Jr. CP reads
+// of 5+ digits are junk (a bracket read as a leading 1: "11495"). One frame's CP can lag a switch, so a rejection only
+// drops that sighting; the Pokémon's other sightings still count.
+const CP_SANE=[10,9999],CP_SLACK=1.06;
+function plateHit(s,rejected=null){const hit=s.hit;if(!hit)return null;
+ if(s.cover>=COVER.max){if(rejected)rejected.cover++;return null;}
+ // A leading 1 may be junk too ("1498" for 498 in Little Cup), so it must not fit even without it.
+ const cp=s.cp,sane=cp>=CP_SANE[0]&&cp<=CP_SANE[1],bare=String(cp).startsWith('1')?Number(String(cp).slice(1)):cp;
+ const fits=h=>{const max=h.candidates?.map(c=>c.maxCp);return !(sane&&max?.length&&max.every(m=>m&&cp>m*CP_SLACK&&bare>m*CP_SLACK));};
+ // An ambiguous read (core.js matchLocale alternatives): used only when the CP, or else the same frame's type icons
+ // (both icons read, and they fit exactly one of them: single icons are confused, bug for grass), leave exactly one of its species.
+ if(hit.alternatives?.length){let left=[hit,...hit.alternatives].filter(fits),by='cp';
+  if(left.length>1&&s.types?.length>=2){by='types';left=left.filter(h=>h.candidates?.some(c=>s.types.every(t=>(c.types||[]).includes(t))));}
+  if(left.length!==1){if(rejected)rejected.ambiguous++;return null;}
+  const {alternatives,...one}=left[0]===hit?hit:{...hit,key:left[0].key,candidates:left[0].candidates,id:''};return {...one,decidedBy:by};}
+ // Exact reads keep their species whatever the CP: Team Rocket's Pokémon show CPs above any player's.
+ if(hit.quality!=='exact'&&!fits(hit)){if(rejected)rejected.cp++;return null;}
+ return hit;}
+// Type icons as a check on suggestions (one wrong letter or jamo), per video. They demote, never drop: a contradicting
+// suggestion is flagged for review (p.typeConflict), because similar icon colours are confused even on clean uploads
+// (stLd7OkIg3Y: Charjabug's bug icon read as grass on 45 of 45 votes). Icon colours are only trusted where
+// exact reads agree with them (≥ 85% of their votes fit their species' types: a video can read fire icons as ground).
+// A suggestion is flagged when ≥ 4 of its icon votes were cast, under 20% fit any candidate's types, and one
+// contradicting reading has ≥ 3 votes of its own (small uploads misread single icons: Stunfisk as normal, Kyogre as steel).
+const typeFit=(votes,candidates)=>{let fit=0,all=0;for(const [k,n] of Object.entries(votes||{})){all+=n;const obs=k.split('/');if((candidates||[]).some(c=>obs.every(t=>(c.types||[]).includes(t))))fit+=n;}return {fit,all};};
+function iconReliability(battles){let fit=0,all=0,n=0;for(const b of battles)for(const side of ['my','opponent'])for(const p of b[side]){if(p.quality!=='exact')continue;const f=typeFit(p.typeVotes,p.candidates);if(f.all<3)continue;fit+=f.fit;all+=f.all;n++;}return n>=3&&all?fit/all:0;}
+function typesContradict(p,reliability){if(p.quality==='exact'||reliability<.85)return false;const f=typeFit(p.typeVotes,p.candidates);if(!(f.all>=4&&f.fit<.2*f.all))return false;
+ return Object.entries(p.typeVotes).some(([k,n])=>n>=3&&typeFit({[k]:n},p.candidates).fit===0);}
 class HudTracker{
- constructor(){this.battles=[];this.current=null;this.lastHud=-Infinity;this.lastClosed=null;}
+ constructor(){this.battles=[];this.current=null;this.lastHud=-Infinity;this.lastClosed=null;this.rejected={cover:0,cp:0,ambiguous:0,types:0};}
  static fresh(s){return s.fainted===0&&s.balls.every(b=>b==='alive')&&s.shields===2;}
  static used(s){return s.fainted+(2-s.shields);}
  open(t,midBattle){this.current={id:globalThis.crypto?.randomUUID?.()||String(Math.random()),start:t,end:t,my:[],opponent:[],events:[],result:'Unknown',resultSource:'',fadeAt:null,resultUnread:0,flags:midBattle?['Recording starts mid-battle: lead may be missing']:[],reviewed:false,leadConfirmed:false,used:0,fainted:{my:0,opponent:0},shieldsUsed:{my:0,opponent:0},active:{my:'',opponent:''},segments:[]};}
@@ -258,7 +343,7 @@ class HudTracker{
   for(const side of ['my','opponent']){const s=hud[side];
    if(s.fainted>b.fainted[side]){b.events.push({t,kind:'faint',side,label:`${side==='my'?'Your':'Opponent'} Pokémon fainted (${s.fainted}/3)`});b.fainted[side]=s.fainted;}
    if(2-s.shields>b.shieldsUsed[side]){b.events.push({t,kind:'shield',side,label:`${side==='my'?'You':'Opponent'} used a shield`});b.shieldsUsed[side]=2-s.shields;}
-   const hit=s.hit;if(!hit)continue;const stable=b.active[side]===hit.key;b.active[side]=hit.key;const list=b[side],existing=list.find(p=>p.key===hit.key);
+   const hit=plateHit(s,this.rejected);if(!hit)continue;const stable=b.active[side]===hit.key;b.active[side]=hit.key;const list=b[side],existing=list.find(p=>p.key===hit.key);
    // Type icons and CP are read only once the name has held for two samples (icons lag switches).
    if(existing&&stable){if(s.types?.length){const k=[...s.types].sort().join('/');existing.typeVotes=existing.typeVotes||{};existing.typeVotes[k]=(existing.typeVotes[k]||0)+1;}if(s.cp){existing.cpVotes=existing.cpVotes||{};existing.cpVotes[s.cp]=(existing.cpVotes[s.cp]||0)+1;}}if(existing){existing.last=t;continue;}
    if(list.length>=3){if(!b.flags.includes(`More than three ${side} species: check boundary`))b.flags.push(`More than three ${side} species: check boundary`);continue;}
@@ -288,6 +373,8 @@ class HudTracker{
  // videoEnd: the last analysed second (for "the recording ends before a result"). Results without a result screen
  // come from inferResult; run-node.cjs and ui.js apply it again once the matchups' HP series exist.
  finish({videoEnd=null}={}){if(this.current){if(this.current.result==='Unknown'&&this.current.fainted.my<3&&this.current.fainted.opponent<3)this.current.flags.push('Recording ends before a result');this.close();}
+  const icons=iconReliability(this.battles);for(const b of this.battles)for(const side of ['my','opponent'])for(const p of b[side]){if(!typesContradict(p,icons))continue;this.rejected.types++;p.typeConflict=true;
+   b.flags.push(`Check species: nameplate read "${p.raw||p.label}" (${p.candidates?.[0]?.name||p.key}) but its type icons read ${Object.keys(p.typeVotes).join(', ')}`);}
   for(const b of this.battles){if(b.surrender!==undefined){if(b.result==='Loss'&&b.resultSource==='result screen')b.ending='you-forfeit';delete b.surrender;}
    if(b.result==='Win'&&b.fainted.opponent<3&&b.opponent.length<3){b.flags.push('Win before all opponent Pokémon fainted: opponent may have left; team incomplete');b.ending=b.ending||'opponent-forfeit';}
    for(const side of ['my','opponent'])for(const p of b[side])resolveForm(p);
@@ -368,6 +455,18 @@ function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.e
 // Re-derives every battle result that didn't come from a result screen or a reviewer (idempotent; saved runs
 // get the current rules on every refit). promoted: rules the learning loop found ≥95% right on the owner's answers;
 // they are confident (resultSource = the rule). Returns the battles.
+// A battle that never moves is a still image of one (a screenshot on a title card or in a talking-head video,
+// INMpMrmY7GI), not footage. On real footage the HP readings jitter with compression and animation; on a still one
+// value repeats, apart from a few frames of the cut into it. In the 2026-10-17 harvest (4,678 battles) the most common
+// reading made up ≤ 67% of a side's readings in every hitless real battle, and 96–100% on the two stills found
+// (frame-to-frame difference 0.000 against 5–9 on live play). Hits or banners mean play.
+function stillBattle(b,{minReadings=20,share=.9}={}){let n=0;const values={my:[],opponent:[]};
+ if((b.events||[]).some(e=>e.kind==='move'||e.kind==='go'))return false;
+ for(const g of b.matchups||[]){if((g.hitsOnMy||[]).length||(g.hitsOnOpp||[]).length)return false;for(const side of ['my','opponent'])for(const v of g.series?.[side]||[])if(v!=null){n++;values[side].push(v);}}
+ if(n<minReadings)return false;
+ return Object.values(values).every(v=>{if(!v.length)return true;const c=new Map();for(const x of v)c.set(x,(c.get(x)||0)+1);return Math.max(...c.values())>=share*v.length;});}
+// Drops still battles in place (run-node and the browser, once the matchups' HP series exist); returns their spans.
+function dropStillBattles(battles){const out=[];for(let i=battles.length-1;i>=0;i--)if(stillBattle(battles[i])){out.unshift({start:battles[i].start,end:battles[i].end});battles.splice(i,1);}return out;}
 function applyInferredResults(battles,{videoEnd=null,promoted=null}={}){(battles||[]).forEach((b,i)=>{if(!INFERRED_SOURCES.has(b.resultSource||''))return;
   let r=inferResult(b,{next:battles[i+1]?.start??null,videoEnd});delete b.resultGuess;
   if(r?.source==='guess'){if(promoted&&(promoted.has?promoted.has(r.rule):promoted.includes(r.rule))){const [res,ending]=r.value.split(':');r={result:res,ending,source:r.rule,reason:r.reason};}
@@ -474,5 +573,5 @@ HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null){const b=
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

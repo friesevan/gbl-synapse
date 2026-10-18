@@ -88,6 +88,10 @@ Both nameplates are read on every sampled frame (`readHud`). The geometry, in re
 
 **Why fingerprints and a cache.** Names and CP change only when a Pokémon changes, yet appear on every frame. Reading a 64×12 fingerprint is a few hundred pixel reads; an OCR call is milliseconds in Node and far more in the browser. The `NameCache` reuses the OCR result for any plate within 6% of a fingerprint already read and retries unreadable plates up to three times, which brings text reads down to 16–33 per video.
 
+**Different names, similar fingerprints (2026-10-17).** On small or blurry uploads a name has only 80–100 inked cells, and two short names can differ by fewer cells than the same name on two frames: on the 572-wide Japanese upload Mxwep4-3rVI the same plate differed in up to 18 cells and マッギョ (Stunfisk) from ワタッコ (Jumpluff) in 29, inside both limits, so Jumpluff, Magnezone, Cramorant and Jellicent plates reused Stunfisk's read (the owner's "Jellicent read as Stunfisk"). The name cache (`NameCache.names()`) now also counts *far* cells (`farCells`): differing cells with no ink of the other print within one row and column. Blur moves stroke edges by a cell, a different character puts ink where there was none: on that video the same name had 0–2 far cells and different names 8–22, so at most 4 are allowed (`NAME_FAR`), and the closest entry is reused instead of the first. The CP and effect-text caches are unchanged.
+
+**Covered plates (2026-10-17).** Stream overlays, chat pop-ups and stickers can sit over a nameplate: in 6zhjUeOaERo a sticker covers the end of every opponent name, and "Melmet…" read as "Meime", one letter from "Mime" (see below). The plate rows just above and below the name (reference rows 120, 123, 158, 161) hold no text, so `plateCover` counts the name box's columns (of 64) where at least two of those margin pixels are 60 levels darker than the plate's median margin or strongly coloured, over the name's ink or within 4 columns of its ends; uniform grey or near-black columns (the phone's bezel, when a crop is a few pixels wider than the screen) and the 20 px at each end of the plate (its rounded corners show the background; maw_a7oKYMM's 鳳王 starts there) never count. A plate with 3 or more covered columns (`COVER.max`) gives no species on that frame. Counting only near the text matters: on Mxwep4-3rVI the crop runs past the screen's right edge, so sky and bezel sit inside the opponent's name box on every frame, away from the right-aligned name (flagged on 2 of 94 sampled frames, against 47 when every column counted). Measured on sampled HUD frames: no clean plate flagged on 1p_u7XyvWwU (181), 10min (65, phone) or -mROfxnNVBk (164, 288×640); the sticker covers 4 columns next to every opponent name in 6zhjUeOaERo; on maw_a7oKYMM 2 of 110 sampled plates are flagged, both under transitions.
+
 **Why the type icons use only the lower half.** The phone's status bar can cover the top of the discs. Icons also lag a switch by up to a second, so votes are taken only once a name has held for two samples; on 368 benchmark samples colour alone was right 357 times, and all 11 misses were frames from the previous Pokémon or without icons. The figure shows a harder case: the recorder's own icons are hidden under the status bar and are not read, while the opponent's steel icon is.
 
 ### Battle boundaries from the HUD
@@ -101,6 +105,8 @@ Within a battle, fainted balls and used shields can only increase. So a HUD with
 - After a fade to black, a HUD returning at least 3 s later with fewer fainted Pokémon than the battle has seen starts the next battle (one video had the recorder's first ball misread as fainted on every frame, so no HUD was ever "fresh" and four battles merged).
 - A battle seen on a single HUD frame that opened mid-battle is dropped when a later HUD closes it.
 - A battle that opened on a HUD that wasn't fresh (the first frame after a fade with a shield icon still appearing or a ball read '?', or a misread while the HUD settles) and turns fresh within 20 s under the first two rules was seen from its start: it loses the "Recording starts mid-battle" flag. It used to keep the flag, so its full team was left out of the usage export ("lead unknown") and the lead questions, and the Poké Ball counter could not settle its result (asked as "mid-start").
+
+**Still images of a battle (2026-10-17).** A screenshot of a battle on a title card or in a talking-head video shows a full HUD, so it used to become a short "battle" with questions about it (INMpMrmY7GI: Lucario vs Zekrom for 5 s, the video's opening still). Once the matchups' HP series exist, `core.js` `stillBattle` drops a battle with no hits and no "used"/"Go" banners whose most common HP reading makes up ≥ 90% of each side's readings (≥ 20 readings): real footage jitters with compression and animation. Over the 4,678 saved battles of 2026-10-17 the most common reading was ≤ 67% of a side in every hitless real battle and 96–100% on the two stills (INMpMrmY7GI, -S98unxGFow at 424 s; frame-to-frame difference 0.000 against 5–9 on live play). Node and the browser both apply it; dropped spans are in `metrics.stillBattles`.
 
 ### HP bars, damage trails and the dense pass
 
@@ -175,7 +181,7 @@ Result screens are read only when the battle can have ended: a side down to its 
 | Metric | How it is determined | Evidence used | Main gaps |
 | --- | --- | --- | --- |
 | Battle boundaries | Nameplates every ~1 s (browser) or every 5th frame at 10 fps (Node); fainted balls and used shields only increase within a battle; fresh HUD = new battle; gaps continue the battle unless a result, fade or fresh HUD ends it | Poké Balls, shields, result screens, fades | a recording that starts mid-battle; two battles back to back with no visible reset (never seen) |
-| Opponent species | OCR of the name box once per distinct fingerprint, matched to PvPoke's species list in the video's language (exact, or one wrong letter as a suggestion for names of 5+ letters), kept after two sightings | nameplate text | Pokémon on screen under ~2 s; nicknames (impossible for opponents) |
+| Opponent species | OCR of the name box once per distinct fingerprint, matched to PvPoke's species list in the video's language (exact, or one wrong letter for names of 5+ letters; CJK names of 4 characters only without a second species two away; Korean by jamo with a margin), kept after two sightings; sightings on covered plates, suggestions with a CP above the species' maximum and ambiguous reads that the CP or both type icons don't settle are dropped; a suggestion whose type icons contradict it is flagged where the video's icons are reliable; the local vision model as second reader where OCR is unsure (`HUD_LLM=1`) | nameplate text, CP, type icons | Pokémon on screen under ~2 s; nicknames (impossible for opponents); plates covered by overlays give no species |
 | Lead | the first opponent species seen in the battle | first stable nameplate | an opponent swapping within the first second; "Go, X!" banners could settle it |
 | Team | every species revealed; complete only when all three appeared | nameplates | the third Pokémon is often never sent out |
 | CP | the CP box, read and cached like names; majority vote per Pokémon | CP text | none significant |
@@ -196,6 +202,16 @@ Only a few hundred names can appear, in one font at fixed positions, so reading 
 - other UI languages are language packs for Tesseract, while a classifier would need new renders per language. Japanese, Korean and Chinese nameplates are read with that language's fast model, and `NameLanguage` switches a video's language after two exact matches, so English videos keep their results.
 
 A local vision model (`scripts/freellm`, `qwen2.5vl:7b`) passed its quality gate as a *second reader* for nameplates (108 of 108 names on 92 Creative Commons HUD strips, none invented) and is used only where the OCR is unsure.
+
+**Checks on a read (2026-10-17).** Four owner-reported misreads showed that a name that matches the dictionary can still be wrong. Each is now checked against the rest of the plate (`core.js` `plateHit`, `HudTracker.finish`):
+
+- **CP.** Every candidate carries the highest CP its Pokédex number can show (`maxCp`: level 51, perfect IVs, over every form, since a plate cannot tell Zacian from Zacian Crowned Sword). A suggestion whose CP, read on the same frame as a 2–4 digit number, is more than 6% above every candidate's maximum is not used on that frame (also without a leading 1, often a bracket read as a digit: "1498" may be 498). The 6% covers PvPoke's Mega stats, a little below the game's (Mega Mewtwo Y computes to 7,354; plates read 7,529). 5-digit reads ("11495") are junk. Exact reads keep their species whatever the CP: Team Rocket's Pokémon show CPs no player's can reach.
+- **Ambiguous reads.** A Korean read more than one jamo off with another species within one more jamo, or a CJK read of 4 characters one off with another species two away (section 6), carries its rivals (`alternatives`). It names a species only when the same frame's CP rules out all but one of them, or else when both of the frame's type icons were read and fit exactly one (single icons are confused, bug for grass). Korean 채크로우 at CP 4545 was matched to Corvisquire (2 jamo; at most 1,6xx CP) instead of Zekrom (3 jamo); it now reads Zekrom, and 채크로무 (2 jamo from Zekrom, 3 from Corvisquire) still does.
+- **Type icons.** Type icons demote, they never drop: a suggestion (one letter or jamo off) is flagged "Check species" (`typeConflict`) at the end of the video when at least 4 of its icon votes were cast, under 20% fit any candidate's types and one contradicting reading has at least 3 votes (small uploads misread single icons: Stunfisk as normal, Kyogre as steel), but only where icons are reliable in that video: at least 85% of the icon votes of exact reads (3 or more of them) fit their species. 7u31Xt6Fg4M reads fire icons as ground and electric as rock, so icons decide nothing there. Exact reads are never flagged. Dropping was tried and rejected: on stLd7OkIg3Y the recorder's Charjabug (デンヂムシ read デンヂデムシ) had its bug icon read as grass on 45 of 45 votes and was dropped from all four battles.
+- **Covered plates** (section 3) give no species on that frame.
+- **Second reader** (`tests/meta-benchmark/hud-llm.cjs`, `HUD_LLM=1`): where the OCR read is a suggestion, or has three or more letters and names nothing, the plate's time is sent to `eval_hud.py read`, which crops the HUD strip of the phone screen and needs two agreeing calls of the local model and the passed `llm_hud_names` gate. Only YouTube footage is sent (a video in a `youtube` or `youtube-cc` folder; never the owner's recordings, which `eval_hud.py` refuses too). The model's answer counts only as an exact dictionary name (English, or the video's decided language): it confirms or replaces the OCR's suggestion or names an unread plate; a disagreement or unknown name changes nothing. At most 30 calls per video (`HUD_LLM_BUDGET`), one per distinct OCR text. It is off by default, because Ollama must be running and each call takes seconds.
+
+The dictionary also lost a false name: PvPoke writes Mime Jr. as "Mime (Jr)", and dropping the bracket like a form name made "Mime" a species name, one letter from "Meime". It is now "Mime Jr." only (`visibleName`), which changes the species key from `mime` to `mimejr`.
 
 ### Results without a result screen
 
@@ -343,7 +359,7 @@ Validate's second view charts the per-refit history: held-out accuracy per kind 
 
 ### Assistance from a local vision model
 
-`scripts/freellm` routes bulk, checkable work to a local Ollama vision model; nothing leaves the machine. A task type is delegated only after passing a gate of ≥ 95% exactly right on the owner's answers held out by video, every delegated answer is checked by a script or by two independent calls that agree, and resolutions are reversible and never labels. Only nameplate reading has passed; no Validate question kind has, so the model resolves no questions today.
+`scripts/freellm` routes bulk, checkable work to a local Ollama vision model; nothing leaves the machine. A task type is delegated only after passing a gate of ≥ 95% exactly right on the owner's answers held out by video, every delegated answer is checked by a script or by two independent calls that agree, and resolutions are reversible and never labels. Only nameplate reading has passed; no Validate question kind has, so the model resolves no questions today. Nameplate reading is wired into the Node engine as an opt-in second reader (`HUD_LLM=1`, section 4).
 
 ## 6. Other game languages
 
@@ -394,6 +410,42 @@ Not recoverable from nameplates: uploads whose crop cuts the names off the phone
 Every rejoined part shows the same opponent Pokémon, with the same CPs, on both sides of its join, 0.5–5.5 s apart, and in most the same matchup runs across the join. uYt7eHxdT8I's lost full team is a double count: one battle (Thievul 1488, Corviknight 1492, Clodsire 1500 CP; Charjabug against Clodsire from 463 to 474 s) had been split at 467.5 s by one frame that read no shields on either side, exactly the case of the two-shields rule.
 
 The re-analysis also raised the number of later battles flagged "Recording starts mid-battle" from 5 to 83. Most are in Japanese uploads whose first Poké Ball reads as fainted on every frame, where the flag stays. Others came from the boundary rules: the post-fade rule opens the next battle on its first HUD, often read with a shield icon still appearing or a ball read '?', and the settling rule kept the flag although the HUD turned fresh half a second later (5d9UzKXX_XQ at 110.5 s). Replaying the recorded tracker inputs of 10 videos with the fix in *Battle boundaries from the HUD*: 8 battles (all full teams, in 6 videos) lose the flag, two videos whose HUD never reads fresh keep theirs (khxysRLr8AE, Mxwep4-3rVI), and nothing else changes.
+
+**Stricter matching and plate checks (2026-10-17).** Owner-reported misreads, reproduced on the saved results and the videos:
+
+| Report | Video | What was read | Cause | Now |
+| --- | --- | --- | --- | --- |
+| Zekrom as Corvisquire | 7qqbqf5Mb7E, 92mROoUiWLM, a-ltV3MZuTI, KnjGXqdTeps, Q7NtGwsfHR4, UMFxriyzb_0, zXKnx4V1v5U, gX8vb2b06R4, Ev5nq1Odt5c (ko, Master League) | 채크로우, 서크로우, 카크로두 at CP 4545–4565, both sides | jamo matcher: 2 jamo from 푸크로우, 3 from 제크로무 | ambiguous; CP leaves Zekrom |
+| Jellicent as Stunfisk | Mxwep4-3rVI (ja, 572 px wide) | Jumpluff, Magnezone, Cramorant and Jellicent plates labelled マッギョ | name cache: their fingerprints were within 6% / 30% of Stunfisk's | far cells keep them apart (section 3) |
+| Mime Jr. for Melmetal | 6zhjUeOaERo (en, stream overlay) | "Meime#”" on all 9 opponent Melmetals | a sticker over the name's end; "Mime" was a dictionary name | no "Mime"; covered plates not used |
+| Blitzle | 7u31Xt6Fg4M (ja, Master League; video no longer on disk) | しまま4, しままま.』… on 6 battles, no CP, a water icon | hiragana folded to katakana: シママ is Blitzle (a hiragana nickname) | mostly-hiragana reads of under 4 characters match nothing |
+
+Rules in `matchLocale`: a Japanese read that is at least half hiragana (species names are katakana) gives no suggestion and no exact name under 4 characters (しまま → シママ, ますます → デスマス); long ones still fold (きんぐどら). A one-character suggestion for a 4-character CJK key with another species two characters away is ambiguous (ゼラロム: ゼクロム at one, ゼラオラ at two), and so is a Korean jamo match beyond one jamo with another species within one more. Random jamo damage to the 1,076 Korean names (`jamo-sim`, seeded): one error 1,014 right / 1 wrong / 69 unmatched before and after; two errors 701 right / 2 wrong / 381 unmatched before, 648 / 2 / 381 after plus 53 ambiguous (the right species always among them, left to CP or icons); three errors 254 / 0 / 830 before, 231 / 0 / 830 plus 23 ambiguous after.
+
+**Before and after (2026-10-18).** Every recording below was analysed by the code before and after this change with `SPECIES_ONLY=1` (nameplates, results and banners at the same 2 HUD frames per second, without HP bars), 4 workers, the saved crop, league and game data. The 9 labelled recordings are identical in battles, opponent species, leads and results: 194 of 194 opponent species (10min 12, hour-gl 56, hour 58, 1p_u7XyvWwU 15, 2xvzDbWx-RE 15, Mv4o3HC29iU 23, cyu1yFuGtZA 15), FLJKUTh5ru8 18 of 18 and jZ4ux4QBdUU 19 of 21 in both (regidrago and dragonite are only missed in species-only mode; the full pass reads all 21). The language test videos:
+
+| Video | UI | Battles | Opponent species | Full teams | Species changed | Plates set aside (cover / CP / ambiguous) |
+| --- | --- | --- | --- | --- | --- | --- |
+| afvH9iu5WsE | ja | 5 → 5 | 14 → 14 | 4 → 4 | none | 0 / 0 / 0 |
+| lC6aiKQuZ5c | ja | 7 → 7 | 21 → 21 | 7 → 7 | none | 9 / 0 / 0 |
+| stLd7OkIg3Y | ja | 4 → 4 | 12 → 12 | 4 → 4 | none (the recorder's Charjabug flagged by its icons, kept) | 5 / 0 / 0 |
+| L2Iyrc06j00 | ja | 6 → 6 | 8 → 8 | 0 → 0 | none | 0 / 0 / 0 |
+| -mROfxnNVBk | ko | 5 → 5 | 14 → 14 | 4 → 4 | the recorder's Lugia now read in all 5 battles | 1 / 4 / 0 |
+| maw_a7oKYMM | zh-Hant | 9 → 9 | 22 → 22 | 6 → 6 | none | 0 / 0 / 0 |
+| ktg6J7if8Rc | de | 15 → 15 | 43 → 43 | 13 → 13 | none | 3 / 0 / 0 |
+| aOHJSU0dVok | de | 10 → 10 | 29 → 29 | 9 → 9 | none | 13 / 0 / 0 |
+| cGATSvEItIM | de | 11 → 11 | 32 → 32 | 10 → 10 | none | 11 / 0 / 0 |
+
+And the reported videos (7u31Xt6Fg4M is no longer on disk; its saved reads replay as described above):
+
+| Video | Battles | Opponent species | Full teams | Change |
+| --- | --- | --- | --- | --- |
+| Mxwep4-3rVI | 6 → 6 | 14 → 17 | 3 → 5 | 5 wrong Stunfisk entries gone; Jumpluff (4 battles), Cradily, Kingdra and Marowak read where their plates had reused Stunfisk's read |
+| 7qqbqf5Mb7E | 5 → 5 | 13 → 13 | 3 → 3 | Corvisquire → Zekrom in 2 battles |
+| 92mROoUiWLM | 5 → 5 | 13 → 13 | 4 → 4 | the recorder's Mega Mewtwo Y read in 3 more battles |
+| 6zhjUeOaERo | 2 → 0 | 2 → 0 | 0 → 0 | every opponent name ends under a sticker: the two "Houndoo”" plates (right by luck) are set aside like the "Meime" ones; the full harvest's 9 Mime Jr. are gone |
+
+On the saved harvest results (1,721 videos), replaying each saved member's nameplate read and majority CP through the new matching changes the species of 77 videos (`affected` scan; it cannot replay the name cache, plate cover or icons, so CJK videos with similar short names can change too).
 
 ## 7. Accuracy: what has been measured
 
@@ -446,6 +498,7 @@ v4 held-out accuracy of the top pick by confidence: at p ≥ 0.80, fast moves 11
 - **Forms with identical types and no deciding move or icon**: Kyurem Black read as White (p 0.59–0.81), Mega Mewtwo Y whose nameplate read X. None reach the resolution threshold, so they are asked.
 - **Shadows with no purple measured**: the aura box missed (Reuniclus, Cradily, a Sableye over 9 matchups), low-resolution reads (Gyarados at 288×640), purple-bodied species (Sableye, Giratina), videos without HP or aura evidence.
 - **Results**: uploads that cut the result screen with an undecided timeline; timer endings indistinguishable from a fade.
+- **Nameplate misreads that matched a real name** (fixed 2026-10-17, section 6): a fingerprint cache that reused one short Japanese name for others, a Korean jamo match two strokes from the wrong species, a hiragana nickname folded to katakana, a covered plate one letter from "Mime". The labelled benchmark never contained these (194/194 before and after); the checks against CP, cover and icons are measured on the language and reported videos instead.
 
 ## 8. Speed: where the time goes
 
@@ -508,7 +561,8 @@ Ordered by expected impact, with the evidence behind each estimate.
 | **Lead when the opponent swaps immediately** | "Go, X!" banners are recorded but not yet used to set the lead | use the first opponent "Go" banner as the lead when it precedes the first stable nameplate |
 | **Centred cutscene bars on phones** (resolved 2026-10-13) | the opponent's HP series followed the attacker's centred bar in 696 of 4,830 phone matchups (249 with false hits of 1.5–35%) | done: `track` skips centred bars on every screen (fast moves 169 → 171/196 held out, Shadow unchanged; section 3). The knockout inside the final cutscene, which this cost (13 of 908 "faints" wins became questions), is read by the learned rule `knockout` (section 4): 74/77 against read result screens, 12 of the 13 asked with the right guess. It settles them on its own once owner answers pass the promotion gate (7/9 on 6 videos so far; 30 at ≥ 95% from 5 videos needed) |
 | **Names cropped off the top** | some uploads crop the phone's top so the nameplate names are outside the frame (K7vaQKc1Gxs) or cut in half (te5W8Jrc-Mk); the tracker needs a nameplate species, so these give 0 battles | take species from the "X used Y!" and "Go, X!" / send-out banners (read in every language, with the side) when the nameplates name nothing |
-| **Nicknamed recorder Pokémon** | only the recorder's side can be nicknamed; OCR cannot resolve them | a species check question when nameplate confidence is below ~60, or the local vision model as second reader |
+| **Nicknamed recorder Pokémon** | only the recorder's side can be nicknamed; OCR cannot resolve them. Hiragana nicknames in Japanese (しまま in 7u31Xt6Fg4M, read as Blitzle) no longer match (section 6) | a species check question when nameplate confidence is below ~60; the local vision model as second reader (wired in, `HUD_LLM=1`, not yet run at harvest scale) |
+| **Plates under overlays** | stickers and chat pop-ups next to or over a name (6zhjUeOaERo: every opponent name) now give no species instead of a wrong one | species from the "X used Y!" and send-out banners, which overlays rarely cover; a cover test on the banner area |
 | **Label independence** | boundary labels come from the same Poké Ball cues as the method | a second labeller, and labels from the game's own battle log where creators share it |
 | **Phone placed differently in each clip** | one crop per video; a clip placed more than ~2 px (at 960 wide) from it reads no HUD. M5ED7uc0aao has two placements 6 px apart (165 and 146 of 472 sampled frames): 4 battles found, 7 opponent species; avOqMEM2QmA loses its first battle | per-placement boxes from the locate pass, a probe scan that tests each placement, and per-range crops in the runner (all placements have the same size, so the decoded frame size is unchanged) |
 
@@ -524,7 +578,7 @@ Ordered by expected impact, with the evidence behind each estimate.
 ## 11. Reproducibility
 
 ```
-node --test tests/meta-extractor.test.cjs tests/meta-locale.test.cjs tests/meta-hp-speed.test.cjs   # unit tests
+node --test tests/meta-extractor.test.cjs tests/meta-locale.test.cjs tests/meta-nameplate.test.cjs tests/meta-hp-speed.test.cjs   # unit tests
 node tests/meta-benchmark/run-node.cjs RECORDING.mp4 run.json                                         # one recording
 node tests/meta-benchmark/score.cjs tests/meta-benchmark/labels/10min.json run.json                   # battle-level score
 node tests/meta-benchmark/run-batch.cjs jobs.txt out/            # jobs: path|league|gamemaster|crop ; JOBS=6 SPLIT=20
@@ -537,7 +591,7 @@ python3 web/run_app.py                                            # local app: h
 bash web/scripts/yt-harvest/overnight.sh --hours 9                # unattended harvest
 ```
 
-Environment variables of the runner: `GAMEMASTER=path` (game data as of the recording date), `LEAGUE=1500|2500|10000|500`, `CROP=auto|x0,y0,x1,y1`, `START`/`END`/`RANGES`, `FPS=10`, `HUD_EVERY=5`, `FFMPEG_THREADS=1`, `DECODE_ROWS=full`, `LEARNED_PATH`, `NAME_LOCALES`, `NAME_LANGUAGE` (preset nameplate language), `LATE_LANGUAGE=45` (second pass when the language was decided this many seconds after the first nameplate; −1 never), `OCR_CACHE_DIR`. Benchmark runs need ffmpeg and the Tesseract CLI; CJK models live in `~/.cache/gbl-synapse/tessdata`.
+Environment variables of the runner: `GAMEMASTER=path` (game data as of the recording date), `LEAGUE=1500|2500|10000|500`, `CROP=auto|x0,y0,x1,y1`, `START`/`END`/`RANGES`, `FPS=10`, `HUD_EVERY=5`, `FFMPEG_THREADS=1`, `DECODE_ROWS=full`, `LEARNED_PATH`, `NAME_LOCALES`, `NAME_LANGUAGE` (preset nameplate language), `LATE_LANGUAGE=45` (second pass when the language was decided this many seconds after the first nameplate; −1 never), `OCR_CACHE_DIR`, `SPECIES_ONLY=1` (nameplates, results and banners only, at 2 HUD frames/s and no HP bars: for nameplate-reader benchmarks), `HUD_LLM=1` and `HUD_LLM_BUDGET=30` (second nameplate reader, YouTube footage only). Benchmark runs need ffmpeg and the Tesseract CLI; CJK models live in `~/.cache/gbl-synapse/tessdata`.
 
 ## 12. History and provenance
 

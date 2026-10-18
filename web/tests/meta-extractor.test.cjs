@@ -255,3 +255,11 @@ test('HP timeline is non-increasing per Pokémon, empty before entry, zero after
  const tl=H.hpTimeline(b),s=tl.my.a;for(let i=1;i<s.length;i++)assert.ok(s[i]<=s[i-1]+1e-9);assert.ok(Math.min(...s)>.2,'a single low glitch is not a floor');
  assert.equal(tl.opponent.x.at(-1),0);assert.equal(tl.opponent.y[0],null);
  const T=require('../includes/meta/timeline.js'),sum=T.summarize({...b,hp:tl,result:'Win'});assert.equal(sum.hp.opponent.y[0],-1);assert.equal(sum.hp.my.a[0],100);});
+test('a still image of a battle (one HP reading per side, no hits or banners) is dropped; live play is kept',()=>{
+ const still={start:0,end:5,events:[],matchups:[{hitsOnMy:[],hitsOnOpp:[],series:{my:Array(53).fill(.106),opponent:Array(53).fill(.793)}}]};
+ const cut={start:422,end:430,events:[],matchups:[{hitsOnMy:[],hitsOnOpp:[],series:{my:[.97,.97,.97,...Array(76).fill(.966),null],opponent:Array(80).fill(null)}}]};
+ const live={start:10,end:15,events:[],matchups:[{hitsOnMy:[],hitsOnOpp:[],series:{my:Array.from({length:53},(_,i)=>[.5,.502,.498,.5,.499][i%5]),opponent:Array(53).fill(.8)}}]};
+ assert.equal(C.stillBattle(cut),true,'a few frames of the cut into the still');
+ const hit={...still,matchups:[{...still.matchups[0],hitsOnMy:[.04]}]},banner={...still,events:[{kind:'move',t:2}]},few={...still,matchups:[{hitsOnMy:[],hitsOnOpp:[],series:{my:[.5,.5,.5],opponent:[null,null]}}]};
+ assert.equal(C.stillBattle(still),true);for(const b of [live,hit,banner,few])assert.equal(C.stillBattle(b),false);
+ const list=[still,live];assert.deepEqual(C.dropStillBattles(list),[{start:0,end:5}]);assert.deepEqual(list,[live]);});
