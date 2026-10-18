@@ -57,6 +57,10 @@ function tiles(history,live={}){const recs=records(history),out=[],last=recs.at(
  if(withResults){const r=withResults.results,total=RESULT_SOURCES.reduce((s,[k])=>s+(num(r[k])?r[k]:0),0);out.push({key:'results',label:'Battle results by source',value:fmtInt(total),
   detail:RESULT_SOURCES.filter(([k])=>num(r[k])).map(([k,l])=>`${fmtInt(r[k])} ${l}`).join(' · '),delta:{text:`Refit ${withResults.refit}${num(live.unresolvable)?` · ${fmtInt(live.unresolvable)} questions closed as unresolvable`:''}`,dir:0}});}
  else if(num(live.unresolvable)&&live.unresolvable)out.push({key:'results',label:'Unresolvable results',value:fmtInt(live.unresolvable),detail:'Result questions closed: no result screen, timeline inconclusive',delta:null});
+ // Coverage: the share of battles with a result (read, inferred or answered), overall and by nameplate language.
+ if(withResults?.results?.byLanguage){const cov=c=>{const t=['read','inferred','human','unresolvable','open'].reduce((s,k)=>s+(num(c[k])?c[k]:0),0);return t?{share:((c.read||0)+(c.inferred||0)+(c.human||0))/t,t}:null;},r=withResults.results,all=cov(r);
+  const langs=Object.entries(r.byLanguage).map(([l,c])=>[l,cov(c)]).filter(([,c])=>c).sort((a,b)=>b[1].t-a[1].t);
+  if(all)out.push({key:'resultCoverage',label:'Battles with a result',value:`${Math.round(all.share*100)}%`,detail:langs.map(([l,c])=>`${l} ${Math.round(c.share*100)}% of ${fmtInt(c.t)}`).join(' · ')+(num(r.byLanguage&&Object.values(r.byLanguage).reduce((s,c)=>s+(c.evidence||0),0))?` · ${fmtInt(Object.values(r.byLanguage).reduce((s,c)=>s+(c.evidence||0),0))} from battle evidence`:''),delta:null});}
  if(num(live.open))out.push({key:'open',label:'Open questions',value:fmtInt(live.open),detail:num(live.questions)?`of ${fmtInt(live.questions)} questions`:'',delta:since(live.open,last?.open?sum(last.open):null)});
  return out;}
 
