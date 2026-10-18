@@ -60,3 +60,15 @@ test('a phone placed a few pixels apart in each clip is found from each frame\'s
  assert.deepEqual(xs,[0,960],'no column is a phone edge on half the frames');
  const found=S.locate(frames);assert.deepEqual(found.box,[355,0,605,540]);assert.equal(found.score,4);
  assert.equal(S.hudScore(frames,[361,0,611,540]).ok,3,'the other placement reads only its own clip');});
+// Per-placement boxes (2026-10-17): the frames the located box misses are moved sideways until the HUD reads, and
+// the Poké Balls give each frame's exact shift; agreeing shifts form one placement.
+test('other placements of the screen are found on the frames the located box misses, at their exact shift',()=>{
+ const frames=[355,361,null,355,361,null,355,361,355,346].map(placed),pl=S.placements(frames,[355,0,605,540]);
+ // Shifts of the fitted screen centre; the synthetic drawing rounds, so boxes land within 1 px of the drawn screens.
+ assert.deepEqual(pl.map(p=>p.box),[[360,0,610,540],[345,0,595,540]]);assert.deepEqual(pl[0].frames,[1,4,7]);assert.deepEqual(pl[1].frames,[9]);
+ assert.ok(Math.abs(pl[0].shift-6)<=1&&Math.abs(pl[1].shift+9)<=1,JSON.stringify(pl));
+ // One placement (a frame 1 px off reads in the box itself), or frames without a phone: nothing. One frame is enough.
+ assert.deepEqual(S.placements([355,null,356,355].map(placed),[355,0,605,540]),[]);assert.deepEqual(S.placements([null,null].map(placed),[355,0,605,540]),[]);
+ assert.deepEqual(S.placements([361].map(placed),[355,0,605,540]).map(p=>p.box),[[360,0,610,540]]);});
+test('a shift of one Poké Ball spacing or more is not searched (the balls would read in the wrong slots)',()=>{
+ assert.deepEqual(S.placements([355,355,371].map(placed),[355,0,605,540]),[]);});

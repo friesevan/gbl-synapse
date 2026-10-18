@@ -110,6 +110,17 @@ class RetainedMediaTests(unittest.TestCase):
         item.update(ranges=[[20,40]],rangeSourceSha256='b'*16)
         self.assertTrue(M.batch_jobs(report,use_saved_ranges=True)[0].endswith('|\n'))
 
+    def test_placements_become_the_sixth_job_column(self):
+        # The phone placed differently per clip (run-node CROPS): kept with the crop it was planned for.
+        (self.downloads/(VID+'.mp4')).write_bytes(b'video');self.db()
+        results=self.work/'results';results.mkdir();crops='0,0,560,1080@0-100;12,0,572,1080@100-200'
+        (results/(VID+'.json')).write_text(json.dumps({'media':{'crop':'0,0,560,1080','crops':crops,'ranges':''},'learningContext':{'league':1500}}))
+        item=M.inventory(self.downloads,self.work)['items'][0];self.assertEqual((item['crop'],item['crops']),('0,0,560,1080',crops))
+        self.assertEqual(M.batch_jobs({'items':[item]})[0].strip().split('|')[3:],['0,0,560,1080','',crops])
+        self.assertEqual(M.batch_jobs({'items':[item]},use_saved_ranges=True)[0].strip().split('|')[3:],['0,0,560,1080','',crops])
+        (results/(VID+'.json')).write_text(json.dumps({'media':{'crop':'0,0,560,1080','ranges':''},'learningContext':{'league':1500}}))
+        item=M.inventory(self.downloads,self.work)['items'][0];self.assertNotIn('crops',item);self.assertEqual(len(M.batch_jobs({'items':[item]})[0].strip().split('|')),4)
+
     def test_explicit_full_source_context_does_not_inherit_old_probe_ranges(self):
         (self.downloads/(VID+'.mp4')).write_bytes(b'video');self.db()
         results=self.work/'results';results.mkdir()

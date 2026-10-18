@@ -528,3 +528,94 @@ Details: `includes/meta/README.md` §6 *At harvest scale, and the language searc
 - **Sign-in.** Meta Extractor › Analyze & review › harvester card › **YouTube sign-in**: choose the browser and profile signed in to YouTube (or a cookies.txt file), **Test**, then **Test and use for harvesting**. This writes `WORK/youtube-auth.json` (`youtube_auth.py`); `Harvester.ydl()` passes it to yt-dlp as `cookiesfrombrowser` / `cookiefile`. Command line: `python3 -I web/scripts/yt-harvest/youtube_auth.py test --config '{"mode":"browser","browser":"chrome"}'`. A harvester started before this change does not read the file: stop it and start it again.
 - **Live report.** `summary.json` gains `youtube` (blocks, bot checks, pause, last block and download, last hour's outcomes, current rates, sign-in) and `run` (settings and deadline). For older running harvesters `service.py` derives the same from `harvest.log`. API: `GET /api/harvest/auth`, `POST /api/harvest/auth`, `POST /api/harvest/auth/test`. Tests: `python3 -m unittest test_harvest_live` (in this folder).
 
+## Status 2026-10-17 (label remap)
+
+Details: `includes/meta/README.md` §5 (*Answers follow their battle…*) and the docstring of `remap_battles.py`.
+
+- **Tool.** `reextract-labelled.cjs VIDEO_DIR --keep DIR` saves re-extracted results instead of installing them;
+  `python3 -I scripts/yt-harvest/remap_battles.py WORK --new DIR [--only ids] [--dry-run]` installs them (old result →
+  `.json.previous`) and moves everything battle-addressed (feedback.json records by qid, `labels/<id>.json`,
+  `validation/<id>/` and manifest) to the battle matched by time overlap, picked by the question's clip and the
+  Pokémon's key. Merged battles keep agreeing answers once; a conflict keeps the battle covering more of the new one;
+  answers on gone battles or Pokémon are archived in feedback.json `history`, never deleted (the run aborts unless
+  before = after + archived). It reopens the video's model resolutions, drops its predictions and fit signatures
+  (Retrain after the restart refits), rebuilds the leagues sidecar and the inbox, retires the focus sidecar. It needs
+  the validation lease (refuses while the app runs), backs up every file with a `--restore` journal, writes atomically.
+- **The 16 videos** (f09da6e's extractor; main's stillBattle rule drops none of their battles), on a copy of the work
+  dir: battles 184 → 210; answers kept 68, moved 51, merged 1, conflicts 0, archived 6 (+1 stale index realigned);
+  1,404 human answers = 1,397 + 7 archived. Archived: tPEBKgLqMuA mightyena/hydreigon/snorlax/sandslash Shadow = yes
+  (the new extraction no longer reads them and joins battles with different teams; 56/65 old Pokémon found),
+  u3bK2DIXDSM my empoleon, YwlLsjFhjGc poliwrath (a one-frame "battle" the new code drops). Held out by video, before →
+  after: fast moves 248/305 → 249/304 (log-loss 0.475 → 0.470), forms 35/43 → 35/43 (0.354 → 0.373), Shadow 614/819 →
+  611/814 (75.0 → 75.1%, log-loss 0.479 → 0.481, AUC 0.851 → 0.850); without tPEBKgLqMuA Shadow 617/818 (75.4%).
+- **Found:** 36 answers on 17 other videos already point at a battle without their Pokémon (results replaced by
+  re-analyses after they were answered, e.g. uYt7eHxdT8I, rLA_EvTrtYg). `--new` with copies of their saved results
+  realigns 34 by their clips (dry run; not applied). Not remapped: `validation-withdrawn-*` archives.
+- **Applied 2026-10-17 19:55 (owner approved; app stopped, then restarted):** 15 labelled videos (tPEBKgLqMuA left out:
+  its re-extraction loses 9 of 65 Pokémon) → backup `remap-backup-20261017-195547/`; 17 re-analysed videos realigned
+  (34 answers) → `remap-backup-20261017-195554/`. Inputs kept in `src/remap-new-2026-10-17/` and
+  `src/remap-realign-2026-10-17/`. Undo: `remap_battles.py WORK --restore <backup>` with the app stopped. Refit queued.
+- Restarting the app from zsh: start it through `/bin/bash -c 'nohup … &'`. zsh's BG_NICE runs `&` jobs at nice 5, and
+  under a 12-worker harvest the app then took minutes per Validate request.
+
+## Status 2026-10-17 (screen placements)
+
+Details: `includes/meta/README.md` §3 *Locating the phone screen* (Placements) and §10. Takes effect on the next harvester start.
+
+- **Measured** (every keyframe; the phone's left edge from its six Poké Balls, at 960 wide): the four Npoke uploads place
+  the phone 4–5 ways (M5ED7uc0aao 429.3/438.2/431.7/435.7/431.7; -QiUVfUf8jo 428.9/430.9/433.6/430.9/434.9; SwlQC3kwKIs
+  432.1/434.1/431.0/427.5; avOqMEM2QmA 430.1/433.9/436.5/438.3). Same width, ±0.3 px inside a clip, changes only in the
+  11–35 s without a HUD between battles (clip cuts). The located box reads nothing 5–6.5 px away, about half at 3.6–4.5 px.
+- **Fix:** `screen.js` `placements` (keyframes the box misses; the box moved sideways ≤ 4% and fitted to the balls),
+  `probe.cjs` (each candidate scanned; each HUD keyframe to the nearest placement; `placements` [{box, hits, stretches}]
+  only when ≥ 2, each ≥ 4 keyframes), `harvest.py` (`CROPS` in the probe plan and on the requeue path, `media.crops`,
+  `probe.placements`), `run-node.cjs` + `placement-plan.cjs` (a decode per placement stretch into the same 886-wide frame,
+  a HUD offset per placement, one tracker; the result's `crop` stays the located box and `placements` are listed).
+  Single-placement videos: no `placements`, no `CROPS`, unchanged output. Browser: known placements are tried when the
+  HUD doesn't read, and the frame is searched after 10 s without one.
+- **Before → after** (main's code, harvest path and requeue path alike): battles 17 → 21, opponent species 45 → 56, full
+  teams 13 → 16, results 1 → 2 (M5ED7uc0aao 4 → 6, avOqMEM2QmA 4 → 5, -QiUVfUf8jo 4 → 5; SwlQC3kwKIs 5 → 5 with the two
+  battles of its last clip now seen from the start).
+- **Survey** (the placement step on the 256 retained single-screen uploads with a cached probe box; 112 wide uploads
+  without a local file were not checked): placements in 7, the four plus eQphfsMBt_A (3 → 4 battles, species 8 → 12,
+  full teams 2 → 4), tePa5aI85zY (El Tío Boris; 4 → 5, a merged battle split) and 0rJx8daiA3U (counts unchanged; its box
+  read a clip 13 px away through the balls one slot over, which flagged that battle "starts mid-battle"). On the 7:
+  battles 29 → 35, opponent species 80 → 98, full teams 24 → 30, 8 mid-battle / too-many-species flags → 0. The other 249
+  have none; ten retained single-placement videos give byte-identical probes; parity.cjs 7/7 identical.
+- **Requeue** (not done; the work dir was read only for this session): M5ED7uc0aao avOqMEM2QmA -QiUVfUf8jo SwlQC3kwKIs
+  eQphfsMBt_A tePa5aI85zY 0rJx8daiA3U. Possibly also kel7h_I9kxw (Npoke layout, 0 battles from 70 HUD keyframes; not
+  local, so a re-download).
+- **Left:** a clip that also changes the phone's size (eQphfsMBt_A's last: 240.7 px wide at 359.6 of 960, the rest 260
+  at 431) is not a placement and stays unread; `CROP=auto` without a probe has one box.
+
+## Status 2026-10-17 (species from banners)
+
+Details: `includes/meta/README.md` §3 *Species from banners when the names are cropped off*, §6 *Language from banners*,
+§10 gaps. Takes effect on the next harvester start.
+
+- **Problem**: uploads that crop the phone's top cut the nameplate names off (K7vaQKc1Gxs, dy −144: only the ball row;
+  te5W8Jrc-Mk, −136: names cut in half; both Brooke Channel, Japanese Master League). The HUD tracked their battles but
+  no plate named a species, so they gave 0 battles, and their banners were never read with the Japanese model.
+- **Fix** (`core.js` NameLanguage.bannerVote/bannerEvidence, HudTracker sightings + `bannerTeam`, `barDefender`,
+  `wideBannerBox`; `run-node.cjs` banner search and the HP-bar cue; `ui.js` the same without the HP-bar cue): while
+  English has named nothing, banners are read with the CJK models and two "X used Y!" parses switch the language; a
+  battle whose nameplates named nothing takes its species from send-out banners (with their side) and attacks (side from
+  the species' send-out and the defender's shield, faint or HP drop, which must agree). Flagged "Species from banners",
+  confidence 40, `speciesFrom: 'banners'`; questions about such Pokémon say so. Battles named by a plate are unchanged.
+- **Measured** (YouTube refused every download on 2026-10-17/18, so K7vaQKc1Gxs and te5W8Jrc-Mk themselves weren't
+  re-run): synthetic crops of iC4-0ss8p40 (to dy −142 and −134) and cc1z7nZJbgk (−142): 0 → 6 battles each, 17 opponent
+  species and 5 full teams per video (the uncropped nameplate run of iC4-0ss8p40: 17 and 5; 16 of its 17 found, plus a
+  Ho-Oh the frames show and no plate did); your side 9–10 of 17, none wrong; 27 of 33 attack sides right, 2 wrong.
+  Real: y_ubrafzmFI (half-cut names, 720p) 3 → 4 battles, L2Iyrc06j00 6 → 7 (the new battles' species checked on frames).
+- **Unchanged**: the 9 labelled recordings give identical JSON (timings excluded; even the metrics match: no banner was
+  read with a CJK model) and identical score.cjs output; parity.cjs 7/7 identical; ziHxrgo-lw4, Df7OyCA55CI (ja) and
+  9KDK30i9hOI (ko, 288×640) identical (9KDK30i9hOI now decides Korean from banners at 82.5 s instead of 336 s; its
+  second pass is identical); cc1z7nZJbgk identical. In y_ubrafzmFI and L2Iyrc06j00 the battles named by a plate are
+  unchanged, except that L2Iyrc06j00's first battle now closes its result as unresolvable (the newly found battle's HUD
+  follows 9 s later without a fade: the hard-cut rule).
+- **Requeue**: K7vaQKc1Gxs te5W8Jrc-Mk (0 battles, names cropped off), GbQsEozkbAk (English, dy −140, 0 species),
+  y_ubrafzmFI and L2Iyrc06j00 (+1 battle each). Brooke Channel's other cut-top uploads (8i23znoWmes, dy −121) may gain
+  battles too.
+- **Open** (README §10): battles in which one half-cut name reads keep their one or two plate species and take nothing
+  from banners (y_ubrafzmFI, cc1z7nZJbgk, L2Iyrc06j00); mirror matchups leave some attacks unassigned; the browser has
+  no HP-bar cue.

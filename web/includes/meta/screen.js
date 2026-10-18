@@ -71,11 +71,13 @@ function ballCentres(c,dy){const s=c.width/886,y=Math.round((173+dy)*s),w=c.widt
  // Balls: icon-sized runs with nameplate on both sides; yours are the first three, the opponent's the last three.
  const icons=runs.filter(([p,q])=>p>0&&q<w-1&&q-p+1>=18*s&&q-p+1<=40*s),mid=w/2,left=icons.filter(r=>r[1]<mid).slice(0,3),right=icons.filter(r=>r[0]>mid).slice(-3);
  if(left.length<3||right.length<3)return null;return [...left,...right].map(([p,q])=>(p+q)/2);}
+// The screen's left edge o and scale k inside crop c (least squares: centres = o + k·u); null unless all six balls
+// are found within 3 reference px of the fit.
+function ballFit(c,dy){const xs=ballCentres(c,dy);if(!xs)return null;const s=c.width/886,u=BALL_X.map(x=>x*s);
+ const n=6,mu=u.reduce((p,q)=>p+q,0)/n,mx=xs.reduce((p,q)=>p+q,0)/n;let num=0,den=0;for(let i=0;i<n;i++){num+=(u[i]-mu)*(xs[i]-mx);den+=(u[i]-mu)**2;}const k=num/den,o=mx-k*mu;
+ return Math.max(...xs.map((x,i)=>Math.abs(o+k*u[i]-x)))<=3*s&&k>.85&&k<1.15?{o,k}:null;}
 function refine(frames,box,{minShift=.008,minScale=.012}={}){const fits=[];
- for(const f of frames){const c=crop(f,box),dy=C.calibrate(c);if(dy===null)continue;const xs=ballCentres(c,dy);if(!xs)continue;const s=c.width/886,u=BALL_X.map(x=>x*s);
-  // Least squares: xs = o + k·u.
-  const n=6,mu=u.reduce((p,q)=>p+q,0)/n,mx=xs.reduce((p,q)=>p+q,0)/n;let num=0,den=0;for(let i=0;i<n;i++){num+=(u[i]-mu)*(xs[i]-mx);den+=(u[i]-mu)**2;}const k=num/den,o=mx-k*mu;
-  if(Math.max(...xs.map((x,i)=>Math.abs(o+k*u[i]-x)))<=3*s&&k>.85&&k<1.15)fits.push({o,k});}
+ for(const f of frames){const c=crop(f,box),dy=C.calibrate(c);if(dy===null)continue;const fit=ballFit(c,dy);if(fit)fits.push(fit);}
  if(fits.length<3)return null;const med=a=>[...a].sort((p,q)=>p-q)[a.length>>1],o=med(fits.map(f=>f.o)),k=med(fits.map(f=>f.k)),w=box[2]-box[0];
  if(Math.abs(o)<minShift*w&&Math.abs(k-1)<minScale&&Math.abs(o+k*w-w)<minShift*w)return null;
  const W=frames[0].width,x0=Math.max(0,Math.round(box[0]+o)),x1=Math.min(W,Math.round(box[0]+o+k*w));if(x1-x0<w*.8)return null;
@@ -87,5 +89,26 @@ function snap(frames,box){const out=[...box];for(const [axis,lo,hi] of [['x',0,2
   if(out[lo]>0){let a=out[lo];while(strong(a+1)&&a+1-out[lo]<=2)a++;out[lo]=a;}
   if(out[hi]<n){let a=out[hi];while(strong(a-1)&&out[hi]-(a-1)<=2)a--;if(strong(a))out[hi]=a;}}
  return out;}
-const api={locate,snap,refine,ballCentres,edgeProfile,peaks,crop,hudScore};if(typeof module!=='undefined')module.exports=api;root.MetaScreen=api;
+// screenCentre: undefined without a HUD in b (hudScore's test), null for a HUD without a ball fit, else the centre of the
+// screen fitted to the balls (left edge + half the fitted width).
+function screenCentre(f,b){const c=crop(f,b),dy=C.calibrate(c);if(dy===null)return undefined;const h=C.readHud(c,dy);if(h&&!(inked(h.my)&&inked(h.opponent)))return undefined;const fit=ballFit(c,dy);return fit?b[0]+fit.o+fit.k*(b[2]-b[0])/2:null;}
+const median=a=>[...a].sort((p,q)=>p-q)[a.length>>1];
+// Other placements of the located screen (2026-10-17). Edited compilations place each clip's phone a few pixels apart,
+// and a box reads the HUD only within about 1% of its width (±3 px at 960): Npoke's M5ED7uc0aao has its phone's left
+// edge at 429, 438, 432, 436 and 432 of 960 over five clips; the box at 432 read nothing in the 438 clip (2 battles).
+// Each frame's own edges don't separate them (peaks keeps one edge per 6 px, and the art panel's border is 6 px from
+// the phone's), so on frames where `box` reads nothing the box is moved sideways by up to 4% of its width (one Poké Ball
+// spacing is 5.3%: further, the balls read in the wrong slots) and, where it reads, the six balls give the exact
+// shift. The fitted screen's centre is compared with the box's centre: locate and refine fit the box to the balls, a
+// box between two clips (-QiUVfUf8jo's at 430, clips at 428.9 and 430.9) has no better own margin, and a box a little
+// too wide (maw_a7oKYMM: 277 px for a 273.5 px screen, its left edge 3 px out) is still centred. A placement is at
+// least 1% of the width from the box (nearer, the box reads it); shifts within 0.6% of each other form one placement.
+// Returns [{box, shift (frame px), frames (indices)}], most frames first.
+function placements(frames,box,{reach=.04,merge=.006,distinct=.01}={}){if(!frames.length)return [];const w=box[2]-box[0],W=frames[0].width,step=Math.max(1,Math.round(w/133)),moved=[];
+ const mid=(box[0]+box[2])/2;frames.forEach((f,i)=>{if(screenCentre(f,box)!==undefined)return;
+  search:for(let d=step;d<=w*reach;d+=step)for(const s of [d,-d]){const b=[box[0]+s,box[1],box[2]+s,box[3]];if(b[0]<0||b[2]>W)continue;const y=screenCentre(f,b);if(y===undefined||y===null)continue;moved.push({i,x:y-mid});break search;}});
+ const tol=merge*w,groups=[];
+ for(const m of moved.map(m=>({i:m.i,s:m.x})).filter(m=>Math.abs(m.s)>=distinct*w).sort((a,b)=>a.s-b.s)){const g=groups.at(-1);if(g&&m.s-g[0].s<=tol)g.push(m);else groups.push([m]);}
+ return groups.map(g=>{const s=median(g.map(m=>m.s)),r=Math.round(s);return {box:[box[0]+r,box[1],box[2]+r,box[3]],shift:+s.toFixed(2),frames:g.map(m=>m.i)};}).filter(p=>p.box[0]>=0&&p.box[2]<=W).sort((a,b)=>b.frames.length-a.frames.length);}
+const api={locate,snap,refine,ballCentres,ballFit,placements,edgeProfile,peaks,crop,hudScore};if(typeof module!=='undefined')module.exports=api;root.MetaScreen=api;
 })(typeof window==='undefined'?globalThis:window);

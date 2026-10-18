@@ -32,7 +32,7 @@ The game draws the same things in the same places on every phone, so the extract
 
 - **The result screen** (YOU WIN or GOOD EFFORT), the "Surrender and exit?" dialog, and the fade to black at the end of a battle. When an upload cuts the result screen, the Poké Balls and the last HP bars usually still say who lost.
 
-If the phone screen is only part of the video, as in most YouTube uploads, the extractor first finds the phone's rectangle by looking for the place where the nameplates read correctly.
+If the phone screen is only part of the video, as in most YouTube uploads, the extractor first finds the phone's rectangle by looking for the place where the nameplates read correctly. Some edited uploads place the phone a few pixels differently in each clip, and a rectangle that far off reads nothing; the extractor then finds each placement from the Poké Balls and reads every clip with its own rectangle.
 
 ![A YouTube upload with the phone screen in the centre column, found automatically](docs/frame-screen-pokedeego.jpg)
 
@@ -41,7 +41,7 @@ If the phone screen is only part of the video, as in most YouTube uploads, the e
 | Question | Answer comes from |
 | --- | --- |
 | Where does one battle end and the next begin? | Poké Balls and shields resetting, a result screen, or a fade to black |
-| Which Pokémon? | the name on the nameplate, read as text and matched to the real list; a name that is only nearly right must also fit the CP and type icons shown next to it, and a plate half-hidden by a stream overlay is skipped |
+| Which Pokémon? | the name on the nameplate, read as text and matched to the real list; a name that is only nearly right must also fit the CP and type icons shown next to it, and a plate half-hidden by a stream overlay is skipped; if the upload cut the names off, the banners that send each Pokémon out or name its attack (marked for checking) |
 | Who led? | the first opponent Pokémon seen |
 | Who won? | the result screen if there is one; otherwise three fainted balls, or two plus an empty last bar, or the surrender dialog |
 | Which charged attacks? | the "X used Y!" banners |
@@ -87,7 +87,7 @@ On a 12-core laptop, the batch engine used by the YouTube harvester analyses abo
 - Tell apart two forms with identical types and moves, such as Dialga and Dialga Origin, except by what players usually run.
 - Read nicknames on the recorder's own side (it now skips them instead of guessing a species, for example a Japanese nickname that looked like Blitzle).
 - Name a Pokémon whose nameplate a stream overlay hides on every frame; it gives no name rather than a wrong one.
-- Name the Pokémon in uploads whose crop cuts the names off the top of the phone screen.
+- Complete the teams in uploads whose crop cuts the names in half: when one half-cut name still reads, the battle's other Pokémon are not taken from the banners. Battles from banners also get no fast moves or HP graph.
 
 The [technical reference](README.md#10-gaps-and-improvement-areas) lists what would fix each of these, and what would make it faster.
 

@@ -338,7 +338,18 @@ class Pipeline(unittest.TestCase):
                  patch('harvest.gamemaster_for',return_value=''),patch('harvest.write_league_refinement',return_value=None):
                 h.extract_one({'id':vid,'dl_path':str(path),'sha256':'a'*64,'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
             self.assertEqual((seen['CROP'],seen['FORCE_FULL']),('700,0,1200,1080','1'))
-            self.assertNotIn('RANGES',seen)
+            self.assertNotIn('RANGES',seen);self.assertNotIn('CROPS',seen)
+            # The phone placed differently per clip: the probe's placements go along (whole video, one box per stretch).
+            seen.clear();h.state.x('INSERT INTO reprocess(id,requested) VALUES(?,1)',(vid,))
+            probe=dict(probe,placements=[{'box':[700,0,1200,1080],'hits':5,'stretches':[{'start':0,'end':300.5}]},
+                                          {'box':[712,0,1212,1080],'hits':6,'stretches':[{'start':300.5,'end':600}]}])
+            with patch.object(H.Harvester,'run_probe',lambda self,*a,**kw:probe),patch('harvest.subprocess.Popen',Process),\
+                 patch('harvest.gamemaster_for',return_value=''),patch('harvest.write_league_refinement',return_value=None):
+                h.extract_one({'id':vid,'dl_path':str(path),'sha256':'a'*64,'league':'{}','duration':600,'upload_date':'20200101','meta':'{}'})
+            self.assertEqual((seen['CROP'],seen['CROPS'],seen['FORCE_FULL']),('700,0,1200,1080','700,0,1200,1080@0-300.5;712,0,1212,1080@300.5-600','1'))
+            result=json.loads((Path(directory)/'results'/(vid+'.json')).read_text())
+            self.assertEqual((result['media']['crop'],result['media']['crops']),(seen['CROP'],seen['CROPS']))
+            self.assertEqual(result['probe']['placements'],probe['placements'])
             h.state.db.close()
 
     def test_confirmed_league_survives_registry_export_and_retry(self):

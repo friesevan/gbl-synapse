@@ -10,13 +10,17 @@
 // Hits are grouped into time ranges, padded so whole battles are covered (start countdown before
 // the first nameplate, result screen after the last). run-node.cjs then decodes only those ranges
 // (RANGES=s-e,s-e) with CROP set to the located box.
+//   3. placements (single screen only): the phone placed a few pixels apart per clip (edited compilations).
+//      Keyframes the box misses are searched (screen.js placements); each other placement is scanned like the box,
+//      and when ≥ 2 placements each read enough keyframes, `placements` [{box, hits, stretches}] tells run-node.cjs
+//      which box to decode when (CROPS, placement-plan.cjs). Hits and ranges then count every placement.
 //
 // Usage: node probe.cjs VIDEO [OUT.json]   → {box, screens, dy, hits, samples, ranges, coverage, ...}
 //   PROBE_PRE=30 PROBE_POST=45 PROBE_GAP=60   padding (s) and the largest gap merged inside one range
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
 const Screen=require('../../includes/meta/screen.js'),C=require('../../includes/meta/core.js');
-const Scan=require('./hud-scan-plan.cjs');
+const Scan=require('./hud-scan-plan.cjs'),Placement=require('./placement-plan.cjs');
 const SCAN_W=443;          // half the 886-px reference width: HUD boxes stay ≥10 px
 const LOCATE_FRAMES=32,LOCATE_W=960;
 const num=(k,d)=>{const v=Number(process.env[k]);return Number.isFinite(v)&&process.env[k]!==''?v:d;};
@@ -40,7 +44,7 @@ const evenH=(w,W,H)=>Math.max(2,Math.round(H*w/W/2)*2);
 async function locateFrames(video,info){const w=Math.min(LOCATE_W,info.W),h=evenH(w,info.W,info.H),keep=[];let stride=1;
  await frames(['-v','error','-threads','1','-skip_frame','nokey','-i',video,'-an','-fps_mode','passthrough','-vf',`scale=${w}:${h}`,'-f','rawvideo','-pix_fmt','rgba','-'],w,h,(img,i)=>{
   if(i%stride)return;keep.push({data:new Uint8ClampedArray(img.data),width:w,height:h});if(keep.length>=LOCATE_FRAMES*2){for(let j=keep.length-1;j>=0;j--)if(j%2)keep.splice(j,1);stride*=2;}});
- return {frames:keep.filter((_,j)=>j%Math.max(1,Math.floor(keep.length/LOCATE_FRAMES))===0).slice(0,LOCATE_FRAMES),w,h,scale:info.W/w};}
+ return {frames:keep.filter((_,j)=>j%Math.max(1,Math.floor(keep.length/LOCATE_FRAMES))===0).slice(0,LOCATE_FRAMES),all:keep,w,h,scale:info.W/w};}
 
 // A second phone screen of the same size elsewhere in the frame (both players' screens side by side).
 function secondScreen(frames,box,score){const w=box[2]-box[0],W=frames[0].width,step=Math.max(4,Math.round(w/8));let best=null;
@@ -57,6 +61,31 @@ function rangesFrom(times,hits,duration,{pre=30,post=45,gap=60}={}){const t=time
 
 function hudAt(img,dys){for(const dy of dys){const h=C.readHud(img,dy);if(h)return dy;}return null;}
 
+// Placements of one screen over the scanned keyframes. scans[p] = {box, hits, centres}: placement p (0 = the located box)
+// reads the HUD on keyframe i (hits[i]), and its Poké Balls put the screen's centre at centres[i] (source px; null
+// without a fit). Each HUD keyframe goes to the placement whose box centre is nearest the fitted centre (as in
+// screen.js placements): a box 3–4 px off still reads some frames, so reads alone would put the switch anywhere in
+// the clip. The current placement stays while it reads and the nearest is under `margin` of the width closer, or
+// when no fit is known. A placement other than the located box is kept only when it is nearest on ≥ minHits
+// keyframes (a real placement: the fits agree within ±0.3 px at 960). Returns null when only the located box
+// remains, else {keep (indices into scans, located box first), assign (index into keep per keyframe, -1 without HUD),
+// stretches per kept placement ({start,end}, the timeline split halfway between runs)}.
+function placementPlan(times,scans,duration,{minHits=4,margin=.003}={}){const n=times.length,med=a=>[...a].sort((x,y)=>x-y)[a.length>>1],w=scans[0].box[2]-scans[0].box[0];
+ const X=times.map((_,i)=>{const v=scans.map(s=>s.hits[i]?s.centres[i]:null).filter(x=>x!=null);return v.length?med(v):null;});
+ let keep=scans.map((_,p)=>p);
+ for(;;){const S=keep.map(p=>scans[p]),assign=new Array(n).fill(-1),nearest=S.map(()=>0);let cur=-1;
+  for(let i=0;i<n;i++){const can=S.map((s,q)=>s.hits[i]?q:-1).filter(q=>q>=0);if(!can.length)continue;
+   if(X[i]===null){cur=cur>=0&&S[cur].hits[i]?cur:can[0];assign[i]=cur;continue;}
+   const d=q=>Math.abs(X[i]-(S[q].box[0]+S[q].box[2])/2),best=can.reduce((a,q)=>d(q)<d(a)?q:a);
+   cur=cur>=0&&S[cur].hits[i]&&d(cur)-d(best)<=margin*w?cur:best;assign[i]=cur;if(cur===best)nearest[cur]++;}
+  let drop=-1;for(let q=1;q<S.length;q++)if(nearest[q]<minHits&&(drop<0||nearest[q]<nearest[drop]))drop=q;
+  if(drop>0){keep=keep.filter((_,q)=>q!==drop);continue;}
+  if(keep.length<2)return null;
+  const runs=[];assign.forEach((a,i)=>{if(a<0)return;const last=runs.at(-1);if(last&&last.q===a)last.last=times[i];else runs.push({q:a,first:times[i],last:times[i]});});
+  const stretches=keep.map(()=>[]);runs.forEach((r,j)=>{const start=j?+((runs[j-1].last+r.first)/2).toFixed(1):0,end=j<runs.length-1?+((r.last+runs[j+1].first)/2).toFixed(1):+Math.max(+duration||0,r.last+.1).toFixed(1);
+   const s=stretches[r.q],last=s.at(-1);if(last&&last.end===start)last.end=end;else s.push({start,end});});
+  return {keep,assign,stretches};}}
+
 async function probe(video,opts={}){const started=Date.now(),info=probeInfo(video),pre=opts.pre??num('PROBE_PRE',30),post=opts.post??num('PROBE_POST',45),gap=opts.gap??num('PROBE_GAP',60);
  const base={version:1,recording:path.basename(video),duration:info.duration,width:info.W,height:info.H,pre,post,gap};
  let L=await locateFrames(video,info),found=Screen.locate(L.frames),locateMethod='keyframes';
@@ -68,25 +97,37 @@ async function probe(video,opts={}){const started=Date.now(),info=probeInfo(vide
  const box=toSrc(found.box),second=secondScreen(L.frames,found.box,found.score),screens=[{box,score:found.score}];
  if(second)screens.push({box:toSrc(second.box),score:second.score});screens.sort((a,b)=>a.box[0]-b.box[0]);
  // Pass 2: every keyframe, cropped to the screen.
- const cw=box[2]-box[0],ch=box[3]-box[1],h=evenH(SCAN_W,cw,ch),scanH=Scan.hudScanHeight(SCAN_W,h,found.dy),hits=[],dys=[found.dy??0];let misses=0;
- const scan=await frames(['-v','info','-nostats','-hide_banner','-threads','1','-skip_frame','nokey','-i',video,'-an','-fps_mode','passthrough','-vf',`crop=${cw}:${ch}:${box[0]}:${box[1]},scale=${SCAN_W}:${h},crop=${SCAN_W}:${scanH}:0:0,showinfo`,'-f','rawvideo','-pix_fmt','rgba','-'],SCAN_W,scanH,(img,i)=>{
-  // Known offsets first (±8 reference px around them); a full calibration on every 4th miss.
-  let dy=hudAt(img,dys.flatMap(d=>[d,d-4,d+4,d-8,d+8]));
-  if(dy===null&&(misses++%4===0)){const c=C.calibrate(img);if(c!==null){dy=c;if(!dys.includes(c)&&dys.length<6)dys.push(c);}}
-  hits[i]=dy!==null;},{requireTimes:true});
- const times=scan.times.slice(0,scan.count);
+ const cw=box[2]-box[0],ch=box[3]-box[1],h=evenH(SCAN_W,cw,ch),scanH=Scan.hudScanHeight(SCAN_W,h,found.dy);
+ const scanBox=async b=>{const hits=[],centres=[],dys=[found.dy??0];let misses=0;
+  const scan=await frames(['-v','info','-nostats','-hide_banner','-threads','1','-skip_frame','nokey','-i',video,'-an','-fps_mode','passthrough','-vf',`crop=${cw}:${ch}:${b[0]}:${b[1]},scale=${SCAN_W}:${h},crop=${SCAN_W}:${scanH}:0:0,showinfo`,'-f','rawvideo','-pix_fmt','rgba','-'],SCAN_W,scanH,(img,i)=>{
+   // Known offsets first (±8 reference px around them); a full calibration on every 4th miss.
+   let dy=hudAt(img,dys.flatMap(d=>[d,d-4,d+4,d-8,d+8]));
+   if(dy===null&&(misses++%4===0)){const c=C.calibrate(img);if(c!==null){dy=c;if(!dys.includes(c)&&dys.length<6)dys.push(c);}}
+   hits[i]=dy!==null;if(dy!==null){const fit=Screen.ballFit(img,dy);centres[i]=fit?b[0]+(fit.o+fit.k*SCAN_W/2)*cw/SCAN_W:null;}},{requireTimes:true});
+  return {box:b,hits,centres,scan};};
+ const main=await scanBox(box),scan=main.scan,times=scan.times.slice(0,scan.count);let hits=main.hits;
+ // Other placements of a single screen (screen.js placements, from the whole keyframe reservoir), each scanned like the
+ // box; reported only when ≥ 2 placements each read the HUD on enough keyframes (placementPlan). The box stays `box`.
+ let placements=null;
+ if(screens.length===1){const cands=[];
+  for(const p of Screen.placements(L.all||L.frames,found.box).slice(0,3)){const s=Math.round(p.shift*L.scale/2)*2,b=[box[0]+s,box[1],box[2]+s,box[3]];
+   if(!s||b[0]<0||b[2]>info.W||cands.some(c=>c.box[0]===b[0]))continue;const r=await scanBox(b);if(r.scan.count===scan.count)cands.push(r);}
+  const scans=[main,...cands],plan=cands.length?placementPlan(times,scans,info.duration):null;
+  if(plan){placements=plan.keep.map((p,q)=>({box:scans[p].box,hits:plan.assign.filter(a=>a===q).length,stretches:plan.stretches[q]}));hits=plan.assign.map(a=>a>=0);}}
  const gaps=times.slice(1).map((t,i)=>t-times[i]).filter(x=>x>0).sort((a,b)=>a-b),keyInterval=gaps.length?gaps[gaps.length>>1]:null;
  const ranges=rangesFrom(times,hits,info.duration,{pre,post,gap}),covered=ranges.reduce((a,r)=>a+r.end-r.start,0);
  return {...base,box,screens,dy:found.dy,locateScore:found.score,locateMethod,...(found.refined?{refined:found.refined}:{}),locateFrames:L.frames.length,scanHeight:scanH,scanFullHeight:h,scanBytes:scan.count*SCAN_W*scanH*4,scanMode:'hud-band-v1',samples:scan.count,keyInterval:keyInterval&&+keyInterval.toFixed(2),
-  hits:hits.filter(Boolean).length,hitTimes:times.filter((_,i)=>hits[i]).map(t=>+t.toFixed(1)),ranges,coverage:info.duration?+(covered/info.duration).toFixed(3):0,seconds:+((Date.now()-started)/1000).toFixed(1)};}
+  hits:hits.filter(Boolean).length,hitTimes:times.filter((_,i)=>hits[i]).map(t=>+t.toFixed(1)),ranges,coverage:info.duration?+(covered/info.duration).toFixed(3):0,...(placements?{placements}:{}),seconds:+((Date.now()-started)/1000).toFixed(1)};}
 
 // How run-node.cjs should be called for a probe: null = skip (no battle HUD), {} = whole video,
-// {RANGES, CROP} = only these ranges. Long keyframe gaps make the scan too coarse to trust.
-function plan(p,{fullAbove=.8,maxKeyInterval=12}={}){if(!p)return {};if(p.keyInterval&&p.keyInterval>maxKeyInterval)return {CROP:p.box?p.box.join(','):'auto'};
+// {RANGES, CROP} = only these ranges. Long keyframe gaps make the scan too coarse to trust. Several placements of
+// the screen add CROPS (placement-plan.cjs), whatever is decoded.
+function plan(p,{fullAbove=.8,maxKeyInterval=12}={}){if(!p)return {};const crops=p.box&&p.placements?.length>1?{CROPS:Placement.formatCrops(p.placements)}:{};
+ if(p.keyInterval&&p.keyInterval>maxKeyInterval)return {CROP:p.box?p.box.join(','):'auto',...crops};
  if(!p.box||!p.ranges.length)return null;const crop=p.box.join(',');
- if(p.coverage>=fullAbove)return {CROP:crop};return {CROP:crop,RANGES:p.ranges.map(r=>`${r.start}-${r.end}`).join(',')};}
+ if(p.coverage>=fullAbove)return {CROP:crop,...crops};return {CROP:crop,RANGES:p.ranges.map(r=>`${r.start}-${r.end}`).join(','),...crops};}
 
-module.exports={probe,plan,rangesFrom,secondScreen,locateFrames,probeInfo,frames};
+module.exports={probe,plan,placementPlan,rangesFrom,secondScreen,locateFrames,probeInfo,frames};
 if(require.main===module){const [video,out]=process.argv.slice(2);if(!video){console.error('usage: node probe.cjs VIDEO [OUT.json]');process.exit(2);}
- probe(video).then(p=>{const s=JSON.stringify(p);if(out)fs.writeFileSync(out,s);console.log(`${p.recording}: ${p.hits}/${p.samples} keyframes with HUD, ${p.ranges.length} ranges, ${(p.coverage*100).toFixed(0)}% of ${(p.duration/60).toFixed(0)} min, screens ${p.screens.length}, ${p.seconds} s`);})
+ probe(video).then(p=>{const s=JSON.stringify(p);if(out)fs.writeFileSync(out,s);console.log(`${p.recording}: ${p.hits}/${p.samples} keyframes with HUD, ${p.ranges.length} ranges, ${(p.coverage*100).toFixed(0)}% of ${(p.duration/60).toFixed(0)} min, screens ${p.screens.length}${p.placements?`, placements ${p.placements.length}`:''}, ${p.seconds} s`);})
   .catch(e=>{console.error(e.message);process.exit(1);});}

@@ -82,7 +82,7 @@ function matchLocale(text,map,lang,latin=null){if(!map)return null;const cjk=!!L
 // the best language's is no longer read, so a long search costs about one read per plate. `lang` presets the
 // language (a second pass over a video whose language was decided late).
 class NameLanguage{
- constructor({lang='en',maxTries=40,maxBlind=200,narrowAfter=20,narrowGap=20}={}){this.lang=lang||'en';this.votes={};this.tries=0;this.maxTries=maxTries;this.maxBlind=maxBlind;this.narrowAfter=narrowAfter;this.narrowGap=narrowGap;this.conf={};}
+ constructor({lang='en',maxTries=40,maxBlind=200,narrowAfter=20,narrowGap=20,maxBanners=40}={}){this.lang=lang||'en';this.votes={};this.tries=0;this.maxTries=maxTries;this.maxBlind=maxBlind;this.narrowAfter=narrowAfter;this.narrowGap=narrowGap;this.conf={};this.bannerVotes={};this.bannerTries=0;this.maxBanners=maxBanners;}
  count(lang){return this.votes[lang]?.size||0;}
  vote(lang,key){(this.votes[lang]||(this.votes[lang]=new Set())).add(key);if(this.lang!=='en'||lang==='en')return false;const k=this.count(lang),long=key.length>=(LOCALES[lang]?.script?3:5);
   if(k>=2||(k===1&&long&&this.count('en')===0)){this.lang=lang;return true;}return false;}
@@ -90,6 +90,14 @@ class NameLanguage{
  // Mean confidence of a CJK model's reads while searching (a model not read yet, e.g. not loaded in the browser, stays in).
  heard(lang,confidence){const c=this.conf[lang]||(this.conf[lang]={n:0,sum:0});c.n++;c.sum+=confidence||0;}
  reads(lang){if(this.tries<this.narrowAfter||!this.conf[lang]?.n)return true;const mean=l=>this.conf[l]?.n?this.conf[l].sum/this.conf[l].n:0,best=Math.max(...Object.keys(this.conf).map(mean));return mean(lang)>=best-this.narrowGap;}
+ // Banners (2026-10-17): an upload that crops the names off the phone's top gives no plate to decide on (K7vaQKc1Gxs,
+ // te5W8Jrc-Mk). While English has named nothing, up to `maxBanners` distinct banners are also read with the CJK models;
+ // one that parses as that language's "X used Y!" with a dictionary species and move (bannerEvidence) is a vote, and
+ // two distinct ones switch. English videos name a species on their first plates, so their banners are never read
+ // this way.
+ bannerSearching(){return this.lang==='en'&&this.count('en')===0&&this.bannerTries<this.maxBanners;}
+ bannerVote(lang,key){(this.bannerVotes[lang]||(this.bannerVotes[lang]=new Set())).add(key);if(this.lang!=='en'||this.count('en'))return false;
+  if(this.bannerVotes[lang].size>=2){this.lang=lang;return true;}return false;}
 }
 // Resolves one nameplate. eng: {text, confidence} from the English OCR; alt(lang) reads the box with that
 // language's OCR model (CJK only; omit it where no model is available). Returns {hit, switched}.
@@ -304,15 +312,23 @@ class HudTracker{
  constructor(){this.battles=[];this.current=null;this.lastHud=-Infinity;this.lastClosed=null;this.rejected={cover:0,cp:0,ambiguous:0,types:0};}
  static fresh(s){return s.fainted===0&&s.balls.every(b=>b==='alive')&&s.shields===2;}
  static used(s){return s.fainted+(2-s.shields);}
- open(t,midBattle){this.current={id:globalThis.crypto?.randomUUID?.()||String(Math.random()),start:t,end:t,my:[],opponent:[],events:[],result:'Unknown',resultSource:'',fadeAt:null,resultUnread:0,flags:midBattle?['Recording starts mid-battle: lead may be missing']:[],reviewed:false,leadConfirmed:false,used:0,fainted:{my:0,opponent:0},shieldsUsed:{my:0,opponent:0},active:{my:'',opponent:''},segments:[]};}
+ open(t,midBattle){this.current={id:globalThis.crypto?.randomUUID?.()||String(Math.random()),start:t,end:t,my:[],opponent:[],events:[],result:'Unknown',resultSource:'',fadeAt:null,resultUnread:0,flags:midBattle?['Recording starts mid-battle: lead may be missing']:[],reviewed:false,leadConfirmed:false,used:0,fainted:{my:0,opponent:0},shieldsUsed:{my:0,opponent:0},active:{my:'',opponent:''},segments:[]};
+  // A battle's intro announces both leads before its HUD shows: banner sightings after the previous battle's fade or
+  // result screen move here (bannerTeam). Without either, send-outs after its last HUD and at most 6 s before this fresh
+  // HUD do (cc1z7nZJbgk: 3 s); the last send-out of a battle that ends at once comes earlier (iC4-0ss8p40: 7.5 s, then a fade).
+  const p=this.closed;this.closed=null;if(!p?.banners)return;const cut=Math.min(p.fadeAt>=p.end?p.fadeAt:Infinity,...p.events.filter(e=>e.kind==='result').map(e=>e.t)),
+   intro=p.banners.filter(s=>cut<Infinity?s.t>cut:!midBattle&&s.kind==='go'&&s.t>p.end&&t-s.t<=6);
+  if(intro.length){this.current.banners=intro;p.banners=p.banners.filter(s=>!intro.includes(s));}}
  static ballVerdict(b){const lost=['my','opponent'].filter(s=>b.fainted[s]===3);return lost.length===1?(lost[0]==='opponent'?'Win':'Loss'):null;}
- close(dropLone=false){const b=this.current;if(!b)return;this.current=null;
+ close(dropLone=false){const b=this.current;if(!b)return;this.current=null;this.closed=b;
   // A battle seen on a single HUD frame that opened mid-battle, closed by a later HUD, is noise: usually the
   // first frame of the next battle read before its HUD settled (7 of the 8 one-frame battles among 1,585 saved
   // ones were followed within a second by the real battle), or a lone frame between battles when a video
   // changes its nameplate offset. At the end of the recording it is kept.
   const lone=dropLone&&b.end===b.start&&b.flags.includes('Recording starts mid-battle: lead may be missing');
-  if((b.my.length||b.opponent.length)&&!lone){this.battles.push(b);this.lastClosed=b;}}
+  // A battle whose nameplates named nothing stays while its banners name a species and its HUD showed for ≥ 10 s
+  // (finish → bannerTeam; names cropped off the top).
+  if((b.my.length||b.opponent.length||b.banners?.length&&b.end-b.start>=10)&&!lone){this.battles.push(b);this.lastClosed=b;}}
  // hud: readHud() result with optional .hit per side ({...match(), confidence, raw}); null when no HUD.
  observe(t,hud){if(!hud)return;const fresh=HudTracker.fresh(hud.my)&&HudTracker.fresh(hud.opponent),used=HudTracker.used(hud.my)+HudTracker.used(hud.opponent);
   // A long HUD gap usually means the battle ended, but some recordings hide the nameplates for 30 s or
@@ -372,7 +388,10 @@ class HudTracker{
   return b!==this.current||b.endCue!==undefined||Math.max(b.fainted.my,b.fainted.opponent)>=2||t-this.lastHud>=8;}
  // videoEnd: the last analysed second (for "the recording ends before a result"). Results without a result screen
  // come from inferResult; run-node.cjs and ui.js apply it again once the matchups' HP series exist.
- finish({videoEnd=null}={}){if(this.current){if(this.current.result==='Unknown'&&this.current.fainted.my<3&&this.current.fainted.opponent<3)this.current.flags.push('Recording ends before a result');this.close();}
+ // defender(t, until): the side whose HP bar dropped after a charged attack at t (run-node.cjs, from the HP bars), for bannerTeam.
+ finish({videoEnd=null,defender=null,debug=false}={}){if(this.current){if(this.current.result==='Unknown'&&this.current.fainted.my<3&&this.current.fainted.opponent<3)this.current.flags.push('Recording ends before a result');this.close();}
+  for(const b of this.battles){if(!b.my.length&&!b.opponent.length)bannerTeam(b,{defender,debug});delete b.banners;}
+  this.battles=this.battles.filter(b=>b.my.length||b.opponent.length);
   const icons=iconReliability(this.battles);for(const b of this.battles)for(const side of ['my','opponent'])for(const p of b[side]){if(!typesContradict(p,icons))continue;this.rejected.types++;p.typeConflict=true;
    b.flags.push(`Check species: nameplate read "${p.raw||p.label}" (${p.candidates?.[0]?.name||p.key}) but its type icons read ${Object.keys(p.typeVotes).join(', ')}`);}
   for(const b of this.battles){if(b.surrender!==undefined){if(b.result==='Loss'&&b.resultSource==='result screen')b.ending='you-forfeit';delete b.surrender;}
@@ -498,12 +517,14 @@ function parseBanner(text){const t=String(text).replace(/[“”"|_—=~‘\[\](
 const LATIN_GO=/\b(?:los|vas-y|vas y|vai|adelante|vamos)[.,:;]?\s+([a-zà-ÿ][a-zà-ÿ .'’-]{1,24}?)\s*[!1]/i;
 const LATIN_MOVE=[/([a-zà-ÿ][a-zà-ÿ .'’-]{1,40}?)\s+hat\s+([a-zà-ÿ][a-zà-ÿ '’-]{1,30}?)\s+eingesetzt/i,/([a-zà-ÿ][a-zà-ÿ .'’-]{1,40}?)\s+a\s+utilis[ée]\s+([a-zà-ÿ][a-zà-ÿ '’-]{1,30}?)\s*[!1.]/i,
  /([a-zà-ÿ][a-zà-ÿ .'’-]{1,40}?)\s+(?:ha\s+usado|us[óo]u?|usa)\s+([a-zà-ÿ][a-zà-ÿ '’-]{1,30}?)\s*[!1.]/i];
-// Opponents' Pokémon are announced as "相手が Xをくりだした！" (ja), "상대가 X(을)를 내보냈다!" (ko), "對手派出了X！" (zh).
-const ZH_BANNER={go:[/上吧[!！]*([^!！]+)/,/派出了([^!！]+)/],move:/^(.+?)使出了(.+?)[!！]?$/};
-const CJK_BANNER={ja:{go:[/ゆ[けげ][っッつ]?[!！。]*([^!！]+)/,/手が([^!！]+?)をく/],move:/^(.+?)[はば](.+?)を使/},
- ko:{go:[/가랏[!！]*([^!！]+)/,/상대가([^!！]+?)\(?[을울]?\)?[를틀]내/],move:/^(.+?)\(?[은온]?\)?[는눈](.+?)\(?[을울]?\)?[를틀]썼/},'zh-Hant':ZH_BANNER,'zh-Hans':ZH_BANNER};
+// Opponents' Pokémon are announced as "相手が Xをくりだした！" (ja), "상대가 X(을)를 내보냈다!" (ko), "對手派出了X！" (zh). CJK
+// send-outs name the side ('my' for ゆけっ/가랏/上吧: 1,297 of 1,303 such events in saved Japanese results whose species
+// is on one side; 'opponent' for 相手が: 2,311 of 2,390); Latin "Go, X!" banners announce both sides (en: 1,395 / 1,179).
+const ZH_BANNER={go:[[/上吧[!！]*([^!！]+)/,'my'],[/派出了([^!！]+)/,'opponent']],move:/^(.+?)使出了(.+?)[!！]?$/};
+const CJK_BANNER={ja:{go:[[/ゆ[けげ][っッつ]?[!！。]*([^!！]+)/,'my'],[/手が([^!！]+?)をく/,'opponent']],move:/^(.+?)[はば](.+?)を使/},
+ ko:{go:[[/가랏[!！]*([^!！]+)/,'my'],[/상대가([^!！]+?)\(?[을울]?\)?[를틀]내/,'opponent']],move:/^(.+?)\(?[은온]?\)?[는눈](.+?)\(?[을울]?\)?[를틀]썼/},'zh-Hant':ZH_BANNER,'zh-Hans':ZH_BANNER};
 function parseLocalBanner(text,lang){
- if(LOCALES[lang]?.script){const pat=CJK_BANNER[lang];if(!pat)return null;const t=String(text).normalize('NFKC').replace(/[\s|_"“”'‘’「」『』]/g,'');let m=pat.move.exec(t);if(m)return {kind:'move',actor:m[1],move:m[2]};for(const re of pat.go){m=re.exec(t);if(m)return {kind:'go',name:m[1]};}return null;}
+ if(LOCALES[lang]?.script){const pat=CJK_BANNER[lang];if(!pat)return null;const t=String(text).normalize('NFKC').replace(/[\s|_"“”'‘’「」『』]/g,'');let m=pat.move.exec(t);if(m)return {kind:'move',actor:m[1],move:m[2]};for(const [re,side] of pat.go){m=re.exec(t);if(m)return {kind:'go',name:m[1],side};}return null;}
  const t=String(text).replace(/[“”"|_—=~‘\[\](){}<>*#^¡¿]/g,' ').replace(/\s+/g,' ');for(const re of LATIN_MOVE){const m=re.exec(t);if(m)return {kind:'move',actor:m[1].trim(),move:m[2].trim()};}
  const m=LATIN_GO.exec(t);return m?{kind:'go',name:m[1].trim()}:null;}
 // move-names.json (PokeAPI) → localised name key → PvPoke move, per language. A "+" move or Aegislash's charge variant
@@ -518,12 +539,12 @@ function moveDictionary(moves,names,lang){const table=names?.[lang];if(!table)re
 function findMove(text,lang,moveMaps,moves){const cjk=!!LOCALES[lang]?.script,key=nameKey(text,lang),map=moveMaps?.[lang];if(key.length<2)return null;
  if(map?.has(key))return map.get(key);if(!cjk){const ms=moves.filter(x=>normalize(x.name.replace(/\s*\([^)]*\)$/,''))===key);if(ms.length)return ms.length===1?ms[0]:null;}
  if(!map||key.length<(cjk?3:5))return null;let found=null;for(const [k,m] of map)if(Math.abs(k.length-key.length)<=1&&distance(k,key)<=1){if(!m||found&&found!==m)return null;found=m;}return found;}
-// Actor or "Go" name → English nameplate key; junk before the name is dropped (last 1–3 words, or up to 3
+// Actor or "Go" name → the species match (its key is the English nameplate key); junk before the name is dropped (last 1–3 words, or up to 3
 // leading CJK characters).
 function findSpecies(text,lang,locales,dict){const cjk=!!LOCALES[lang]?.script,cands=[];
  if(cjk){const s=String(text).trim(),mega=LOCALES[lang].mega&&s.startsWith(LOCALES[lang].mega);for(let i=0;i<=(mega?0:Math.min(3,s.length-2));i++)cands.push(s.slice(i));}   // never cut a Mega prefix
  else{const w=String(text).split(' ').filter(Boolean);for(const n of [1,2,3])if(n<=w.length)cands.push(w.slice(-n).join(' '));}
- for(const c of cands){const h=(locales?.[lang]&&matchLocale(c,locales[lang],lang))||(!cjk&&match(c,dict));if(h)return h.key;}return null;}
+ for(const c of cands){const h=(locales?.[lang]&&matchLocale(c,locales[lang],lang))||(!cjk&&match(c,dict));if(h)return h;}return null;}
 // A banner in another UI language → {kind:'go',name} or {kind:'move',actor,move,lang} with the English nameplate
 // key and the PvPoke move name, for HudTracker.go/move. lang: the CJK language the text was read in, or the
 // video's nameplate language for Latin text ('en' tries every Latin language: Spanish, Italian and Portuguese
@@ -531,14 +552,22 @@ function findSpecies(text,lang,locales,dict){const cjk=!!LOCALES[lang]?.script,c
 function localBanner(text,{lang='en',locales={},moveMaps={},moves=[],dict}){const cjk=!!LOCALES[lang]?.script;
  const langs=cjk?[lang]:[...new Set([lang,'de','fr','es','it'])].filter(l=>l!=='en'&&!LOCALES[l]?.script);
  const pb=parseLocalBanner(text,cjk?lang:'de');if(!pb)return null;
- for(const l of langs){if(pb.kind==='go'){const name=findSpecies(pb.name,l,locales,dict);if(name)return {kind:'go',name};continue;}
-  const move=findMove(pb.move,l,moveMaps,moves),actor=move&&findSpecies(pb.actor,l,locales,dict);if(move&&actor)return {kind:'move',actor,move:move.name,lang:l};}
+ // fuzzy: the species matched with one wrong character (bannerTeam needs it confirmed).
+ const fuzzy=h=>h.quality!=='exact'?{fuzzy:true}:{};
+ for(const l of langs){if(pb.kind==='go'){const h=findSpecies(pb.name,l,locales,dict);if(h)return {kind:'go',name:h.key,...(pb.side?{side:pb.side}:{}),...fuzzy(h)};continue;}
+  const move=findMove(pb.move,l,moveMaps,moves),h=move&&findSpecies(pb.actor,l,locales,dict);if(move&&h)return {kind:'move',actor:h.key,move:move.name,lang:l,...fuzzy(h)};}
  return null;}
+// A banner read with a candidate CJK model while the nameplate language is undecided (NameLanguage.bannerVote): evidence
+// only when it parses as that language's "X used Y!" with a dictionary species and move. Returns localBanner's parse.
+function bannerEvidence(text,lang,ctx){if(!LOCALES[lang]?.script)return null;const lb=localBanner(text,{...ctx,lang});return lb?.kind==='move'?lb:null;}
 // Banner crop: a 96×12 fingerprint of its white letters and their share (text when ~3–30%).
 // The banner sits at a fixed share of the FULL screen height (30.2%, height 3.8%), unlike the
 // nameplates, which hang from the top. With the top cut off (dy < 0, YouTube crops) the full height is
 // the frame height minus dy, so the box is placed from that, not by shifting the phone layout.
 function bannerBox(img,dy){const s=img.width/REF_W,full=img.height-dy*s,y0=Math.round(.302*full+dy*s);return [Math.round(71*s),y0,Math.round(815*s),y0+Math.round(.038*full)];}
+// Long CJK banners wrap onto two lines ("相手が / メガミュウツーYをくりだした！"), and the first line reaches x ≈ 845, past
+// the box above: this box is twice its height (centred on it) and 20–866 wide.
+function wideBannerBox(img,dy){const [,y0,,y1]=bannerBox(img,dy),s=img.width/REF_W,h=y1-y0;return [Math.round(20*s),Math.round(y0-h/2),Math.round(866*s),Math.round(y1+h/2)];}
 function bannerRead(img,dy){const box=bannerBox(img,dy),[x0,y0,x1,y1]=box,sig=new Uint8Array(96*12),d=img.data;let n=0;
  for(let r=0;r<12;r++)for(let c=0;c<96;c++){const x=Math.floor(x0+(c+.5)*(x1-x0)/96),y=Math.floor(y0+(r+.5)*(y1-y0)/12);if(y<0||y>=img.height)continue;const i=(y*img.width+x)*4;if(Math.min(d[i],d[i+1],d[i+2])>200){sig[r*96+c]=1;n++;}}
  return {box,sig,textPixels:n/sig.length};}
@@ -558,20 +587,82 @@ function bannerEdges(img,box,{search=0}={}){let [x0,y0,x1,y1]=box.map(Math.round
  return {box,sig,share:n?e/n:0};}
 // "Go, Marowak!" names the Pokémon being sent out at that moment (either side), even with the
 // nameplates hidden: kept as a 'go' event for switch timing and leads.
+// Every read of a banner that names a species exactly is also kept as a sighting (b.banners) for bannerTeam; finish()
+// drops them, so battles named by their nameplates are unchanged.
+const sighting=(b,s)=>(b.banners||(b.banners=[])).push(s);
 HudTracker.prototype.go=function(t,text,dict,parsed=null){const b=this.current;if(!b)return false;const pb=parsed||parseBanner(text);if(pb?.kind!=='go')return false;const hit=match(pb.name,dict);if(!hit)return false;
+ if(hit.quality==='exact')sighting(b,{t,kind:'go',side:pb.side||null,hit,label:text.trim(),fuzzy:!!pb.fuzzy});
  const last=b.events.filter(e=>e.kind==='go').at(-1);if(last&&last.actor===hit.key&&t-last.t<6)return true;b.events.push({t,kind:'go',actor:hit.key,label:text.trim()});return true;};
-HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null){const b=this.current;if(!b||confidence<40)return;const pb=parsed||parseBanner(text);if(pb?.kind!=='move')return;
+// A banner read only in the wide two-line box (run-node.cjs, ui.js: while the battle's nameplates have named nothing) is
+// kept as a sighting without an event, so a battle that a plate names later is unchanged.
+HudTracker.prototype.sight=function(t,text,parsed,dict,moves,confidence=90){const b=this.current;if(!b||!parsed)return;const hit=match(parsed.kind==='go'?parsed.name:parsed.actor,dict);if(hit?.quality!=='exact')return;
+ const move=parsed.kind==='move'&&moves.find(m=>normalize(m.name)===normalize(parsed.move));if(parsed.kind==='move'&&!move)return;
+ sighting(b,{t,kind:parsed.kind,side:parsed.side||null,hit,label:String(text).trim(),fuzzy:!!parsed.fuzzy,...(move?{move:move.moveId,confidence}:{})});};
+// dict (optional): resolves the actor of the banner sighting.
+HudTracker.prototype.move=function(t,text,confidence,moves,parsed=null,dict=null){const b=this.current;if(!b||confidence<40)return;const pb=parsed||parseBanner(text);if(pb?.kind!=='move')return;
  const move=moves.find(m=>normalize(m.name)===normalize(pb.move));if(!move)return;
  // Junk can precede the name: try the last 1–3 words and keep the one that matches a Pokémon on the field.
  const words=pb.actor.split(' ').filter(Boolean),cands=[1,2,3].filter(n=>n<=words.length).map(n=>normalize(words.slice(-n).join(' '))),keys=[b.active.my,b.active.opponent,...b.my.map(p=>p.key),...b.opponent.map(p=>p.key)].filter(Boolean);
  const close=(k,a)=>k===a||(a.length>=5&&distance(k,a)<=1);const actor=cands.find(a=>keys.some(k=>close(k,a)))||cands.at(-1),near=k=>k&&close(k,actor);
  let sides=['my','opponent'].filter(side=>near(b.active[side]));if(sides.length!==1)sides=['my','opponent'].filter(side=>b[side].some(p=>near(p.key)));
  const side=sides.length===1?sides[0]:'unknown',key=side==='unknown'?actor:b.active[side]&&near(b.active[side])?b.active[side]:(b[side].find(p=>near(p.key))?.key||actor);
+ // The sighting's species: the shortest ending of the actor text that is a species exactly (junk can precede it).
+ const named=dict&&cands.map(a=>match(a,dict)).find(h=>h?.quality==='exact');if(named)sighting(b,{t,kind:'move',side:side==='unknown'?null:side,hit:named,move:move.moveId,label:text.trim(),confidence,fuzzy:!!pb.fuzzy});
  const last=b.events.filter(e=>e.kind==='move').at(-1);if(last&&last.move===move.moveId&&last.actor===key&&t-last.t<8)return;
  b.events.push({t,kind:'move',side,actor:key,move:move.moveId,label:text.trim(),confidence});};
+// ---- Species from banners (2026-10-17) ----
+// Uploads that crop the phone's top cut the nameplate names off (K7vaQKc1Gxs: only the Poké Ball row; te5W8Jrc-Mk: names
+// cut in half). The HUD still tracks the battle, but no plate names a species, so it used to be dropped. Its banners
+// name them: a CJK send-out banner gives the side ('my' or 'opponent'); "X used Y!" takes the side its species was sent
+// out on, else the attacker is the defender's opponent, the defender being the side whose shield goes, whose Pokémon
+// faints or whose HP bar drops (defender(t, until), run-node.cjs) before the next attack banner; cues that disagree,
+// or a mirror without a cue, leave it unassigned (and unused). Species keep their order of appearance, at
+// most 3 per side, with confidence 40, speciesFrom 'banners' and a flag; the battle's go/move events are rebuilt from
+// the sightings with their sides. Only for battles whose nameplates named nothing.
+const OTHER={my:'opponent',opponent:'my'};
+const BANNER_FLAG='Species from banners: the nameplates named no Pokémon (names cropped off); check species and sides';
+// One side can't field a species twice (GBL's species clause), so sightings with the same Pokédex number are one Pokémon:
+// a banner or OCR that drops a Mega prefix, or misreads Mega Mewtwo Y as X. A Mega or Primal key names it (a lost prefix is
+// a misread, an invented one isn't seen), else the key read most often.
+const dexOf=h=>h.candidates?.[0]?.dex,sameMon=(a,c)=>a.key===c.key||dexOf(a)!=null&&dexOf(a)===dexOf(c);
+// The defender's shield goes 0–1.5 s after the banner and its Pokémon faints 2–2.5 s after it; the attacker's shields
+// came ≥ 12.5 s later, but its Pokémon could faint from 2.5 s on (synthetic crop of iC4-0ss8p40, 33 attacks of known side).
+function defenderAt(b,t,until,defender){const cues=new Set(b.events.filter(e=>e.t<=until&&(e.kind==='shield'&&e.t>=t-.5&&e.t<=t+3||e.kind==='faint'&&e.t>t&&e.t<=t+2.25)).map(e=>e.side)),hp=defender?.(t,until);if(hp)cues.add(hp);return cues.size===1?[...cues][0]:null;}
+function bannerTeam(b,{defender=null,debug=false}={}){const seen=[];if(debug)b.bannerSightings=(b.banners||[]).map(({hit,...s})=>({...s,key:hit.key}));
+ // One banner read on several frames is one sighting.
+ for(const s of (b.banners||[]).slice().sort((x,y)=>x.t-y.t)){const p=[...seen].reverse().find(x=>x.kind===s.kind&&x.side===s.side&&x.hit.key===s.hit.key&&x.move===s.move&&s.t-x.t<8);if(p)p.n++;else seen.push({...s,n:1});}
+ // A species read once with one wrong character (ゆけっ!フッキー → ラッキー, Chansey, for カイオーガ) needs a second read or an exact one.
+ for(const s of seen.filter(s=>s.fuzzy&&s.n<2&&!seen.some(x=>!x.fuzzy&&sameMon(x.hit,s.hit))))seen.splice(seen.indexOf(s),1);
+ if(!seen.length)return b;
+ const known={my:[],opponent:[]},sidesOf=h=>['my','opponent'].filter(x=>known[x].some(k=>sameMon(k,h))),add=s=>{if(s.side&&!sidesOf(s.hit).includes(s.side))known[s.side].push(s.hit);};
+ for(const s of seen)if(s.kind==='go')add(s);
+ const moves=seen.filter(s=>s.kind==='move');
+ // Both cues, when both speak, must agree: on a synthetic crop of iC4-0ss8p40 the species match alone was right 14 times
+ // and wrong 5 (a mirror whose other copy was never announced), the defender alone 25 times and never wrong.
+ const cue=moves.map((s,i)=>{const d=defenderAt(b,s.t,Math.min(s.t+12,moves[i+1]?.t??Infinity),defender);return d&&OTHER[d];});
+ if(debug)for(const [i,s] of moves.entries())s.debug={match:sidesOf(s.hit),actor:cue[i]};   // BANNER_DEBUG: both cues on the event
+ for(const pass of [0,1])for(const [i,s] of moves.entries()){if(s.side)continue;const sides=sidesOf(s.hit),m=sides.length===1?sides[0]:null,c=cue[i];
+  if(m&&c?m===c:m||c)s.side=m||c;add(s);}
+ // Latin "Go, X!" names no side: it takes its species' side when that is one side.
+ for(const s of seen)if(!s.side&&s.kind==='go'){const sides=sidesOf(s.hit);if(sides.length===1)s.side=sides[0];}
+ for(const side of ['my','opponent']){const groups=[];for(const s of seen.filter(x=>x.side===side)){let g=groups.find(g=>g.some(x=>sameMon(x.hit,s.hit)));if(!g)groups.push(g=[]);g.push(s);}
+  if(groups.length>3)b.flags.push(`More than three ${side} species: check boundary`);
+  b[side]=groups.slice(0,3).map(g=>{const votes=new Map();for(const s of g)votes.set(s.hit.key,(votes.get(s.hit.key)||0)+s.n);const mega=k=>/^(mega|primal)/.test(k),key=[...votes].sort((x,y)=>mega(y[0])-mega(x[0])||y[1]-x[1]||y[0].length-x[0].length)[0][0];
+   return {...g.find(s=>s.hit.key===key).hit,first:g[0].t,last:g.at(-1).t,confidence:40,raw:g[0].label,speciesFrom:'banners'};});}
+ if(!b.my.length&&!b.opponent.length)return b;
+ const actorOf=s=>(s.side&&b[s.side].find(p=>sameMon(p,s.hit))?.key)||s.hit.key;
+ b.events=[...b.events.filter(e=>e.kind!=='go'&&e.kind!=='move'),...seen.map(s=>s.kind==='go'?{t:s.t,kind:'go',actor:actorOf(s),...(s.side?{side:s.side}:{}),label:s.label}:{t:s.t,kind:'move',side:s.side||'unknown',actor:actorOf(s),move:s.move,label:s.label,confidence:s.confidence,...(s.debug?{debug:s.debug}:{})}),
+  ...['my','opponent'].flatMap(side=>b[side].map(p=>({t:p.first,kind:'reveal',side,label:p.raw,confidence:40})))].sort((x,y)=>x.t-y.t);
+ b.flags.push(BANNER_FLAG);return b;}
+// The side whose HP bar dropped across a charged attack at t: series {my, opponent} of {t, fill} (hp.js track). Each side's
+// last readings before t against its first steady run after t (three readings within 2%, up to `until`); one side must
+// drop by ≥ 4% and the other, read too, by at most a third of that (a fast move can land on the attacker), else null.
+function barDefender(series,t,until,out=null){const drop=side=>{const s=series[side]||[],before=s.filter(p=>p&&p.t<t&&p.t>=t-8).slice(-3),after=s.filter(p=>p&&p.t>t&&p.t<=until);if(before.length<2)return null;const lvl=median(before.map(p=>p.fill));
+  for(let i=0;i+2<after.length;i++){const run=after.slice(i,i+3).map(p=>p.fill);if(Math.max(...run)-Math.min(...run)<=.02)return lvl-median(run);}return null;};
+ const d={my:drop('my'),opponent:drop('opponent')};if(out)out.drops=d;const hit=['my','opponent'].filter(x=>d[x]!=null&&d[x]>=.04&&d[OTHER[x]]!=null&&d[OTHER[x]]<=Math.max(.02,d[x]/3));return hit.length===1?hit[0]:null;}
 
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene,wideBannerBox,bannerEvidence,bannerTeam,barDefender};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

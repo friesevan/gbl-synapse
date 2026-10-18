@@ -339,6 +339,21 @@ class TestProbePlan(unittest.TestCase):
         # Keyframes too sparse to trust the scan: analyse everything.
         self.assertEqual(H.probe_plan({**self.PROBE, "keyInterval": 20, "ranges": []}), {"CROP": "700,0,1220,1080"})
 
+    def test_plan_with_placements(self):
+        # The phone placed differently per clip (probe.cjs placements): every plan that decodes carries CROPS.
+        placements = [{"box": [700, 0, 1220, 1080], "hits": 40, "stretches": [{"start": 0, "end": 650.5}, {"start": 1100.0, "end": 1400.0}]},
+                      {"box": [712, 0, 1232, 1080], "hits": 30, "stretches": [{"start": 650.5, "end": 1100.0}]}]
+        crops = "700,0,1220,1080@0-650.5,1100.0-1400.0;712,0,1232,1080@650.5-1100.0"
+        probe = {**self.PROBE, "placements": placements}
+        self.assertEqual(H.probe_plan(probe), {"CROP": "700,0,1220,1080", "RANGES": "10.0-400.0,900.0-1300.0", "CROPS": crops})
+        self.assertEqual(H.probe_plan({**probe, "coverage": 0.85}), {"CROP": "700,0,1220,1080", "CROPS": crops})
+        self.assertEqual(H.probe_plan({**probe, "keyInterval": 20}), {"CROP": "700,0,1220,1080", "CROPS": crops})
+        self.assertIsNone(H.probe_plan({**probe, "ranges": []}))
+        # One placement is no placement; the summary keeps them.
+        self.assertEqual(H.probe_plan({**self.PROBE, "placements": placements[:1]}), H.probe_plan(self.PROBE))
+        self.assertEqual(H.probe_summary(probe)["placements"], placements)
+        self.assertNotIn("placements", H.probe_summary(self.PROBE))
+
     def test_perspective_crop_and_summary(self):
         two = {"screens": [{"box": [980, 0, 1480, 1080]}, {"box": [440, 0, 940, 1080]}]}
         self.assertEqual(H.perspective_crop(two, "left"), "440,0,940,1080")
