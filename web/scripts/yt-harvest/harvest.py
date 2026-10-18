@@ -40,10 +40,12 @@ import league as L  # noqa: E402
 import policy as P  # noqa: E402
 import validate as V  # noqa: E402
 import ytapi  # noqa: E402
+import youtube_auth  # noqa: E402
 import probe_cache as PC  # noqa: E402
 import media_cache as MC  # noqa: E402
 from media_cache import retained_file  # noqa: E402
 from service import Lifecycle, atomic_json, read_json, file_lock  # noqa: E402
+import reanalysis_queue as RQ  # noqa: E402
 
 WEB = os.path.normpath(os.path.join(HERE, "..", ".."))
 REGISTRY = os.path.join(WEB, "tests", "meta-benchmark", "sources", "registry.json")
@@ -66,15 +68,28 @@ SKIPPED = object()   # download_one: full metadata said "don't download"
 # metadata arrives with the download request). Newest first, by upload date or approximate date.
 DL_CLAIM = ("SELECT id, meta, meta_status, title, channel_id, duration FROM videos WHERE dl_status IS NULL AND attempts<3 "
             "AND (allowed=1 OR (meta_status='todo' AND rel_label='relevant')) "
-            "ORDER BY COALESCE(upload_date, strftime('%Y%m%d', approx_ts, 'unixepoch'), '0') DESC, rel_score DESC LIMIT 32")
+            "ORDER BY (id IN (SELECT id FROM reprocess)) DESC, "
+            "COALESCE(upload_date, strftime('%Y%m%d', approx_ts, 'unixepoch'), '0') DESC, rel_score DESC LIMIT 32")
 
-# A downloaded video needs analysis when it has none yet, or when a re-analysis was requested (reprocess row):
-# an analysed video keeps x_status='done' and its result file until the new result replaces it, so
-# Observed meta and the learning loop never lose it.
+# The harvester analyses each downloaded video once. Requested re-analyses (reprocess rows) belong to reanalyze.py,
+# its own process: an analysed video keeps x_status='done' and its result file until the new result replaces it, so
+# Observed meta and the learning loop never lose it. The harvester still downloads them again when needed (first in
+# its download queue).
 REPROCESS = "id IN (SELECT id FROM reprocess)"
 X_CLAIM = ("SELECT id, dl_path, sha256, upload_date, league, duration, meta, x_status FROM videos WHERE dl_status='done' "
-           "AND deleted_date IS NULL AND (x_status IS NULL OR (x_status IN ('done','failed') AND " + REPROCESS + ")) "
+           "AND deleted_date IS NULL AND x_status IS NULL AND NOT " + REPROCESS + " "
            "ORDER BY upload_date DESC LIMIT 16")
+# reanalyze.py's queue: requested re-analyses whose video is on disk, oldest request first.
+X_REPROCESS_CLAIM = ("SELECT v.id, v.dl_path, v.sha256, v.upload_date, v.league, v.duration, v.meta, v.x_status, v.title, "
+                     "r.reason, r.scope FROM videos v JOIN reprocess r ON r.id=v.id WHERE v.dl_status='done' AND "
+                     "v.deleted_date IS NULL AND COALESCE(v.x_status,'') NOT IN ('working','reworking') "
+                     "ORDER BY r.requested, v.upload_date DESC LIMIT 16")
+# Members-only and other restricted videos: YouTube's listing badge (yt-dlp "availability") or the title says so.
+RESTRICTED = ("subscriber_only", "premium_only", "needs_auth")
+MEMBERS_TITLE_RE = re.compile(
+    r"メンバー(?:シップ)?(?:様)?限定|メン限|メンバー向け|members?[\s_-]*only|member[\s_-]*exclusive|membership[\s_-]*(?:only|exclusive|video)|"
+    r"(?:solo|exclusivo) (?:para )?(?:miembros|membros)|nur für mitglieder|réservée? aux membres|멤버십 ?전용|멤버 ?전용|회원 ?전용|"
+    r"會員限定|会员专属|會員專屬|會員專享|会员限定", re.I)
 
 # ------------------------------------------------------------------------------------- queries
 
@@ -193,19 +208,24 @@ class State:
       crawled REAL, n INTEGER);
     """
 
-    def __init__(self, path):
+    def __init__(self, path, reset="all"):
         self.lock = threading.RLock()
         self.db = sqlite3.connect(path, check_same_thread=False, timeout=60)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.executescript(self.SCHEMA)
-        # Interrupted work goes back to the queue.
-        self.x("UPDATE videos SET meta_status='todo' WHERE meta_status='working'")
-        self.x("UPDATE videos SET dl_status=NULL WHERE dl_status='working'")
-        self.x("UPDATE videos SET x_status=NULL WHERE x_status='working'")
-        # A re-analysis of an already analysed video keeps its result until replaced (reprocess row kept).
-        self.x("UPDATE videos SET x_status='done' WHERE x_status='reworking'")
+        RQ.ensure_schema(self.db)
+        # Interrupted work goes back to the queue: the harvester (reset="all") resets its own stages, reanalyze.py
+        # (reset="reprocess") only the analyses of queued videos, so neither resets the other's work in progress.
+        if reset == "all":
+            self.x("UPDATE videos SET meta_status='todo' WHERE meta_status='working'")
+            self.x("UPDATE videos SET dl_status=NULL WHERE dl_status='working'")
+            self.x("UPDATE videos SET x_status=NULL WHERE x_status='working' AND NOT " + REPROCESS)
+        if reset == "reprocess" or (reset == "all" and not RQ.reanalyzer_running(os.path.dirname(path))):
+            self.x("UPDATE videos SET x_status=NULL WHERE x_status='working' AND " + REPROCESS)
+            # A re-analysis of an already analysed video keeps its result until replaced (reprocess row kept).
+            self.x("UPDATE videos SET x_status='done' WHERE x_status='reworking'")
 
     def q(self, sql, args=()):
         with self.lock:
@@ -258,6 +278,32 @@ def classify_error(msg):
     return "transient"
 
 
+def consume_requeue_files(work_dir, state, inflight=()):
+    """Validate's re-analysis requests (WORK/requeue/*.json) into the re-analysis queue (reanalysis_queue.py)."""
+    with state.lock:
+        return RQ.consume_requests(work_dir, state.db, inflight, log)
+
+
+# Titles that mention members-only but are public: a members video released to everyone, or public answers to
+# members' questions.
+MEMBERS_PUBLIC_RE = re.compile(r"公開|public|q\s*&\s*a\s*answ|answers?\b|についての", re.I)
+
+
+def restricted_reason(entry):
+    """Why a listed video can't be downloaded without a membership, before anything is requested for it, or ''."""
+    availability = (entry or {}).get("availability")
+    if availability in RESTRICTED:
+        return {"subscriber_only": "members-only (listing badge)", "premium_only": "YouTube Premium only (listing badge)",
+                "needs_auth": "sign-in required (listing badge)"}[availability]
+    if members_title((entry or {}).get("title")):
+        return "members-only (title)"
+    return ""
+
+
+def members_title(title):
+    return bool(title) and bool(MEMBERS_TITLE_RE.search(title)) and not MEMBERS_PUBLIC_RE.search(title)
+
+
 class Backoff:
     """Shared pause for all workers after a 429 / bot check: 2 min doubling to 1 h. Several workers
     failing at the same moment count as ONE event (no escalation while already paused)."""
@@ -286,12 +332,19 @@ class Backoff:
                 self.k -= 1          # 20 clean minutes undo one doubling
                 self.last_ok = now
 
-    def wait(self, stop):
+    def wait(self, stop, check=None):
+        """check() runs every 15 s while paused (a new YouTube sign-in clears the pause)."""
         while not stop.is_set():
+            if check:
+                check()
             left = self.until - time.time()
             if left <= 0:
                 return
-            stop.wait(min(left, 30))
+            stop.wait(min(left, 15))
+
+    def clear(self):
+        with self.lock:
+            self.until, self.k = 0.0, 0
 
 class Limiter:
     """Global request-rate cap shared by threads (requests/min). Halves after each rate-limit event
@@ -325,12 +378,15 @@ class Limiter:
 
 
 class Harvester:
+    STATE_RESET = "all"         # reanalyze.Reanalyzer resets only its own queue (State)
+    EXTRACT_LOG = "extract.log"
+
     def __init__(self, a):
         self.a = a
         os.makedirs(a.work_dir, exist_ok=True)
         os.makedirs(a.download_dir, exist_ok=True)
         os.makedirs(os.path.join(a.work_dir, "results"), exist_ok=True)
-        self.state = State(os.path.join(a.work_dir, "state.sqlite"))
+        self.state = State(os.path.join(a.work_dir, "state.sqlite"), reset=self.STATE_RESET)
         self.schedule = L.load_schedule()
         self.stop = threading.Event()
         self.disc_stop = threading.Event()
@@ -342,7 +398,7 @@ class Harvester:
         self.c = {"flat": 0, "flatNew": 0, "enriched": 0, "enrichErr": 0, "downloaded": 0, "dlBytes": 0,
                   "dlSeconds": 0.0, "dups": 0, "extracted": 0, "extractFailed": 0, "deleted": 0, "queries": 0,
                   "channels": 0, "rateLimits": 0, "apiMeta": 0, "probed": 0, "probeSkipped": 0,
-                  "probeRanged": 0, "xVideoS": 0.0, "xBusyS": 0.0, "cleaned": 0}
+                  "probeRanged": 0, "xVideoS": 0.0, "xBusyS": 0.0, "cleaned": 0, "restricted": 0}
         self.clock = threading.Lock()
         self.inflight = set()
         self.dl_active = 0
@@ -362,6 +418,13 @@ class Harvester:
             log.info("focus: cup %s since %s%s · %d queries", a.focus_cup, a.focus_since or "any date",
                      " (only)" if a.focus_only else "", len(self.queries))
         self.ytdlp = None
+        # Live YouTube access for the Validate tab (summary.json "youtube"): blocks, pauses and outcomes.
+        self.yt_lock = threading.Lock()
+        self.yt = {"lastBlock": None, "blocks": 0, "botChecks": 0, "lastSuccess": None, "lastDownload": None,
+                   "downloads": [], "authError": None}
+        self._auth_stamp, self._auth = youtube_auth.stamp(a.work_dir), youtube_auth.load(a.work_dir)
+        if self._auth["mode"] != "none":
+            log.info("YouTube sign-in: %s", youtube_auth.label(self._auth))
         self.api_key = None if a.no_api else ytapi.api_key()
         self.api_off_until = 0.0
         self.draining = False
@@ -372,6 +435,68 @@ class Harvester:
         self.retention = {}
         self.validation_lock = threading.RLock()
         self.validation_count = len((read_json(a.inbox, {}) or {}).get("questions", [])) if a.inbox else 0
+
+    # ---- YouTube access (sign-in and live state)
+    def auth(self):
+        """The YouTube sign-in in WORK/youtube-auth.json, re-read when the file changes. A changed sign-in ends a
+        rate-limit pause and restores the request rates, so workers retry at once with it."""
+        current = youtube_auth.stamp(self.a.work_dir)
+        if current != self._auth_stamp:
+            self._auth_stamp, self._auth = current, youtube_auth.load(self.a.work_dir)
+            with self.yt_lock:
+                self.yt["authError"] = None
+            self.backoff.clear()
+            for limiter in (self.meta_rate, self.dl_rate):
+                with limiter.lock:
+                    limiter.rate = limiter.max
+            log.info("YouTube sign-in changed: %s; pause cleared, rates restored", youtube_auth.label(self._auth))
+        return self._auth
+
+    def yt_event(self, kind, what, message="", pause=None):
+        now = time.time()
+        with self.yt_lock:
+            if kind == "success":
+                self.yt["lastSuccess"] = {"at": now, "what": what}
+            elif kind == "block":
+                block = youtube_auth.block_kind(message)
+                self.yt["blocks"] += 1
+                self.yt["botChecks"] += block == "bot-check"
+                self.yt["lastBlock"] = {"at": now, "kind": block, "what": what, "message": message[:300],
+                                        "pauseSeconds": round(pause) if pause else None}
+            elif kind == "authError":
+                self.yt["authError"] = {"at": now, "message": message[:300]}
+            if what.startswith("download ") and kind in ("success", "block", "failed", "unavailable"):
+                self.yt["downloads"] = [d for d in self.yt["downloads"] if now - d[0] < 3600][-200:] + [(now, kind)]
+
+    def youtube_summary(self):
+        iso = lambda t: dt.datetime.fromtimestamp(t).isoformat(timespec="seconds") if t else None  # noqa: E731
+        now = time.time()
+        with self.yt_lock:
+            y = {k: (dict(v) if isinstance(v, dict) else v) for k, v in self.yt.items()}
+        hour = {}
+        for t, kind in y.pop("downloads"):
+            if now - t < 3600:
+                hour[kind] = hour.get(kind, 0) + 1
+        for key in ("lastBlock", "lastSuccess", "lastDownload", "authError"):
+            if y.get(key):
+                y[key]["at"] = iso(y[key]["at"])
+        paused = self.backoff.until > now
+        return {**y, "downloadsLastHour": hour, "pausedUntil": iso(self.backoff.until) if paused else None,
+                "pauseLeftSeconds": round(self.backoff.until - now) if paused else 0,
+                "metadataPerMin": round(self.meta_rate.rate, 2), "downloadsPerMin": round(self.dl_rate.rate, 2),
+                "metadataSource": "api" if self.api_key and now >= self.api_off_until else "web",
+                "auth": {**self._auth, "label": youtube_auth.label(self._auth)}}
+
+    def run_summary(self):
+        a = self.a
+        return {"pid": os.getpid(), "startedAt": dt.datetime.fromtimestamp(self.t0).isoformat(timespec="seconds"),
+                "deadline": dt.datetime.fromtimestamp(self.deadline).isoformat(timespec="seconds"), "hours": a.hours,
+                "extractJobs": getattr(a, "extract_jobs", None), "downloadWorkers": getattr(a, "download_workers", None),
+                "downloadsPerMinCap": getattr(a, "downloads_per_min", None), "metadataPerMinCap": getattr(a, "meta_per_min", None),
+                "maxBacklogHours": getattr(a, "max_backlog_hours", None), "focusCup": getattr(a, "focus_cup", None),
+                "focusSince": getattr(a, "focus_since", None), "focusOnly": bool(getattr(a, "focus_only", False)),
+                "extract": not getattr(a, "no_extract", False), "diskBudgetGB": getattr(a, "disk_budget_gb", None),
+                "downloadDir": a.download_dir}
 
     # ---- helpers
     def inc(self, k, n=1):
@@ -404,6 +529,7 @@ class Harvester:
         elif shutil.which("node"):
             o["js_runtimes"] = {"node": {"path": shutil.which("node")}}
         o["logger"] = _YtLogger()
+        o.update(youtube_auth.ydl_options(self.auth()))
         ff = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
         if os.path.exists(ff):
             o["ffmpeg_location"] = ff
@@ -413,7 +539,7 @@ class Harvester:
     def _yt_call(self, fn, what, limiter=None):
         """Run fn() with polite backoff. Returns (result, error_kind)."""
         for attempt in range(6):
-            self.backoff.wait(self.stop)
+            self.backoff.wait(self.stop, self.auth)
             if limiter:
                 limiter.acquire(self.stop)
             if not self.alive():
@@ -421,13 +547,21 @@ class Harvester:
             try:
                 r = fn()
                 self.backoff.ok()
+                self.yt_event("success", what)
                 return r, None
             except Exception as ex:  # yt_dlp.utils.DownloadError and network errors
                 kind = classify_error(ex)
+                if youtube_auth.is_cookie_error(ex) and self._auth["mode"] != "none":
+                    # The sign-in itself failed (keychain refused, profile moved): report it, fall back to anonymous.
+                    self.yt_event("authError", what, str(ex))
+                    log.warning("YouTube sign-in failed (%s): %s; continuing without it", youtube_auth.label(self._auth), str(ex)[:200])
+                    self._auth = {"mode": "none"}
+                    continue
                 if kind == "ratelimit":
                     fresh = time.time() >= self.backoff.until
                     d = self.backoff.hit()
                     self.inc("rateLimits")
+                    self.yt_event("block", what, str(ex), d if fresh else None)
                     if fresh:
                         r1, r2 = self.meta_rate.slow_down(), self.dl_rate.slow_down()
                         log.warning("rate limited (%s: %s); all workers pause %.0f s; metadata now %.0f/min, "
@@ -488,12 +622,46 @@ class Harvester:
                 e.setdefault("channel", channel["name"])
             score, label = self.relevance_of(e.get("title"), e.get("duration"), cid=e.get("channel_id"), vid=e["id"])
             self.inc("flat")
-            if self.state.add_flat(e, source, score, label):
+            added = self.state.add_flat(e, source, score, label)
+            why = restricted_reason(e)
+            if why:
+                # Known before any request for the video: never fetched, never queued for download.
+                self.mark_restricted(e["id"], why)
+            if added:
                 new += 1
                 self.inc("flatNew")
                 if label == "relevant" and source.startswith("search"):
                     self.state.channel_hit(e.get("channel_id"), e.get("channel_url"), e.get("channel"))
         return new
+
+    def mark_restricted(self, vid, why):
+        """Members-only (or otherwise restricted) video: out of the metadata and download queues for good.
+        A video already downloaded or analysed keeps what it has."""
+        n = self.state.x("UPDATE videos SET meta_status='unavailable', allowed=0, err=?, updated=? WHERE id=? "
+                         "AND dl_status IS NULL AND x_status IS NULL AND NOT " + REPROCESS,
+                         ("unavailable: " + why, time.time(), vid))
+        if n:
+            self.inc("restricted")
+        return n
+
+    def skip_members_only(self):
+        """Startup sweep: queued videos whose title says members-only. (A channel's members-only playlist, UUMO + id,
+        was tried on 2026-10-18 and YouTube answered "The playlist does not exist" even for a channel that had served
+        a members-only video, so it is not used; the listing badge covers videos discovered from now on.)"""
+        n = 0
+        for row in self.state.q("SELECT id, title FROM videos WHERE dl_status IS NULL AND x_status IS NULL AND "
+                                "meta_status IN ('todo','done') AND title IS NOT NULL"):
+            if members_title(row["title"]):
+                n += self.mark_restricted(row["id"], "members-only (title)")
+        # A title the rule no longer matches goes back to the metadata queue (its download decision is made again).
+        back = 0
+        for row in self.state.q("SELECT id, title FROM videos WHERE err='unavailable: members-only (title)' AND "
+                                "dl_status IS NULL"):
+            if not members_title(row["title"]):
+                back += self.state.x("UPDATE videos SET meta_status='todo', allowed=NULL, err=NULL, updated=? WHERE id=?",
+                                     (time.time(), row["id"]))
+        if n or back:
+            log.info("members-only: %d queued videos skipped by title%s", n, f"; {back} released by the narrower rule" if back else "")
 
     def discover_search(self):
         modes = [("date", True, self.a.search_limit, 12 * 3600), ("relevance", False, self.a.search_limit * 2, 7 * 86400)]
@@ -674,8 +842,9 @@ class Harvester:
 
     def backlog_hours(self):
         """Estimated hours of extraction work already downloaded and waiting (or running)."""
+        # Queued re-analyses are reanalyze.py's work, not this harvester's: they never hold up downloads.
         queued = self.state.q("SELECT COALESCE(SUM(duration),0) s FROM videos WHERE dl_status='done' AND deleted_date IS NULL "
-                              "AND (x_status IS NULL OR x_status IN ('working','reworking') OR " + REPROCESS + ")")[0]["s"]
+                              "AND (x_status IS NULL OR x_status='working') AND NOT " + REPROCESS)[0]["s"]
         with self.clock:
             vs, busy = self.c["xVideoS"], self.c["xBusyS"]
         # Measured video-seconds per busy worker-second once enough work is done (the probe makes
@@ -858,6 +1027,7 @@ class Harvester:
                 return
             self.state.x("UPDATE videos SET dl_status=?, attempts=attempts+1, err=? WHERE id=?",
                          ("error" if (err or "").startswith("unavailable") else None, err or "no file", vid))
+            self.yt_event("unavailable" if (err or "").startswith("unavailable") else "failed", f"download {vid}", err or "no file")
             log.warning("download %s failed: %s", vid, (err or "no file")[:200])
             self.remove_video_files(vid, "failed download")
             return
@@ -876,6 +1046,8 @@ class Harvester:
         self.inc("downloaded")
         self.inc("dlBytes", size)
         self.inc("dlSeconds", secs)
+        with self.yt_lock:
+            self.yt["lastDownload"] = {"at": time.time(), "id": vid, "title": (row["title"] or "")[:120], "mb": round(size / 1e6)}
         log.info("downloaded %s (%.0f MB in %.0f s, %.1f MB/s)", vid, size / 1e6, secs, size / 1e6 / max(secs, 0.1))
 
     # ---- extraction (Meta Extractor, one process per video)
@@ -961,7 +1133,8 @@ class Harvester:
         t = time.time()
         probe, plan = None, {}
         if not ok:
-            # A reviewer-requested reanalysis ("battles are shown") always decodes the whole video.
+            # A requested re-analysis (reanalyze.py) always decodes the whole video: reusing the earlier battle times or
+            # nameplate language changed answers when measured (README § 8 "Re-analysis").
             reprocess = bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,)))
             if reprocess:
                 for restriction in ("RANGES", "START", "END"):
@@ -995,14 +1168,17 @@ class Harvester:
                     self.inc("probeRanged")
         if not ok:
             timeout = max(900, (r["duration"] or 900) * 2 + 600)
-            with open(os.path.join(self.a.work_dir, "extract.log"), "a") as lf:
+            env.update(self.job_env(vid, plan))
+            self.job_started(vid, dict(r), plan)
+            with open(os.path.join(self.a.work_dir, self.EXTRACT_LOG), "a") as lf:
                 lf.write(f"--- {vid} ({(r['duration'] or 0) / 60:.0f} min{', ranges ' + plan['RANGES'] if plan.get('RANGES') else ''})\n")
                 lf.flush()
                 p = subprocess.Popen(["node", RUN_NODE, path, res + ".tmp"], stdout=lf, stderr=subprocess.STDOUT,
                                      env=env, start_new_session=True)
                 while p.poll() is None:
-                    # STOP/deadline finish this extraction; only its own safety timeout terminates it.
-                    if time.time() - t > timeout:
+                    # STOP/deadline finish this extraction; only its own safety timeout (or, in reanalyze.py, a
+                    # "Stop now") terminates it.
+                    if time.time() - t > timeout or self.abort_job(vid):
                         # Reap the decoder/OCR children too; they share this extraction's process group.
                         try:
                             os.killpg(p.pid, signal.SIGTERM)
@@ -1086,6 +1262,16 @@ class Harvester:
         else:
             self.apply_retention("after extraction")
 
+    # Hooks for reanalyze.Reanalyzer (the harvester itself only analyses each video once).
+    def job_env(self, vid, plan):
+        return {}
+
+    def job_started(self, vid, row, plan):
+        pass
+
+    def abort_job(self, vid):
+        return False
+
     # ---- validation questions (site: Meta Extractor > Validate)
     def export_validation(self, vid, res, path, gm, meta, video_league, refined, learned_snapshot=None):
         """Writes this video's open questions to work/validation/<id>/ and rebuilds the inbox the Validate
@@ -1118,7 +1304,9 @@ class Harvester:
             with open(os.path.join(qdir, doc["qid"] + ".json"), "w", encoding="utf-8") as f:
                 json.dump(doc, f, ensure_ascii=False)
             n += 1
-        self.validation_count = V.write_inbox(os.path.join(self.a.work_dir, "validation"), self.a.inbox)
+        # The harvester and reanalyze.py both rebuild the inbox: one at a time.
+        with file_lock(os.path.join(self.a.work_dir, "validation.lock")):
+            self.validation_count = V.write_inbox(os.path.join(self.a.work_dir, "validation"), self.a.inbox)
         return n
 
     # ---- reporting
@@ -1164,48 +1352,14 @@ class Harvester:
             "relevantByYear": dict(sorted(by_year.items())),
             "relevantLicense": cc,
             "rateLimitPauses": self.backoff.events,
+            "youtube": self.youtube_summary(),
+            "run": self.run_summary(),
         }
 
     def consume_requeues(self):
-        """Immutable request files avoid racing live feedback writes or losing pending re-downloads."""
-        directory = os.path.join(self.a.work_dir, "requeue")
-        if not os.path.isdir(directory):
-            return
-        for name in sorted(os.listdir(directory))[:100]:
-            if not name.endswith(".json"):
-                continue
-            path = os.path.join(directory, name)
-            request = read_json(path, {})
-            vid = request.get("videoId", "")
-            if not re.fullmatch(r"[A-Za-z0-9_-]{11}", vid):
-                log.warning("invalid requeue request %s", name)
-                os.replace(path, path + ".invalid")
-                continue
-            with self.state.lock:
-                # Do not reset state underneath an active worker; try again at the next tick.
-                if vid in self.inflight:
-                    continue
-                rows = self.state.q("SELECT dl_path FROM videos WHERE id=?", (vid,))
-                if not rows:
-                    log.warning("requeue %s: not in harvest database", vid)
-                    os.replace(path, path + ".unknown")
-                    continue
-                local = rows[0]["dl_path"]
-                existing = bool(local and os.path.isfile(local))
-                labels = read_json(os.path.join(self.a.work_dir, "labels", vid + ".json"), {})
-                if labels.get("videoType") == "obscured":
-                    # The reviewer said an overlay hides the HUD: reanalysis cannot help.
-                    log.info("requeue %s ignored: footage marked obscured", vid)
-                    os.replace(path, path + ".obscured")
-                    continue
-                # The result file and x_status stay as they are, so Observed meta and the learning loop keep the
-                # video until the new analysis replaces it (extract_one never reuses a result with a reprocess row).
-                self.state.x("UPDATE videos SET dl_status=?,deleted_date=NULL,attempts=0,"
-                             "err=NULL,rel_label='relevant',allowed=1,updated=? WHERE id=?",
-                             ("done" if existing else None, time.time(), vid))
-                self.state.x("INSERT OR REPLACE INTO reprocess(id,requested) VALUES(?,?)", (vid, time.time()))
-                os.remove(path)
-                log.info("requeued %s (%s)", vid, "local video" if existing else "redownload required")
+        """Validate's re-analysis requests (immutable files in WORK/requeue) go into the re-analysis queue. Shared with
+        reanalyze.py; immutable files avoid racing live feedback writes or losing pending re-downloads."""
+        consume_requeue_files(self.a.work_dir, self.state, self.inflight)
 
     def resume_reprocess(self):
         """At start: every requested re-analysis whose video is not on disk is downloaded again (dl_status NULL);
@@ -1278,7 +1432,8 @@ class Harvester:
         self.resume_reprocess()
         ts = [threading.Thread(target=self.discover_search, name="search", daemon=True),
               threading.Thread(target=self.discover_channels, name="channels", daemon=True),
-              threading.Thread(target=self.reporter, name="reporter", daemon=True)]
+              threading.Thread(target=self.reporter, name="reporter", daemon=True),
+              threading.Thread(target=self.skip_members_only, name="members", daemon=True)]
         ts += [threading.Thread(target=self.enrich_worker, name=f"enrich{i}", daemon=True) for i in range(self.a.enrich_workers)]
         if self.a.max_downloads != 0:
             ts += [threading.Thread(target=self.download_worker, name=f"dl{i}", daemon=True) for i in range(self.a.download_workers)]
@@ -1300,12 +1455,18 @@ class Harvester:
         self.draining = True
         self.stop.set()
         self.write_summary()
+        # Analyses finish their current video ("Stop safely"). A YouTube request in flight can't be interrupted
+        # (yt-dlp retries and sleeps inside one call), so network threads get NETWORK_GRACE_S; their claims are reset
+        # below and the daemon threads end with the process.
+        grace = time.time() + NETWORK_GRACE_S
         for t in ts:
-            # No daemon worker may outlive the process lock or final checkpoint.
             while t.is_alive():
                 t.join(timeout=10)
                 if t.is_alive():
                     self.write_summary()
+                    if not t.name.startswith("x") and time.time() > grace:
+                        log.warning("stop: %s is still waiting on YouTube after %d s; leaving it", t.name, NETWORK_GRACE_S)
+                        break
         # Recover a worker's unfinished claim after an unexpected exception; next start can retry it.
         self.state.x("UPDATE videos SET meta_status='todo' WHERE meta_status='working'")
         self.state.x("UPDATE videos SET dl_status=NULL WHERE dl_status='working'")
@@ -1380,6 +1541,7 @@ def download_format(height=1080):
 
 
 DEFAULT_WORKER_REALTIME = 2.5
+NETWORK_GRACE_S = 120
 HARVEST_FILE = re.compile(r"^([A-Za-z0-9_-]{11})\.(?:mp4|webm|mkv|m4a|mp4\.part|webm\.part|part|ytdl|temp|f\d+\.\w+(?:\.part)?)$")
 
 

@@ -67,7 +67,9 @@ def save_usage(path, usage):
 
 def fetch(url, dest):
     sha, size = hashlib.sha256(), 0
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=600) as r, open(dest + ".part", "wb") as out:
+    # A hidden temp name: the harvester's retention deletes <id>.part files it finds mid-download.
+    tmp = os.path.join(os.path.dirname(dest), ".tornado-" + os.path.basename(dest) + ".dl")
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=600) as r, open(tmp, "wb") as out:
         while True:
             chunk = r.read(1 << 20)
             if not chunk:
@@ -75,7 +77,7 @@ def fetch(url, dest):
             out.write(chunk)
             sha.update(chunk)
             size += len(chunk)
-    os.replace(dest + ".part", dest)
+    os.replace(tmp, dest)
     return sha.hexdigest(), size
 
 
@@ -135,7 +137,7 @@ def main():
                 db.execute("UPDATE videos SET dl_status=NULL WHERE id=?", (vid,))
                 db.commit()
                 usage["bytes"] += size
-                usage["videos"][vid] = {"bytes": size, "discarded": "over the 20 GB cap", "at": dt.datetime.now().isoformat()}
+                usage["videos"][vid] = {"bytes": size, "discarded": "over the cap", "at": dt.datetime.now().isoformat()}
                 save_usage(usage_path, usage)
                 print(f"{vid}: {size / 1e9:.2f} GB would pass the cap; discarded and stopped")
                 break

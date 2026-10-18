@@ -7,6 +7,16 @@
 
 The local UI now controls the resumable harvester and the review/learning loop.
 
+
+## Status 2026-10-18 (re-analysis split from the harvester; sign-in prompt; members-only)
+
+- **Re-analysis is its own tool.** `reanalyze.py` (card: Meta Extractor › Analyze & review › Re-analysis; API `/api/reanalyze/status|queue|remove|start|stop`). The harvester now analyses each video once and never claims queued videos (`X_CLAIM` excludes `reprocess`); it still downloads queued videos first. Queue: `reanalysis_queue.py` (`reprocess` gains `reason`, `scope`, `source`). Validate's `requeue/*.json` files are read by the harvester, the re-analysis tool and the app's status call.
+- **Whole videos only.** Reusing the earlier battle ranges / screen box / nameplate language was measured on 3 queued videos and changed answers on 2 (README § 8 "Re-analysis"); not used.
+- **Sign-in prompt.** Start harvester always opens the YouTube sign-in dialog and tests the saved sign-in first (`HarvestLive.promptSignIn`); a new bot-check block during a run opens it once.
+- **Members-only.** Listing badges (yt-dlp `availability`: subscriber_only, premium_only, needs_auth) and titles (`MEMBERS_TITLE_RE`) mark a video unavailable before any request; at start, queued titles are swept. A channel's members-only playlist (`UUMO…`) was tried and YouTube answered "The playlist does not exist", so it is not used. The Data API does not mark members-only videos (checked 2026-10-18: same `status` as public ones).
+- **Stop no longer hangs.** Network threads get 120 s after a stop (`NETWORK_GRACE_S`); a stuck YouTube request kept the 2026-10-17 run alive for 5 hours after STOP.
+- **Tornado temp files** are hidden (`.tornado-<id>.mp4.dl`), so retention no longer deletes them mid-download.
+
 ## Start and review
 
 From the GBL Synapse project root, run `python3 web/run_app.py`. Open **Meta Extractor → Analyze & review** for harvesting and **Validate** for review.
@@ -520,6 +530,13 @@ Details: `includes/meta/README.md` §6 *At harvest scale, and the language searc
   Corvisquire's 푸크로우, 3 from Zekrom's 제크로무). The fix is the owner-request branch "WIP nameplate checks"
   (worktree-agent-acc132cc82ce829aa, another session). After it merges, requeue the CJK videos with suggestion-quality
   members.
+
+## Status 2026-10-17 (live status for any run, YouTube sign-in)
+
+- **Terminal runs are live in the card.** A run started as `python3 -I scripts/yt-harvest/harvest.py overnight …` (relative path) was not matched by `is_harvester()` and showed as "interrupted". `HarvestService._runs()` now also accepts the process whose PID and start time match `run.json`. Stop safely works on it.
+- **Why downloads failed.** Every direct download in the 2026-10-17 run hit YouTube's bot check (`Sign in to confirm you’re not a bot. Use --cookies`), and the shared pause grew to 58 minutes. Only `tornado_fetch.py` (paid API, 32 of 100 GB used) delivered videos.
+- **Sign-in.** Meta Extractor › Analyze & review › harvester card › **YouTube sign-in**: choose the browser and profile signed in to YouTube (or a cookies.txt file), **Test**, then **Test and use for harvesting**. This writes `WORK/youtube-auth.json` (`youtube_auth.py`); `Harvester.ydl()` passes it to yt-dlp as `cookiesfrombrowser` / `cookiefile`. Command line: `python3 -I web/scripts/yt-harvest/youtube_auth.py test --config '{"mode":"browser","browser":"chrome"}'`. A harvester started before this change does not read the file: stop it and start it again.
+- **Live report.** `summary.json` gains `youtube` (blocks, bot checks, pause, last block and download, last hour's outcomes, current rates, sign-in) and `run` (settings and deadline). For older running harvesters `service.py` derives the same from `harvest.log`. API: `GET /api/harvest/auth`, `POST /api/harvest/auth`, `POST /api/harvest/auth/test`. Tests: `python3 -m unittest test_harvest_live` (in this folder).
 
 ## Status 2026-10-17 (label remap)
 
