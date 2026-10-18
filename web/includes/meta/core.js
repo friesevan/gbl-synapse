@@ -421,6 +421,10 @@ class HudTracker{
 //   Timer endings (both alive at 0:00) can't be told apart: the clock isn't read.
 // - UNRESOLVABLE, closed (policy) when no rule applies, there is no fade and no result-like screen, and the next
 //   battle's HUD follows within 10 s or the recording ends (a hard cut).
+// The owner's rule: an opponent forfeit is a win and a creator forfeit a loss. Answers keep how the battle ended
+// ("Win:opponent-forfeit"), but accuracy, rule precision and gates compare the outcome only.
+const outcomeOf=v=>v==null?null:String(v).split(':')[0];
+const sameOutcome=(a,b)=>outcomeOf(a)!==null&&outcomeOf(a)===outcomeOf(b);
 const RESULT_RULES={zero:.03,alive:.1,lag:3,cut:10,fade:6};
 const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46,knockout:.96};
 const PROMOTABLE=new Set(Object.keys(RESULT_GUESS_P));
@@ -664,5 +668,5 @@ function barDefender(series,t,until,out=null){const drop=side=>{const s=series[s
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene,wideBannerBox,bannerEvidence,bannerTeam,barDefender};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={outcomeOf,sameOutcome,stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene,wideBannerBox,bannerEvidence,bannerTeam,barDefender};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

@@ -25,7 +25,7 @@ for(const [vid,raw] of runs){const full=raw.full,end=C.runEnd(raw);
   const now=bucketOf(C,b,next,end);tally(nonRead.now,now);if(Old)tally(nonRead.before,bucketOf(Old,b,next,end));
   if(h!=null){tally(answersIn.now,now);if(Old)tally(answersIn.before,bucketOf(Old,b,next,end));
    const r=C.inferResult({...b,result:'Unknown',resultSource:'',resultGuess:undefined},{next,videoEnd:end});
-   if(r&&r.source!=='unresolvable'){const rule=r.source==='guess'?r.rule:r.source,val=r.source==='guess'?r.value:(r.ending?`${r.result}:${r.ending}`:r.result);add(`${rule} vs reviewer answers`,val===h);precision[`${rule} vs reviewer answers`].videos.add(vid);}}});
+   if(r&&r.source!=='unresolvable'){const rule=r.source==='guess'?r.rule:r.source,val=r.source==='guess'?r.value:(r.ending?`${r.result}:${r.ending}`:r.result);add(`${rule} vs reviewer answers`,C.sameOutcome(val,h));precision[`${rule} vs reviewer answers`].videos.add(vid);}}});
  for(const [i,b] of full.entries()){if(b.resultSource!=='result screen')continue;const r=C.inferResult({...b,result:'Unknown',resultSource:'',resultGuess:undefined},{next:full[i+1]?.start??null,videoEnd:end});
   if(r&&r.source==='guess')add(`guess ${r.rule} vs read result screens`,r.value.split(':')[0]===b.result);else if(r&&r.source!=='unresolvable')add(`${r.source} vs read result screens`,r.result===b.result);}
  const copy=structuredClone(raw);C.applyInferredResults(copy.full,{videoEnd:end});derived.set(vid,copy);

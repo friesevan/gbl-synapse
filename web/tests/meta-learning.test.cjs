@@ -50,8 +50,13 @@ test('result questions: the timeline settles or closes them by policy, re-derive
  assert.equal(L.resultResolution({...q(0),clip:[50,66]},run,7),null);// the battle moved since the question was exported
  const ans=[{qid:q(0).qid,kind:'result',battle:0,video:{id:'v'},value:'Win'},{qid:q(2).qid,kind:'result',battle:2,video:{id:'v'},value:'Loss'}],stats=L.ruleStats(ans,()=>raw);
  const m=L.resultMetrics(ans,new Map([['v',run]]),stats);
- assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:1,byRule:{faints:{right:1,total:1,videos:1,uncertain:false,promoted:false},surrender:{right:0,total:1,videos:1,uncertain:false,promoted:false}}});assert.deepEqual(m.sources,{read:0,inferred:0,human:2,unresolvable:1,open:1});
+ // The owner's rule: a forfeit is a win or loss, so the surrender rule's "Loss:you-forfeit" matches the answer "Loss".
+ assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:2,byRule:{faints:{right:1,total:1,videos:1,uncertain:false,promoted:false},surrender:{right:1,total:1,videos:1,uncertain:false,promoted:false}}});assert.deepEqual(m.sources,{read:0,inferred:0,human:2,unresolvable:1,open:1});
  assert.equal(Cc.inferResult(run.full[3],{next:null,videoEnd:500}),null);});
+
+test('result accuracy compares outcomes: a forfeit counts as the win or loss it is',()=>{const Cc=require('../includes/meta/core.js');
+ assert.equal(Cc.sameOutcome('Win','Win:opponent-forfeit'),true);assert.equal(Cc.sameOutcome('Loss:you-forfeit','Loss'),true);
+ assert.equal(Cc.sameOutcome('Win','Loss:you-forfeit'),false);assert.equal(Cc.sameOutcome(null,'Win'),false);assert.equal(Cc.outcomeOf('Tie'),'Tie');});
 
 test('result rules: the cutscene knockout rule learns from saved runs (b.cutsceneBar) and settles only once the gate passes',()=>{
  const opts=require('../includes/meta/questions.js').RESULT_OPTIONS;

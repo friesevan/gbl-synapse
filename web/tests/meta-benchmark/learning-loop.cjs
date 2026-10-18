@@ -78,7 +78,7 @@ function ruleStats(answers,rawFor){const stats={},human=answers.filter(a=>eligib
  for(const a of human){const raw=rawFor(video(a)),full=raw?.full,b=full?.[a.battle];if(!b||b.resultSource==='result screen'||b.resultSource==='reviewer')continue;
   const r=C.inferResult({...b,result:'Unknown',resultSource:'',resultGuess:undefined},{next:full[a.battle+1]?.start??null,videoEnd:C.runEnd(raw)});if(!r||r.source==='unresolvable')continue;
   const rule=r.source==='guess'?r.rule:r.source,value=r.source==='guess'?r.value:(r.ending?`${r.result}:${r.ending}`:r.result),t=stats[rule]=stats[rule]||{right:0,total:0,videos:new Set()};
-  t.total++;if(String(a.value)===value)t.right++;t.videos.add(video(a));}
+  t.total++;if(C.sameOutcome(a.value,value))t.right++;t.videos.add(video(a));}
  for(const t of Object.values(stats)){t.videos=t.videos.size;t.precision=t.total?t.right/t.total:null;}
  return stats;}
 function promotedRules(stats){return Object.keys(C.RESULT_GUESS_P).filter(r=>{const t=stats?.[r];return t&&t.total>=RESULT_GATE.answers&&t.videos>=RESULT_GATE.videos&&t.right/t.total>=RESULT_GATE.precision;});}
