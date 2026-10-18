@@ -41,7 +41,7 @@ If the phone screen is only part of the video, as in most YouTube uploads, the e
 | Question | Answer comes from |
 | --- | --- |
 | Where does one battle end and the next begin? | Poké Balls and shields resetting, a result screen, or a fade to black |
-| Which Pokémon? | the name on the nameplate, read as text and matched to the real list |
+| Which Pokémon? | the name on the nameplate, read as text and matched to the real list; a name that is only nearly right must also fit the CP and type icons shown next to it, and a plate half-hidden by a stream overlay is skipped |
 | Who led? | the first opponent Pokémon seen |
 | Who won? | the result screen if there is one; otherwise three fainted balls, or two plus an empty last bar, or the surrender dialog |
 | Which charged attacks? | the "X used Y!" banners |
@@ -85,7 +85,8 @@ On a 12-core laptop, the batch engine used by the YouTube harvester analyses abo
 - See the Shadow flames of a Pokémon the camera never frames alone, or of species whose body is purple anyway.
 - Read a result the upload cut away when the Poké Balls do not settle it.
 - Tell apart two forms with identical types and moves, such as Dialga and Dialga Origin, except by what players usually run.
-- Read nicknames on the recorder's own side.
+- Read nicknames on the recorder's own side (it now skips them instead of guessing a species, for example a Japanese nickname that looked like Blitzle).
+- Name a Pokémon whose nameplate a stream overlay hides on every frame; it gives no name rather than a wrong one.
 - Name the Pokémon in uploads whose crop cuts the names off the top of the phone screen.
 
 The [technical reference](README.md#10-gaps-and-improvement-areas) lists what would fix each of these, and what would make it faster.

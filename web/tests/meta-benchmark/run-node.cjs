@@ -28,7 +28,9 @@ const gm=(()=>{const g=process.env.GAMEMASTER?JSON.parse(fs.readFileSync(process
 const byId=new Map(gm.pokemon.map(p=>[p.speciesId,p])),movesById=new Map(gm.moves.map(m=>[m.moveId,m]));
 const learned=process.env.LEARNED_PATH?JSON.parse(fs.readFileSync(process.env.LEARNED_PATH,'utf8')):undefined;
 const [video,outPath]=process.argv.slice(2);
-const FPS=Number(process.env.FPS||10),HUD_EVERY=Number(process.env.HUD_EVERY||5),START=Number(process.env.START||0),END=process.env.END?Number(process.env.END):null;
+// SPECIES_ONLY=1: nameplates, results and banners only (2 HUD frames/s, no HP bars, aura or effect texts), for
+// benchmarks of the nameplate reader: the same HUD timestamps as the default 10 fps / every 5th frame.
+const SPECIES_ONLY=process.env.SPECIES_ONLY==='1',FPS=Number(process.env.FPS||(SPECIES_ONLY?2:10)),HUD_EVERY=Number(process.env.HUD_EVERY||(SPECIES_ONLY?1:5)),START=Number(process.env.START||0),END=process.env.END?Number(process.env.END):null;
 const rangePlan=Range.planWindow({ranges:Range.parseRanges(process.env.RANGES,{forceFull:process.env.FORCE_FULL==='1'}),start:START,end:END??Infinity,forceFull:process.env.FORCE_FULL==='1'}),RANGES=rangePlan.ranges;
 if(rangePlan.mode==='empty')throw Error('No planned ranges intersect START/END; use run-batch for empty tasks');
 // FFMPEG_THREADS also caps the filter graph's threads: with 1, ffmpeg spends ~7% less CPU on the same bytes.
@@ -72,10 +74,12 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // surrender band (700–1180 of 1920) or the top half (HUD, banners at any calibrated offset). Lower rows
  // aren't decoded into the frame (they stay 0); DECODE_ROWS=full restores them.
  const rowsUsed=process.env.DECODE_ROWS==='full'?H:Math.min(H,Math.max(Y0+Hh,Math.ceil(H*1180/1920)+1,Math.ceil(H/2))),decode=Decode.keepRows(decodeFull,rowsUsed);
- const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=new C.NameCache(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
+ const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=C.NameCache.names(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  const hudOffset=new C.HudOffset();
  // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
- function nameOf(img,s,t){let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;if(metrics.firstPlateAt===undefined)metrics.firstPlateAt=t;const r=ocr(img,s.nameBox),box=s.nameBox,res=C.readName(r,{dict,locales,language:nameLanguage,alt:lang=>ocrLocale(img,box,lang)});hit=res.hit;names.set(s.bits,hit);if(res.switched){names.forgetUnread();metrics.nameLanguageAt=t;}}else metrics.cached++;return hit;}
+ // HUD_LLM=1: the local vision model reads plates the OCR is unsure of (hud-llm.cjs; YouTube footage only).
+ const second=require('./hud-llm.cjs').createSecondReader({C,video,box:crop||[0,0,W0,H0],dict,locales,language:nameLanguage,enabled:process.env.HUD_LLM==='1',budget:Number(process.env.HUD_LLM_BUDGET||30)});
+ function nameOf(img,s,t,side){let hit=names.get(s.bits);if(hit===undefined){metrics.nameReads++;if(metrics.firstPlateAt===undefined)metrics.firstPlateAt=t;const r=ocr(img,s.nameBox),box=s.nameBox,res=C.readName(r,{dict,locales,language:nameLanguage,alt:lang=>ocrLocale(img,box,lang)});hit=second.check(res.hit,r,side,t);names.set(s.bits,hit);if(res.switched){names.forgetUnread();metrics.nameLanguageAt=t;}}else metrics.cached++;return hit;}
  let dy=null,k=0,filled=0,lastT=null,lastSurrender=-Infinity,lastSurrenderCheck=-Infinity,lastBanner=null;const frameBytes=W*rowsUsed*4,frame=Buffer.alloc(W*H*4);
  // Banners: English text first ("Go, X!", "X used Y!"); other Latin-script UIs from the same text; a CJK UI
  // (once recognised) only with its language model (core.js localBanner). Chinese banners take two lines.
@@ -108,8 +112,8 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     // Other offsets already proven by a species name, then a fresh calibration kept only if its nameplates name
     // a species (core.js HudOffset: a wrong first calibration, or an offset that changes between battles).
     if(!hud&&dy!==null)for(const d of hudOffset.others()){const h=C.readHud(img,d);if(h){hud=h;dy=d;hudOffset.use(d);break;}}
-    if(!hud&&dy!==null){const d2=hudOffset.retry(img),h2=d2===null?null:C.readHud(img,d2);if(h2&&['my','opponent'].some(side=>nameOf(img,h2[side],t))){hudOffset.accept(d2,t);dy=d2;hud=h2;metrics.recalibrated=hudOffset.changes;}}
-    if(hud){for(const side of ['my','opponent']){const s=hud[side];let hit=nameOf(img,s,t);s.hit=hit;
+    if(!hud&&dy!==null){const d2=hudOffset.retry(img),h2=d2===null?null:C.readHud(img,d2);if(h2&&['my','opponent'].some(side=>nameOf(img,h2[side],t,side))){hudOffset.accept(d2,t);dy=d2;hud=h2;metrics.recalibrated=hudOffset.changes;}}
+    if(hud){for(const side of ['my','opponent']){const s=hud[side];let hit=nameOf(img,s,t,side);s.hit=hit;
       // CP: a CP read the same twice for this side and species is reused while the CP digits look the
       // same (≤3% of fingerprint cells differ). Another battle's Pokémon of the same species shows a
       // different number, so it is read again.
@@ -136,7 +140,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     if(C.surrenderCandidate(band)){lastSurrenderCheck=t;readSurrender(t,img,[0,y0,W,y1]);}}
    // HP bars + aura on every frame of a battle (and briefly after the nameplates go, for faints).
    // Focus shots (aura.js measureFocus, the Shadow classifier) keep the phone bar windows on every screen.
-   if(tracker.current&&t-tracker.lastHud<30){const t0=now(),band={data:frame.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0,barP),as=Hp.assignBars(bars,W,H);dense.push({t,bars,aura:Aura.measure(band,as,Y0),focus:Aura.measureFocus(band,forFocus(bars),Y0)});
+   if(!SPECIES_ONLY&&tracker.current&&t-tracker.lastHud<30){const t0=now(),band={data:frame.subarray(Y0*W*4,(Y0+Hh)*W*4),width:W,height:Hh},bars=Hp.findBars(band,Y0,barP),as=Hp.assignBars(bars,W,H);dense.push({t,bars,aura:Aura.measure(band,as,Y0),focus:Aura.measureFocus(band,forFocus(bars),Y0)});
     // "SUPER EFFECTIVE!" / "NOT VERY EFFECTIVE…" above a bar: the attack on that Pokémon. Each distinct
     // look of the text is read once (fingerprint cache); repeats within 0.8 s count once.
     for(const side of ['my','opponent']){const bar=as[side];if(!bar)continue;const box=Hp.effectBox(bar,W),e=Hp.effectSig(band,box,Y0);if(e.share<.03||e.share>.45||!Hp.effectShape(e.sig))continue;
@@ -196,7 +200,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
  const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,...(b.resultReason?{resultReason:b.resultReason}:{}),ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
  metrics.ocrCache={...ocrEngine.metrics};metrics.ocrCalls=metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads+(metrics.effectReads||0)+(metrics.surrenderReads||0);
- metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};metrics.nameLanguage={lang:nameLanguage.lang,votes:Object.fromEntries(Object.entries(nameLanguage.votes).map(([l,v])=>[l,v.size])),tries:nameLanguage.tries};
+ metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};metrics.plateRejected={...tracker.rejected};if(second.enabled)metrics.secondReader={...second.stats};metrics.nameLanguage={lang:nameLanguage.lang,votes:Object.fromEntries(Object.entries(nameLanguage.votes).map(([l,v])=>[l,v.size])),tries:nameLanguage.tries};
  const seconds=(Date.now()-started)/1000,videoSeconds=k/FPS;
  const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,decoding:{width:W,height:H,rows:rowsUsed,fps:FPS,hudEvery:HUD_EVERY,hwaccel:decode.hwaccel,experimental:!!(process.env.ANALYSIS_WIDTH||process.env.FFMPEG_HWACCEL)},calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
  // Matchup fits are kept (compactly) so pooling and priors can be re-evaluated without re-decoding.
