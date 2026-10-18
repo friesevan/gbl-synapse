@@ -73,6 +73,17 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  let crop=null;if(process.env.CROP==='auto'){const r=require('./locate-screen.cjs').locateVideo(video);crop=r.box;metrics.screen=r;}else if(process.env.CROP)crop=process.env.CROP.split(',').map(Number);
  const placements=Placement.parseCrops(process.env.CROPS,crop);
  const decodeFull=Decode.plan({width:W0,height:H0,crop,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),W=decodeFull.width,H=decodeFull.height;
+ // Result screens: the middle band (700–1180 of 1920 rows), sized by the screen's shorter side (core.js resultScale).
+ const RB0=Math.round(H*700/1920),RB1=Math.round(H*1180/1920),RSCALE=C.resultScale(W,H);let hudShown=false,lastResultOcr=-Infinity,extraUnread=0;
+ function resultBand(frame){return C.bandStats({data:frame.subarray(RB0*W*4,RB1*W*4),width:W,height:RB1-RB0},{scale:RSCALE});}
+ // OCR a result-like band (at most 5 reads a second); returns true when the band was a result candidate.
+ // extra: a frame between HUD frames. Those reads stop after 12 unreadable ones until the HUD shows again (a white
+ // overlay or effect that looks like text shouldn't cost an OCR read every 0.2 s for the whole wait).
+ function resultCheck(t,img,band,extra=false){if(!tracker.awaitingResult(t)||!C.resultCandidate(band))return false;if(t-lastResultOcr<.2||(extra&&extraUnread>=12))return true;lastResultOcr=t;
+  metrics.resultReads++;const r=ocr(img,[0,RB0,W,RB1],{whiteText:true,lines:2});let value=C.outcome(r.text.replace(/\s+/g,' ')),text=r.text;
+  // Chinese result screens (獲勝！/ 辛苦了！) and CJK matchmaking text need the video's language model.
+  if(!value&&cjkLang()&&!C.isMatchmaking(text)){metrics.localeResultReads=(metrics.localeResultReads||0)+1;text=ocrLocale(img,[0,RB0,W,RB1],cjkLang(),{whiteText:true,lines:2}).text;value=C.outcome(text);}
+  if(value)tracker.result(t,value);else if(C.isMatchmaking(text))tracker.matchmaking();else{tracker.unreadResult(t);if(extra)extraUnread++;}return true;}
  // Bars and aura use the classifier's current reference band.
  const Y0=Math.round(Hp.BAND[0]*W/886),Hh=Math.min(H-Y0,Math.round((Hp.BAND[1]-Hp.BAND[0])*W/886));
  // Wide, tablet-shaped screens put your bar further right and skip centred cutscene bars (hp.js assignBars).
@@ -83,7 +94,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const rowsUsed=process.env.DECODE_ROWS==='full'?H:Math.min(H,Math.max(Y0+Hh,Math.ceil(H*1180/1920)+1,Math.ceil(H/2))),decode=Decode.keepRows(decodeFull,rowsUsed);
  // Each placement decodes its own box into the same 886-wide frame (all boxes have CROP's size).
  const decodes=placements?.map(p=>Decode.keepRows(Decode.plan({width:W0,height:H0,crop:p.box,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),rowsUsed));
- const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=C.NameCache.names(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
+ const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker({eligible:Number(process.env.LEAGUE)===500?new Set(require('../../includes/pro/data/league-500.json').overall.map(r=>r.speciesId)):null}),names=C.NameCache.names(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  let hudOffset=new C.HudOffset();
  // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
  // HUD_LLM=1: the local vision model reads plates the OCR is unsure of (hud-llm.cjs; YouTube footage only).
@@ -149,19 +160,18 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
        if(hit&&cp){const c=cpKnown.get(ck);cpKnown.set(ck,c&&c.cp===cp?{cp,n:c.n+1,bits:s.cpBits}:{cp,n:1,bits:s.cpBits});}}}
      if(!hudOffset.trusted&&(hud.my.hit||hud.opponent.hit))hudOffset.trust();
      tracker.observe(t,hud);}
-    else{const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});if(band.black>.9)tracker.blackout(t);
-     if(tracker.awaitingResult(t)&&C.resultCandidate(band)){metrics.resultReads++;const r=ocr(img,[0,y0,W,y1],{whiteText:true,lines:2});let value=C.outcome(r.text.replace(/\s+/g,' ')),text=r.text;
-      // Chinese result screens (獲勝！/ 辛苦了！) and CJK matchmaking text need the video's language model.
-      if(!value&&cjkLang()&&!C.isMatchmaking(text)){metrics.localeResultReads=(metrics.localeResultReads||0)+1;text=ocrLocale(img,[0,y0,W,y1],cjkLang(),{whiteText:true,lines:2}).text;value=C.outcome(text);}
-      if(value)tracker.result(t,value);else if(C.isMatchmaking(text))tracker.matchmaking();else tracker.unreadResult(t);}
-     else if(C.surrenderCandidate(band)&&t-lastSurrender>4)readSurrender(t,img,[0,y0,W,y1]);
+    else{const band=resultBand(frame);if(band.black>.9)tracker.blackout(t);
+     if(!resultCheck(t,img,band)&&C.surrenderCandidate(band)&&t-lastSurrender>4)readSurrender(t,img,[0,RB0,W,RB1]);
 }
     // Banners ("X used Y!", "Go, X!"), with or without nameplates on screen; OCR only new text.
     // A CJK UI's banners are found by their stroke edges instead (core.js bannerEdges); Chinese ones take two lines.
     if(tracker.current&&dy!==null){if(cjkLang()){const b0=C.bannerBox(img,dy),h=b0[3]-b0[1],bb=cjkLang().startsWith('zh')?[b0[0],b0[1]-h/2,b0[2],b0[3]+h/2]:b0,be=C.bannerEdges(img,bb,{search:h});if(be.share>=.02&&be.share<=.2&&diffShare(be.sig,lastBanner)>=.04){lastBanner=be.sig;metrics.bannerReads++;readBanner(t,img,be.box);}}
      else{const bn=C.bannerRead(img,dy);if(bn.textPixels>=.03&&bn.textPixels<=.5&&diffShare(bn.sig,lastBanner)>=.04){lastBanner=bn.sig;metrics.bannerReads++;readBanner(t,img,bn.box);}
       if(nameLanguage.bannerSearching())searchBanner(t,img);}}
-    metrics.ms.hud+=now()-t0;}
+    hudShown=!!hud;if(hud)extraUnread=0;metrics.ms.hud+=now()-t0;}
+   // A result screen can flash for half a second (edited uploads): while a result is expected, frames between the
+   // HUD frames are checked too (cheap band statistics), unless the last HUD frame still showed the battle.
+   else if(!hudShown&&tracker.awaitingResult(t))resultCheck(t,img,resultBand(frame),true);
    // The surrender dialog shows for under a second, so it is looked for on every frame of a battle
    // (cheap band statistics; OCR only when a white card fills the middle band).
    if(!isHud&&tracker.current&&t-lastSurrender>4&&t-lastSurrenderCheck>=.3){const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});
@@ -224,7 +234,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // A still image of a battle (title card, screenshot) is not footage (core.js stillBattle).
  {const still=C.dropStillBattles(finished);if(still.length)metrics.stillBattles=still;}
  for(const b of finished)b.cutsceneBar=Hp.centredReadings(window(b.end-8,b.end+4),W);
- C.applyInferredResults(finished,{videoEnd});
+ C.applyInferredResults(finished,{videoEnd,evidence:learned?.resultEvidence||null});
  for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);b.focus=Aura.focusMoments(b,window(b.start-2,b.end+8).map(f=>barP===Hp.BAR?f:{...f,bars:forFocus(f.bars)}),W);}
  const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled,fit);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=K.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit});}Aura.applyToBattle(b,undefined,learned);}Shadow.applyToBattles(finished,undefined,{learned,rankings,moveTypes:new Map(gm.moves.map(m=>[m.moveId,m.type]))});
  metrics.ms.fit=now()-t0;

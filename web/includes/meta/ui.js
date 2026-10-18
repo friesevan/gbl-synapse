@@ -83,7 +83,7 @@ async function cjkAlt(eng,box){if(cjk.off)return null;const decided=C.LOCALES[na
 function cjkSwitched(){const l=nameLanguage.lang;if(!C.LOCALES[l]?.script)return;metrics.languageNote=`Nameplates read in ${CJK_NAME[l]}`;for(const [k,w] of Object.entries(cjk.workers))if(k!==l){w.terminate?.();delete cjk.workers[k];}}
 // Result banners (YOU WIN / GOOD EFFORT) sit mid-screen in large white letters. The band also
 // shows the fade to black that ends a battle; both are checked without OCR first.
-function resultBand(){const h=SH(),img=grab(bandCanvas,h*700/1920,h*1180/1920);return C.bandStats(img);}
+function resultBand(){const h=SH(),img=grab(bandCanvas,h*700/1920,h*1180/1920);return C.bandStats(img,{scale:C.resultScale(img.width,h*img.width/SW())});}
 async function readResult(){metrics.resultReads=(metrics.resultReads||0)+1;const r=await ocrRegion(bandCanvas,[0,0,bandCanvas.width,bandCanvas.height],{whiteText:true,lines:2});let text=r.text.replace(/\s+/g,' '),value=C.outcome(text);
  // Chinese result screens (獲勝！/ 辛苦了！) and CJK matchmaking text: the video's model.
  const w=cjkActive();if(!value&&w&&!C.isMatchmaking(text)){text=(await ocrRegion(bandCanvas,[0,0,bandCanvas.width,bandCanvas.height],{whiteText:true,lines:2,worker:w})).text;value=C.outcome(text);}
