@@ -60,11 +60,32 @@ function matchJamo(key,map,latin){const kj=jamo(key),tol=Math.max(1,kj.length>>2
 // single one out (core.js plateHit), as for Korean jamo rivals. A Japanese read that is mostly hiragana (species names
 // are katakana) gives no suggestion and no exact name under 4 characters: しまま (a hiragana nickname) folded to
 // シママ, Blitzle, and ますます to デスマス, Yamask.
+// Recall repairs (2026-10-18, after the 2026-10-17 stricter CJK matching set aside right reads in 40 of 74 re-analysed
+// videos: Hoothoot read ホーボー 27 times, Lugia ルギア 科, Reshiram レシ ラム | 目, Xerneas ゼル ネ ア ス 較):
+// - voicing marks: OCR often adds or drops a dakuten/handakuten (ホ/ボ/ポ). A read that equals exactly one species
+//   with every voicing mark removed is that species (devoiced keys shared by two species, ガラガラ/カラカラ, decide nothing);
+// - stray tokens: a whole name followed or preceded by up to two short separate tokens (a stray kanji, a bar, a ball's
+//   edge) is that name. Both give quality 'suggestion' with no rivals, so the plate's CP must still fit (plateHit).
+const devoice=s=>s.normalize('NFD').replace(/[゙゚]/g,'').normalize('NFC');
+const devoicedNames=new WeakMap();
+function devoicedMatch(key,map){let d=devoicedNames.get(map);if(!d){d=new Map();for(const [name,items] of map){const k=devoice(name);if(!d.has(k))d.set(k,new Map());for(const it of items)d.get(k).set(englishKey(it),items);}devoicedNames.set(map,d);}
+ const hit=d.get(devoice(key));return hit&&hit.size===1?[...hit.values()][0]:null;}
+function tokenCore(text,lang,map){const tokens=String(text||'').replace(/\bCP\s*\d+/gi,'').trim().split(/\s+/).filter(Boolean),n=tokens.length;if(n<2)return null;
+ // Only tokens with none of the name script's own letters are junk: a kana fragment may be part of a longer name
+ // (サンド バン is Sandslash, not Sandshrew + junk; オー シズクモ is Araquanid, メカ ヤミラミ Mega Sableye).
+ const script=lang==='ja'?/[\u30A0-\u30FF\u3040-\u309F]/:lang==='ko'?/[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]/:/[\u3400-\u9FFF]/;
+ const junk=t=>nameKey(t,lang).length<=2&&!script.test(t)&&!map.has(nameKey(t,lang));
+ for(let drop=1;drop<=3;drop++)for(let head=0;head<=Math.min(2,drop);head++){const tail=drop-head;if(tail>2||head+tail>=n)continue;
+  const kept=tokens.slice(head,n-tail),cut=[...tokens.slice(0,head),...tokens.slice(n-tail)];if(!cut.every(junk))continue;
+  const core=nameKey(kept.join(''),lang);if([...core].length>=3&&map.has(core))return map.get(core);}
+ return null;}
 function matchLocale(text,map,lang,latin=null){if(!map)return null;const cjk=!!LOCALES[lang]?.script;let key=nameKey(String(text).replace(/\bCP\s*\d+/gi,''),lang);if(key.length<(cjk?2:3))return null;
  const hira=lang==='ja'?(String(text).match(/[ぁ-ゖ]/g)||[]).length:0,kana=hira+(lang==='ja'?(String(text).match(/[ァ-ヺー]/g)||[]).length:0),hiraganaRead=hira>0&&hira*2>=kana;
  let candidates=map.get(key),quality='exact';
  // CJK OCR often adds a stray digit or Latin letter at either end (the CP's first digit, a ball's edge).
  if(!candidates&&cjk){const core=key.replace(/^[0-9a-z]+|[0-9a-z]+$/g,'');if(core!==key&&core.length>=2){candidates=map.get(core);if(!candidates&&core.length>=4)key=core;}}
+ if(!candidates&&cjk&&!hiraganaRead){const t=tokenCore(text,lang,map);if(t){candidates=t;quality='suggestion';}}
+ if(!candidates&&lang==='ja'&&!hiraganaRead&&[...key].length>=3){const v=devoicedMatch(key,map);if(v){candidates=v;quality='suggestion';}}
  if(candidates&&hiraganaRead&&[...nameKey(text,lang).replace(/^[0-9a-z]+|[0-9a-z]+$/g,'')].length<4)return null;
  let rivals=[];if(!candidates&&lang==='ko'){const j=matchJamo(key,map,latin);if(j){candidates=j.items;rivals=j.rivals;}quality='suggestion';}
  if(!candidates){if(key.length<(cjk?4:5)||hiraganaRead)return null;let found=null,ambiguous=false;
@@ -290,14 +311,17 @@ class NameCache{constructor(limit=.06,retries=3,{far=null,cols=64}={}){this.entr
 // of 5+ digits are junk (a bracket read as a leading 1: "11495"). One frame's CP can lag a switch, so a rejection only
 // drops that sighting; the Pokémon's other sightings still count.
 const CP_SANE=[10,9999],CP_SLACK=1.06;
-function plateHit(s,rejected=null){const hit=s.hit;if(!hit)return null;
+function plateHit(s,rejected=null,eligible=null){const hit=s.hit;if(!hit)return null;
  if(s.cover>=COVER.max){if(rejected)rejected.cover++;return null;}
  // A leading 1 may be junk too ("1498" for 498 in Little Cup), so it must not fit even without it.
  const cp=s.cp,sane=cp>=CP_SANE[0]&&cp<=CP_SANE[1],bare=String(cp).startsWith('1')?Number(String(cp).slice(1)):cp;
  const fits=h=>{const max=h.candidates?.map(c=>c.maxCp);return !(sane&&max?.length&&max.every(m=>m&&cp>m*CP_SLACK&&bare>m*CP_SLACK));};
  // An ambiguous read (core.js matchLocale alternatives): used only when the CP, or else the same frame's type icons
  // (both icons read, and they fit exactly one of them: single icons are confused, bug for grass), leave exactly one of its species.
+ // eligible (Little Cup videos, run-node.cjs): species the league allows; rivals it bans are no rivals (パウロウ is Seel, not
+ // Ho-Oh or Cramorant, in a Little Cup battle). It only removes rivals, never adds a species.
  if(hit.alternatives?.length){let left=[hit,...hit.alternatives].filter(fits),by='cp';
+  if(eligible&&left.length>1){const ok=left.filter(h=>h.candidates?.some(c=>eligible.has(c.id)));if(ok.length&&ok.length<left.length){left=ok;by='league';}}
   if(left.length>1&&s.types?.length>=2){by='types';left=left.filter(h=>h.candidates?.some(c=>s.types.every(t=>(c.types||[]).includes(t))));}
   if(left.length!==1){if(rejected)rejected.ambiguous++;return null;}
   const {alternatives,...one}=left[0]===hit?hit:{...hit,key:left[0].key,candidates:left[0].candidates,id:''};return {...one,decidedBy:by};}
@@ -315,7 +339,7 @@ function iconReliability(battles){let fit=0,all=0,n=0;for(const b of battles)for
 function typesContradict(p,reliability){if(p.quality==='exact'||reliability<.85)return false;const f=typeFit(p.typeVotes,p.candidates);if(!(f.all>=4&&f.fit<.2*f.all))return false;
  return Object.entries(p.typeVotes).some(([k,n])=>n>=3&&typeFit({[k]:n},p.candidates).fit===0);}
 class HudTracker{
- constructor(){this.battles=[];this.current=null;this.lastHud=-Infinity;this.lastClosed=null;this.rejected={cover:0,cp:0,ambiguous:0,types:0};}
+ constructor({eligible=null}={}){this.battles=[];this.current=null;this.lastHud=-Infinity;this.lastClosed=null;this.rejected={cover:0,cp:0,ambiguous:0,types:0};this.eligible=eligible;}
  static fresh(s){return s.fainted===0&&s.balls.every(b=>b==='alive')&&s.shields===2;}
  static used(s){return s.fainted+(2-s.shields);}
  open(t,midBattle){this.current={id:globalThis.crypto?.randomUUID?.()||String(Math.random()),start:t,end:t,my:[],opponent:[],events:[],result:'Unknown',resultSource:'',fadeAt:null,resultUnread:0,flags:midBattle?['Recording starts mid-battle: lead may be missing']:[],reviewed:false,leadConfirmed:false,used:0,fainted:{my:0,opponent:0},shieldsUsed:{my:0,opponent:0},active:{my:'',opponent:''},segments:[]};
@@ -365,7 +389,7 @@ class HudTracker{
   for(const side of ['my','opponent']){const s=hud[side];
    if(s.fainted>b.fainted[side]){b.events.push({t,kind:'faint',side,label:`${side==='my'?'Your':'Opponent'} Pokémon fainted (${s.fainted}/3)`});b.fainted[side]=s.fainted;}
    if(2-s.shields>b.shieldsUsed[side]){b.events.push({t,kind:'shield',side,label:`${side==='my'?'You':'Opponent'} used a shield`});b.shieldsUsed[side]=2-s.shields;}
-   const hit=plateHit(s,this.rejected);if(!hit)continue;const stable=b.active[side]===hit.key;b.active[side]=hit.key;const list=b[side],existing=list.find(p=>p.key===hit.key);
+   const hit=plateHit(s,this.rejected,this.eligible);if(!hit)continue;const stable=b.active[side]===hit.key;b.active[side]=hit.key;const list=b[side],existing=list.find(p=>p.key===hit.key);
    // Type icons and CP are read only once the name has held for two samples (icons lag switches).
    if(existing&&stable){if(s.types?.length){const k=[...s.types].sort().join('/');existing.typeVotes=existing.typeVotes||{};existing.typeVotes[k]=(existing.typeVotes[k]||0)+1;}if(s.cp){existing.cpVotes=existing.cpVotes||{};existing.cpVotes[s.cp]=(existing.cpVotes[s.cp]||0)+1;}}if(existing){existing.last=t;continue;}
    if(list.length>=3){if(!b.flags.includes(`More than three ${side} species: check boundary`))b.flags.push(`More than three ${side} species: check boundary`);continue;}

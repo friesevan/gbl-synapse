@@ -102,3 +102,21 @@ test('second reader: YouTube footage only, only where the OCR is unsure, exact n
  const off=R.createSecondReader({C,video:yt,box:[0,0,560,1080],dict,locales,language,enabled:true,run:()=>({opponent:'Mime Jr',agreed:false})});assert.equal(off.check(sugg,{text:'Melmetaa'},'opponent',1),sugg,'two calls that disagree change nothing');
  const odd=R.createSecondReader({C,video:yt,box:[0,0,560,1080],dict,locales,language,enabled:true,run:()=>({opponent:'Melmetax',agreed:true})});assert.equal(odd.check(sugg,{text:'Melmetaa'},'opponent',1),sugg,'the model\'s name must be exact');
  const tight=mk({budget:1});tight.check(sugg,{text:'a1'},'opponent',1);assert.equal(tight.check(wrong,{text:'b2'},'opponent',2),wrong,'budget spent');});
+
+test('recall repairs: voicing marks and stray tokens give the species back, without loosening the ambiguity checks',()=>{
+ const k=t=>m('ja',t)?.key,q=t=>m('ja',t)?.quality;
+ // 2026-10-18 re-analysis: right reads the stricter CJK matching had set aside (40 of 74 videos).
+ for(const [t,key] of [['ホー ボー','hoothoot'],['ボー ホー','hoothoot'],['ルギア 科','lugia'],['レシ ラム | 目','reshiram'],['ゼル ネ ア ス 較','xerneas'],['ウッ ウ 是 |','cramorant']]){
+  assert.equal(k(t),key,t);assert.equal(q(t),'suggestion',t+': still a suggestion, so the CP must fit');assert.equal(m('ja',t).alternatives,undefined,t);}
+ assert.equal(q('ホー ホー'),'exact');
+ // Unchanged: devoiced keys shared by two species decide nothing; ambiguous and hiragana reads stay as they were.
+ assert.equal(k('ガラガラ'),'marowak');assert.equal(k('カラカラ'),'cubone');
+ assert.deepEqual(m('ja','ゼラロム').alternatives.map(a=>a.key),['zeraora']);assert.equal(m('ja','しまま'),null);assert.equal(m('ja','しままま'),null);
+ // A stray token that is itself a name is not junk to drop.
+ assert.notEqual(k('ルギア ホウオウ'),'lugia');
+ // Kana fragments are never dropped: evolution lines share endings (replay of 3,110 saved reads, 2026-10-18).
+ // Little Cup: a rival the league bans is no rival (Seel's パウロウ against Ho-Oh, Cramorant, Cufant); legal rivals stay.
+ const lc=new Set(require('../includes/pro/data/league-500.json').overall.map(r=>r.speciesId)),plate=(t,cp)=>({hit:{...m('ja',t),confidence:80},cp,cover:0});
+ assert.equal(C.plateHit(plate('パウ ロウ',498),null,lc)?.key,'seel');assert.equal(C.plateHit(plate('パウ ロウ',498)),null,'without the league it stays ambiguous');
+ assert.equal(C.plateHit(plate('イワ ー ケ',499),null,lc),null,'Rockruff is legal in Little Cup too: still ambiguous');
+ for(const [t,not] of [['サン ド バ ン','sandshrew'],['オー シズ クモ','dewpider'],['メカ ヤミ ラミ','sableye'],['パイ ウー ルー','wooloo'],['レ 志 コイ ル','magnemite']])assert.notEqual(k(t),not,t);});

@@ -94,7 +94,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const rowsUsed=process.env.DECODE_ROWS==='full'?H:Math.min(H,Math.max(Y0+Hh,Math.ceil(H*1180/1920)+1,Math.ceil(H/2))),decode=Decode.keepRows(decodeFull,rowsUsed);
  // Each placement decodes its own box into the same 886-wide frame (all boxes have CROP's size).
  const decodes=placements?.map(p=>Decode.keepRows(Decode.plan({width:W0,height:H0,crop:p.box,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),rowsUsed));
- const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker(),names=C.NameCache.names(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
+ const effects=[],effRead={},effCache=new C.NameCache(.05),tracker=new C.HudTracker({eligible:Number(process.env.LEAGUE)===500?new Set(require('../../includes/pro/data/league-500.json').overall.map(r=>r.speciesId)):null}),names=C.NameCache.names(),cps=new C.NameCache(.012),cpKnown=new Map(),dense=[];
  let hudOffset=new C.HudOffset();
  // Nameplate → species, one OCR per distinct fingerprint (NameCache), in the video's language (core.js readName).
  // HUD_LLM=1: the local vision model reads plates the OCR is unsure of (hud-llm.cjs; YouTube footage only).
