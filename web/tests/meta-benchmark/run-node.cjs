@@ -89,10 +89,25 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // Banners: English text first ("Go, X!", "X used Y!"); other Latin-script UIs from the same text; a CJK UI
  // (once recognised) only with its language model (core.js localBanner). Chinese banners take two lines.
  function readBanner(t,img,box){const lang=cjkLang();let r;
-  if(!lang){r=ocr(img,box,{whiteText:true});if(!tracker.go(t,r.text,dict))tracker.move(t,r.text,r.confidence,gm.moves);if(C.parseBanner(r.text))return;}
+  if(!lang){r=ocr(img,box,{whiteText:true});if(!tracker.go(t,r.text,dict))tracker.move(t,r.text,r.confidence,gm.moves,null,dict);if(C.parseBanner(r.text))return;}
   else r=ocrLocale(img,box,lang,{lines:lang.startsWith('zh')?2:1});   // pale text on the translucent box: plain grey
-  const lb=C.localBanner(r.text,{lang:nameLanguage.lang,locales,moveMaps,moves:gm.moves,dict});if(!lb)return;metrics.localBanners=(metrics.localBanners||0)+1;
-  if(lb.kind==='go')tracker.go(t,r.text,dict,lb);else tracker.move(t,r.text,r.confidence,gm.moves,lb);}
+  let lb=C.localBanner(r.text,{lang:nameLanguage.lang,locales,moveMaps,moves:gm.moves,dict});
+  // While the battle's nameplates have named nothing (names cropped off: core.js bannerTeam) a missed CJK banner is read
+  // again in the wide two-line box, as a sighting only (HudTracker.sight): battles named by a plate stay as before.
+  if(!lb&&lang&&!lang.startsWith('zh')&&!tracker.current.my.length&&!tracker.current.opponent.length){const w=ocrLocale(img,wideBanner(img).box,lang,{lines:2});tracker.sight(t,w.text,C.localBanner(w.text,{lang:nameLanguage.lang,locales,moveMaps,moves:gm.moves,dict}),dict,gm.moves,w.confidence);}if(process.env.BANNER_DEBUG)(metrics.bannerDebug||(metrics.bannerDebug=[])).push({t,lang:lang||'en',text:r.text,conf:Math.round(r.confidence),lb});if(!lb)return;metrics.localBanners=(metrics.localBanners||0)+1;
+  if(lb.kind==='go')tracker.go(t,r.text,dict,lb);else tracker.move(t,r.text,r.confidence,gm.moves,lb,dict);}
+ // Names cropped off the top: no plate decides the language. While English has named nothing, a banner (found by its
+ // stroke edges) is also read with each CJK model (core.js NameLanguage.bannerVote, bannerEvidence). Parses are kept, so
+ // once a language is decided the current battle's earlier banners reach the tracker.
+ const cjkLocales=Object.keys(locales).filter(l=>C.LOCALES[l].script),searched=[];let lastSearch=null;
+ const wideBanner=img=>{const b0=C.bannerBox(img,dy);return C.bannerEdges(img,C.wideBannerBox(img,dy),{search:b0[3]-b0[1]});};
+ // A one-line banner fills half the wide box: either box's stroke share can show it.
+ function searchBanner(t,img){const b0=C.bannerBox(img,dy),one=C.bannerEdges(img,b0,{search:b0[3]-b0[1]}),wide=wideBanner(img),text=e=>e.share>=.02&&e.share<=.2;if(!text(one)&&!text(wide)||diffShare(wide.sig,lastSearch)<.04)return;lastSearch=wide.sig;nameLanguage.bannerTries++;
+  for(const lang of cjkLocales){const r=ocrLocale(img,wide.box,lang,{lines:2}),ctx={lang,locales,moveMaps,moves:gm.moves,dict},lb=C.localBanner(r.text,ctx);
+   if(process.env.BANNER_DEBUG)(metrics.bannerDebug||(metrics.bannerDebug=[])).push({t,lang,text:r.text,conf:Math.round(r.confidence),lb});if(!lb)continue;searched.push({t,lang,r,lb});
+   if(!C.bannerEvidence(r.text,lang,ctx)||!nameLanguage.bannerVote(lang,lb.actor+'|'+lb.move))break;names.forgetUnread();metrics.nameLanguageAt=t;metrics.nameLanguageFrom='banners';
+   for(const s of searched)if(s.lang===lang&&s.t>=tracker.current.start){if(s.lb.kind==='go')tracker.go(s.t,s.r.text,dict,s.lb);else tracker.move(s.t,s.r.text,s.r.confidence,gm.moves,s.lb,dict);}
+   tracker.current.events.sort((x,y)=>x.t-y.t);break;}}
  function readSurrender(t,img,box){
   metrics.surrenderCandidates=(metrics.surrenderCandidates||0)+1;
   if(targetGateEnabled&&!Dialog.hasSurrenderTarget(tracker,t)){metrics.surrenderSkippedNoBattle=(metrics.surrenderSkippedNoBattle||0)+1;return;}
@@ -140,7 +155,8 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     // Banners ("X used Y!", "Go, X!"), with or without nameplates on screen; OCR only new text.
     // A CJK UI's banners are found by their stroke edges instead (core.js bannerEdges); Chinese ones take two lines.
     if(tracker.current&&dy!==null){if(cjkLang()){const b0=C.bannerBox(img,dy),h=b0[3]-b0[1],bb=cjkLang().startsWith('zh')?[b0[0],b0[1]-h/2,b0[2],b0[3]+h/2]:b0,be=C.bannerEdges(img,bb,{search:h});if(be.share>=.02&&be.share<=.2&&diffShare(be.sig,lastBanner)>=.04){lastBanner=be.sig;metrics.bannerReads++;readBanner(t,img,be.box);}}
-     else{const bn=C.bannerRead(img,dy);if(bn.textPixels>=.03&&bn.textPixels<=.5&&diffShare(bn.sig,lastBanner)>=.04){lastBanner=bn.sig;metrics.bannerReads++;readBanner(t,img,bn.box);}}}
+     else{const bn=C.bannerRead(img,dy);if(bn.textPixels>=.03&&bn.textPixels<=.5&&diffShare(bn.sig,lastBanner)>=.04){lastBanner=bn.sig;metrics.bannerReads++;readBanner(t,img,bn.box);}
+      if(nameLanguage.bannerSearching())searchBanner(t,img);}}
     metrics.ms.hud+=now()-t0;}
    // The surrender dialog shows for under a second, so it is looked for on every frame of a battle
    // (cheap band statistics; OCR only when a white card fills the middle band).
@@ -156,11 +172,14 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
      if(kind){const last=effects.findLast?.(x=>x.side===side)??[...effects].reverse().find(x=>x.side===side);if(!last||last.kind!==kind||t-last.t>.8)effects.push({t,side,kind});else last.t=t;}}metrics.denseFrames++;metrics.ms.bars+=now()-t0;}
    waitFrom=now();}}
  const status=await finishedDecode;if(status.error||status.code!==0||filled)throw status.error||Error(`Incomplete ffmpeg decode (exit ${status.code}, ${filled} trailing bytes)`);}
- const videoEnd=lastT,finished=tracker.finish({videoEnd}),league=Number(process.env.LEAGUE||1500),rankings=new Map(require(`../../includes/pro/data/league-${league}.json`).overall.map(r=>[r.speciesId,r]));
- const t0=now();
  // Each matchup uses every dense frame between its first and last nameplate sighting (+0.5 s).
  const lower=t=>{let lo=0,hi=dense.length;while(lo<hi){const m=(lo+hi)>>1;if(dense[m].t<t)lo=m+1;else hi=m;}return lo;};
  const window=(a,b)=>{const out=[];for(let i=lower(a);i<dense.length&&dense[i].t<=b;i++)out.push(dense[i]);return out;};
+ // A battle whose nameplates named nothing takes its species from banners (core.js bannerTeam); the HP bars tell which
+ // side an attack hit.
+ const defender=(t,until)=>{const o={},d=C.barDefender(Hp.track(window(t-8,until),W,H),t,until,o);if(process.env.BANNER_DEBUG)(metrics.bannerDefender||(metrics.bannerDefender=[])).push([+t.toFixed(1),+until.toFixed(1),d,o.drops]);return d;};
+ const videoEnd=lastT,finished=tracker.finish({videoEnd,defender,debug:!!process.env.BANNER_DEBUG}),league=Number(process.env.LEAGUE||1500),rankings=new Map(require(`../../includes/pro/data/league-${league}.json`).overall.map(r=>[r.speciesId,r]));
+ const t0=now();
  // Fast-move hits come from the matchup's first 12 s: later readings (low-HP colours, cutscene edges)
  // add noise. Leave-one-out over 99 answered fast moves: 87/99 with the first 8–18 s vs 79/99 with the
  // whole matchup. Charged hits and the aura still use the whole matchup.
@@ -208,7 +227,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const pk=p=>({name:p.candidates?.[0]?.name||p.label,types:p.observedTypes,formId:p.formId,cp:p.cp,form:p.inference&&{id:p.inference.forms[0].value,p:+p.inference.forms[0].p.toFixed(3)},shadowP:p.inference&&+p.inference.shadowP.toFixed(3),fastMove:p.inference&&{id:p.inference.moves[0].value,p:+p.inference.moves[0].p.toFixed(3)},matchups:p.inference?.matchups||0});
  const battles=finished.map(b=>({start:b.start,end:b.end,result:b.result,resultSource:b.resultSource,...(b.resultReason?{resultReason:b.resultReason}:{}),ending:b.ending,my:b.my.map(p=>p.candidates?.[0]?.name||p.label),opponent:b.opponent.map(p=>p.candidates?.[0]?.name||p.label),myDetail:b.my.map(pk),opponentDetail:b.opponent.map(pk),matchups:b.matchups.map(({result,fit,series,...g})=>({...g,best:result&&{opp:result.best.opp,oppMove:result.best.oppMove,my:result.best.my,myMove:result.best.myMove,p:+result.best.p.toFixed(3)}})),moves:b.events.filter(e=>e.kind==='move'||e.kind==='go').map(e=>({t:+e.t.toFixed(1),kind:e.kind,side:e.side,actor:e.actor,move:e.move})),flags:b.flags,fainted:b.fainted,shieldsUsed:b.shieldsUsed}));
  metrics.ocrCache={...ocrEngine.metrics};metrics.ocrCalls=metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads+(metrics.effectReads||0)+(metrics.surrenderReads||0);
- metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};metrics.plateRejected={...tracker.rejected};if(second.enabled)metrics.secondReader={...second.stats};metrics.nameLanguage={lang:nameLanguage.lang,votes:Object.fromEntries(Object.entries(nameLanguage.votes).map(([l,v])=>[l,v.size])),tries:nameLanguage.tries};
+ metrics.surrenderCache={...surrenderCache.metrics};metrics.calibrationCache={...calibrationCache.metrics};metrics.plateRejected={...tracker.rejected};if(second.enabled)metrics.secondReader={...second.stats};metrics.nameLanguage={lang:nameLanguage.lang,votes:Object.fromEntries(Object.entries(nameLanguage.votes).map(([l,v])=>[l,v.size])),tries:nameLanguage.tries,...(nameLanguage.bannerTries?{bannerTries:nameLanguage.bannerTries,bannerVotes:Object.fromEntries(Object.entries(nameLanguage.bannerVotes).map(([l,v])=>[l,v.size]))}:{})};
  const seconds=(Date.now()-started)/1000,videoSeconds=k/FPS;
  const out={pipeline:'v3 single-pass (node harness, tesseract CLI)',recording:path.basename(video),seconds,videoSeconds,realtime:+(videoSeconds/seconds).toFixed(2),ocrReads:metrics.nameReads+metrics.cpReads+metrics.resultReads+metrics.bannerReads,metrics,decoding:{width:W,height:H,rows:rowsUsed,fps:FPS,hudEvery:HUD_EVERY,hwaccel:decode.hwaccel,experimental:!!(process.env.ANALYSIS_WIDTH||process.env.FFMPEG_HWACCEL)},calibratedDy:dy,crop,start:START,end:END,ranges:RANGES,battles};
  // Matchup fits are kept (compactly) so pooling and priors can be re-evaluated without re-decoding.
