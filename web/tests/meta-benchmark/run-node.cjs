@@ -74,14 +74,16 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const placements=Placement.parseCrops(process.env.CROPS,crop);
  const decodeFull=Decode.plan({width:W0,height:H0,crop,fps:FPS,analysisWidth:process.env.ANALYSIS_WIDTH||'',hwaccel:process.env.FFMPEG_HWACCEL||''}),W=decodeFull.width,H=decodeFull.height;
  // Result screens: the middle band (700–1180 of 1920 rows), sized by the screen's shorter side (core.js resultScale).
- const RB0=Math.round(H*700/1920),RB1=Math.round(H*1180/1920),RSCALE=C.resultScale(W,H);let hudShown=false,lastResultOcr=-Infinity;
+ const RB0=Math.round(H*700/1920),RB1=Math.round(H*1180/1920),RSCALE=C.resultScale(W,H);let hudShown=false,lastResultOcr=-Infinity,extraUnread=0;
  function resultBand(frame){return C.bandStats({data:frame.subarray(RB0*W*4,RB1*W*4),width:W,height:RB1-RB0},{scale:RSCALE});}
  // OCR a result-like band (at most 5 reads a second); returns true when the band was a result candidate.
- function resultCheck(t,img,band){if(!tracker.awaitingResult(t)||!C.resultCandidate(band))return false;if(t-lastResultOcr<.2)return true;lastResultOcr=t;
+ // extra: a frame between HUD frames. Those reads stop after 12 unreadable ones until the HUD shows again (a white
+ // overlay or effect that looks like text shouldn't cost an OCR read every 0.2 s for the whole wait).
+ function resultCheck(t,img,band,extra=false){if(!tracker.awaitingResult(t)||!C.resultCandidate(band))return false;if(t-lastResultOcr<.2||(extra&&extraUnread>=12))return true;lastResultOcr=t;
   metrics.resultReads++;const r=ocr(img,[0,RB0,W,RB1],{whiteText:true,lines:2});let value=C.outcome(r.text.replace(/\s+/g,' ')),text=r.text;
   // Chinese result screens (獲勝！/ 辛苦了！) and CJK matchmaking text need the video's language model.
   if(!value&&cjkLang()&&!C.isMatchmaking(text)){metrics.localeResultReads=(metrics.localeResultReads||0)+1;text=ocrLocale(img,[0,RB0,W,RB1],cjkLang(),{whiteText:true,lines:2}).text;value=C.outcome(text);}
-  if(value)tracker.result(t,value);else if(C.isMatchmaking(text))tracker.matchmaking();else tracker.unreadResult(t);return true;}
+  if(value)tracker.result(t,value);else if(C.isMatchmaking(text))tracker.matchmaking();else{tracker.unreadResult(t);if(extra)extraUnread++;}return true;}
  // Bars and aura use the classifier's current reference band.
  const Y0=Math.round(Hp.BAND[0]*W/886),Hh=Math.min(H-Y0,Math.round((Hp.BAND[1]-Hp.BAND[0])*W/886));
  // Wide, tablet-shaped screens put your bar further right and skip centred cutscene bars (hp.js assignBars).
@@ -166,10 +168,10 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
     if(tracker.current&&dy!==null){if(cjkLang()){const b0=C.bannerBox(img,dy),h=b0[3]-b0[1],bb=cjkLang().startsWith('zh')?[b0[0],b0[1]-h/2,b0[2],b0[3]+h/2]:b0,be=C.bannerEdges(img,bb,{search:h});if(be.share>=.02&&be.share<=.2&&diffShare(be.sig,lastBanner)>=.04){lastBanner=be.sig;metrics.bannerReads++;readBanner(t,img,be.box);}}
      else{const bn=C.bannerRead(img,dy);if(bn.textPixels>=.03&&bn.textPixels<=.5&&diffShare(bn.sig,lastBanner)>=.04){lastBanner=bn.sig;metrics.bannerReads++;readBanner(t,img,bn.box);}
       if(nameLanguage.bannerSearching())searchBanner(t,img);}}
-    hudShown=!!hud;metrics.ms.hud+=now()-t0;}
+    hudShown=!!hud;if(hud)extraUnread=0;metrics.ms.hud+=now()-t0;}
    // A result screen can flash for half a second (edited uploads): while a result is expected, frames between the
    // HUD frames are checked too (cheap band statistics), unless the last HUD frame still showed the battle.
-   else if(!hudShown&&tracker.awaitingResult(t))resultCheck(t,img,resultBand(frame));
+   else if(!hudShown&&tracker.awaitingResult(t))resultCheck(t,img,resultBand(frame),true);
    // The surrender dialog shows for under a second, so it is looked for on every frame of a battle
    // (cheap band statistics; OCR only when a white card fills the middle band).
    if(!isHud&&tracker.current&&t-lastSurrender>4&&t-lastSurrenderCheck>=.3){const y0=Math.round(H*700/1920),y1=Math.round(H*1180/1920),band=C.bandStats({data:frame.subarray(y0*W*4,y1*W*4),width:W,height:y1-y0});
