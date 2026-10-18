@@ -232,7 +232,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  // A still image of a battle (title card, screenshot) is not footage (core.js stillBattle).
  {const still=C.dropStillBattles(finished);if(still.length)metrics.stillBattles=still;}
  for(const b of finished)b.cutsceneBar=Hp.centredReadings(window(b.end-8,b.end+4),W);
- C.applyInferredResults(finished,{videoEnd});
+ C.applyInferredResults(finished,{videoEnd,evidence:learned?.resultEvidence||null});
  for(const b of finished){b.effects=effects.filter(x=>x.t>=b.start&&x.t<=b.end+1).map(x=>({t:+x.t.toFixed(1),side:x.side,kind:x.kind}));b.hp=Hp.hpTimeline(b);b.focus=Aura.focusMoments(b,window(b.start-2,b.end+8).map(f=>barP===Hp.BAR?f:{...f,bars:forFocus(f.bars)}),W);}
  const pooled=K.poolMine(finished);for(const b of finished){K.attachInference(b,pooled,fit);for(const side of ['my','opponent'])for(const p of b[side])if(!p.inference){const c=entries(p);if(c.length)p.inference=K.priorInference(c,{learned,rankings,typeLL:p.typeLL,fit});}Aura.applyToBattle(b,undefined,learned);}Shadow.applyToBattles(finished,undefined,{learned,rankings,moveTypes:new Map(gm.moves.map(m=>[m.moveId,m.type]))});
  metrics.ms.fit=now()-t0;

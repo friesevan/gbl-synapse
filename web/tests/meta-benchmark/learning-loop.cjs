@@ -69,14 +69,14 @@ function canResolve(q,p,ctx){const {answers,calibration,version,shadowModel}=ctx
 // (the rules are fixed, so every answer is held out); an uncertain rule is promoted to confident (auto-resolve,
 // reversible) at ≥ 95% right on ≥ 30 answers from ≥ 5 videos, and demoted when it falls below.
 const RESULT_GATE={precision:.95,answers:30,videos:5,minForP:10};
-const RESULT_SOURCES={faints:'faints',surrender:'surrender',...Object.fromEntries([...C.PROMOTABLE].map(r=>[r,r]))};
+const RESULT_SOURCES={faints:'faints',surrender:'surrender',evidence:'evidence',...Object.fromEntries([...C.PROMOTABLE].map(r=>[r,r]))};
 function resultValue(b){return b.ending?`${b.result}:${b.ending}`:b.result;}
 function sameBattle(q,b){return !!b&&(!Array.isArray(q.clip)||!Number.isFinite(q.clip[0])||Math.abs(q.clip[0]-(b.end-2))<=.6);}
 // Each rule's right/total/videos over the human result answers, from the saved runs' timelines re-run as if no result
 // screen had been read (a guess counts only when its full value, e.g. Win:opponent-forfeit, matches the answer).
-function ruleStats(answers,rawFor){const stats={},human=answers.filter(a=>eligible(a)&&a.kind==='result');
+function ruleStats(answers,rawFor,evidence=null){const stats={},human=answers.filter(a=>eligible(a)&&a.kind==='result');
  for(const a of human){const raw=rawFor(video(a)),full=raw?.full,b=full?.[a.battle];if(!b||b.resultSource==='result screen'||b.resultSource==='reviewer')continue;
-  const r=C.inferResult({...b,result:'Unknown',resultSource:'',resultGuess:undefined},{next:full[a.battle+1]?.start??null,videoEnd:C.runEnd(raw)});if(!r||r.source==='unresolvable')continue;
+  const r=C.inferResult({...b,result:'Unknown',resultSource:'',resultGuess:undefined},{next:full[a.battle+1]?.start??null,videoEnd:C.runEnd(raw),evidence});if(!r||r.source==='unresolvable')continue;
   const rule=r.source==='guess'?r.rule:r.source,value=r.source==='guess'?r.value:(r.ending?`${r.result}:${r.ending}`:r.result),t=stats[rule]=stats[rule]||{right:0,total:0,videos:new Set()};
   t.total++;if(C.sameOutcome(a.value,value))t.right++;t.videos.add(video(a));}
  for(const t of Object.values(stats)){t.videos=t.videos.size;t.precision=t.total?t.right/t.total:null;}
@@ -93,9 +93,15 @@ function resultResolution(q,run,version){if(q?.kind!=='result'||q.audit)return n
 function resultPrediction(q,run,stats){const b=run?.full?.[q.battle],g=b?.resultGuess;if(q?.kind!=='result'||q.audit||!g||!sameBattle(q,b)||!(q.options||[]).some(o=>o.value===g.value))return null;
  const p=ruleP(g.rule,stats);return {modelTop:g.value,modelP:p,resultRule:g.rule,detail:C.guessDetail({...g,p},stats?.[g.rule])};}
 // Inferred results against reviewer answers (result accuracy) and every battle's result source, over the refitted runs.
-function resultMetrics(answers,fitted,stats){const human=new Map(answers.filter(a=>eligible(a)&&a.kind==='result').map(a=>[video(a)+':'+a.battle,a]));const acc={heldOut:0,heldOutRight:0,byRule:{}},sources={read:0,inferred:0,human:0,unresolvable:0,open:0};
- for(const [vid,run] of fitted)(run.full||[]).forEach((b,i)=>{const a=human.get(vid+':'+i),src=b.resultSource||'';
-  if(a)sources.human++;else if(src==='result screen')sources.read++;else if(RESULT_SOURCES[src])sources.inferred++;else if(src==='unresolvable')sources.unresolvable++;else sources.open++;});
+// Coverage (where each battle's result comes from), overall and by nameplate language and creator, next to accuracy.
+function resultMetrics(answers,fitted,stats,channelOf=()=>null){const human=new Map(answers.filter(a=>eligible(a)&&a.kind==='result').map(a=>[video(a)+':'+a.battle,a]));const acc={heldOut:0,heldOutRight:0,byRule:{}},sources={read:0,inferred:0,human:0,unresolvable:0,open:0},byLanguage={},byChannel={};
+ const blank=()=>({read:0,inferred:0,human:0,unresolvable:0,open:0,evidence:0});
+ for(const [vid,run] of fitted){const lang=run.nameLanguage||'en',ch=channelOf(vid)||'unknown',L=byLanguage[lang]||(byLanguage[lang]=blank()),K=byChannel[ch]||(byChannel[ch]=blank());
+  (run.full||[]).forEach((b,i)=>{const a=human.get(vid+':'+i),src=b.resultSource||'';
+  const k=a?'human':src==='result screen'?'read':RESULT_SOURCES[src]?'inferred':src==='unresolvable'?'unresolvable':'open';sources[k]++;L[k]++;K[k]++;if(src==='evidence'&&!a){L.evidence++;K.evidence++;}});}
+ // The 25 creators with the most battles (the rest are summed), so the report stays small.
+ const top=Object.entries(byChannel).sort((x,y)=>Object.values(y[1]).reduce((p,q)=>p+q,0)-Object.values(x[1]).reduce((p,q)=>p+q,0));
+ sources.byLanguage=byLanguage;sources.byChannel=Object.fromEntries(top.slice(0,25));if(top.length>25){const rest=blank();for(const [,c] of top.slice(25))for(const k in rest)rest[k]+=c[k];sources.byChannel['(others)']=rest;}
  // Per rule precision on the owner's answers (all rules, including the uncertain ones asked with a guess).
  const promoted=new Set(promotedRules(stats));
  for(const [rule,t] of Object.entries(stats||{})){acc.byRule[rule]={right:t.right,total:t.total,videos:t.videos,uncertain:C.PROMOTABLE.has(rule),promoted:promoted.has(rule)};acc.heldOut+=t.total;acc.heldOutRight+=t.right;}
@@ -131,6 +137,9 @@ function moveCalibration(input,answers,runs,gmFor,errors){const kinds=['fastMove
  const out={};for(const kind of kinds){const rs=rows.filter(r=>r.kind===kind),{pick,sweep}=T.choose(rs,MOVE_POLICY.target),ok=pick&&pick.n>=MOVE_POLICY.minTotal&&pick.videos>=MOVE_POLICY.minVideos&&pick.lower>=MOVE_POLICY.minLower;
   out[kind]={heldOut:rs.length,heldOutRight:rs.filter(r=>r.right).length,logLoss:logLoss(rs),bins:moveBins(rs),threshold:ok?pick.t:null,resolveAt:ok?Math.max(MOVE_POLICY.floor,pick.t):null,sweep:sweep.map(x=>[x.t,x.right,x.n]),right:pick?.right||0,total:pick?.n||0,videoCount:pick?.videos||0,lowerBound:ok?pick.lower:0};}
  return out;}
+// Fits the evidence table from the runs' read result screens; keeps only states with enough battles (learned.json).
+function resultEvidenceModel(runs){const ex=[];for(const [vid,{raw}] of runs)for(const b of raw.full||[])if(b.resultSource==='result screen')ex.push({video:vid,result:b.result,keys:C.resultEvidenceKey(b)});
+ const m=C.fitResultEvidence(ex);for(const [k,s] of Object.entries(m.states))if(s.n<m.minN||s.videos<m.minVideos)delete m.states[k];return m;}
 function execute(input){
  const answers=input.answers.filter(eligible),newOnly=learnedFor(answers),learned=mergeLearned(input.baseline,newOnly);if(input.fitParams&&fs.existsSync(input.fitParams)){try{input.fit=JSON.parse(fs.readFileSync(input.fitParams,'utf8')).params;}catch{}}if(input.fit)learned.fit=input.fit;learned.channels=D.channelLearned(answers.map(a=>({...a,channel:a.video?.channel})));
  const runs=new Map(),fitted=new Map(),calibration={},predictions={},resolutions={},errors=[],independentFits=new Map();
@@ -138,13 +147,18 @@ function execute(input){
  for(const r of input.runs||[]){try{const raw=Focus.attach(JSON.parse(fs.readFileSync(r.path,'utf8')),r.videoId,path.dirname(path.dirname(r.path)));if(!Array.isArray(raw.full))continue;runs.set(r.videoId,{r,raw,live:true});}catch(e){errors.push({videoId:r.videoId,error:e.message});}}
  const archived=archivedLabels(input,answers),resultsDir=input.runs?.[0]?.path?path.dirname(input.runs[0].path):null;
  for(const vid of new Set(archived.map(video)))if(!runs.has(vid)&&resultsDir){const f=path.join(resultsDir,vid+'.json');try{const raw=Focus.attach(JSON.parse(fs.readFileSync(f,'utf8')),vid,path.dirname(resultsDir));if(Array.isArray(raw.full))runs.set(vid,{r:{videoId:vid,path:f,league:raw.learningContext?.league||1500,gamemaster:raw.learningContext?.gamemaster},raw});}catch{}}
- const resultStats=ruleStats(answers,vid=>runs.get(vid)?.raw),promoted=promotedRules(resultStats);
+ // Result evidence table (core.js fitResultEvidence): every read result screen, the screen hidden. It settles a
+ // battle only where held-out read screens are ≥95% one way, and stops settling if the owner's answers disagree.
+ const evidence=resultEvidenceModel(runs);
+ let resultStats=ruleStats(answers,vid=>runs.get(vid)?.raw,evidence);const own=resultStats.evidence;
+ if(own&&own.total>=evidence.ownerMin&&own.right/own.total<evidence.ownerFloor){evidence.ownerBlocked=true;resultStats=ruleStats(answers,vid=>runs.get(vid)?.raw,evidence);}
+ learned.resultEvidence=evidence;const promoted=promotedRules(resultStats);
  // One refit per labelled video with every label from that video omitted (and its footage left out of
  // the species purple baseline). No conditioning on labels; the Shadow classifier is not applied here.
  const heldout=new Map(),heldoutFor=vid=>{const entry=runs.get(vid);if(!entry)return null;if(!heldout.has(vid)){try{heldout.set(vid,refitRun(entry.raw,{learned:learnedFor(answers,vid),league:entry.r.league||1500,gm:gmFor(entry.r),shadowModel:false,speciesPurple:Shadow.speciesPurple([...runs].filter(([k])=>k!==vid).map(([,e])=>e.raw))}));}catch(e){heldout.set(vid,null);}}return heldout.get(vid);};
  const shadowModel=trainShadow(shadowRows([...answers,...archived],heldoutFor));
  if(shadowModel){shadowModel.version=input.version;shadowModel.speciesPurple=Shadow.speciesPurple([...runs.values()].map(e=>e.raw));learned.shadowModel=shadowModel;}
- for(const [vid,{r,raw,live}] of runs){if(!live)continue;try{fitted.set(vid,refitRun(applyLeagueLabels(raw,answers,vid,input.cupCP),{learned,league:r.league||1500,gm:gmFor(r),channel:r.channel,promotedRules:promoted}));}catch(e){errors.push({videoId:vid,error:e.message});}}
+ for(const [vid,{r,raw,live}] of runs){if(!live)continue;try{fitted.set(vid,refitRun(applyLeagueLabels(raw,answers,vid,input.cupCP),{learned,league:r.league||1500,gm:gmFor(r),channel:r.channel,promotedRules:promoted,evidence}));}catch(e){errors.push({videoId:vid,error:e.message});}}
  const calibrationSeen=new Set();for(const a of [...answers].sort((a,b)=>a.qid.localeCompare(b.qid))){const vid=video(a);if(!runs.get(vid)?.live||!['form','fastMove'].includes(a.kind))continue;
   const p=prediction(heldoutFor(vid)||{},a);if(!p||p.p<.98||p.hits<4||p.margin<.9)continue;
   const unit=vid+':'+a.kind;if(calibrationSeen.has(unit))continue;calibrationSeen.add(unit);
@@ -160,7 +174,7 @@ function execute(input){
  const entry=runs.get(video(q));if(!independentFits.has(video(q)))independentFits.set(video(q),refitRun(applyLeagueLabels(entry.raw,answers,video(q),input.cupCP),{learned:{...newOnly,shadowModel:learned.shadowModel,fit:input.fit},league:entry.r.league||1500,gm:gmFor(entry.r),channel:entry.r.channel}));
  const independent=prediction(independentFits.get(video(q)),q);if(!independent||independent.value!==p.value||(!['shadow','fastMove','form'].includes(q.kind)&&p.p<.98))continue;
  const resolution=canResolve(q,independent,{answers,calibration,version:input.version,shadowModel:learned.shadowModel});if(resolution){resolution.liveConfidence=p.p;resolutions[q.qid]=resolution;}}
- const rm=resultMetrics(answers,fitted,resultStats);calibration.result=rm.calibration;
+ const rm=resultMetrics(answers,fitted,resultStats,vid=>runs.get(vid)?.r?.channel);calibration.result=rm.calibration;
  if(input.outputDir){fs.mkdirSync(input.outputDir,{recursive:true});for(const [vid,run]of fitted)fs.writeFileSync(path.join(input.outputDir,vid+'.json'),JSON.stringify(run));}
  return {learned,predictions,resolutions,calibration,errors,runsRefit:fitted.size,resultSources:rm.sources,shadowModel:shadowModel&&{cv:shadowModel.cv,thresholds:shadowModel.thresholds,n:shadowModel.n,videos:shadowModel.videos,passes:{regular:!!shadowGate(shadowModel,false),shadow:!!shadowGate(shadowModel,true)}}};
 }

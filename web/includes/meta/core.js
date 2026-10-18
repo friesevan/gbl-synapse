@@ -432,10 +432,10 @@ class HudTracker{
 const outcomeOf=v=>v==null?null:String(v).split(':')[0];
 const sameOutcome=(a,b)=>outcomeOf(a)!==null&&outcomeOf(a)===outcomeOf(b);
 const RESULT_RULES={zero:.03,alive:.1,lag:3,cut:10,fade:6};
-const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46,knockout:.96};
+const RESULT_GUESS_P={fade:.71,tie:.84,'mid-start':.47,unread:.5,'both-alive':.46,knockout:.96,'evidence-guess':.8};
 const PROMOTABLE=new Set(Object.keys(RESULT_GUESS_P));
 // Sources that inference may set and re-derive; legacy names from saved results are replaced too.
-const INFERRED_SOURCES=new Set(['','faints','surrender','unresolvable','Poké Ball count','surrender dialog',...PROMOTABLE]);
+const INFERRED_SOURCES=new Set(['','faints','surrender','unresolvable','Poké Ball count','surrender dialog','evidence',...PROMOTABLE]);
 function median(a){const s=a.filter(Number.isFinite).sort((p,q)=>p-q),n=s.length;return n?(n%2?s[n>>1]:(s[n/2-1]+s[n/2])/2):null;}
 // Each side's last HP reading in the battle's latest matchup with an HP series: {v: median fill over the last 2 s
 // of readings, t: time of the last reading}.
@@ -458,7 +458,7 @@ function guessDetail(g,stat){const n=stat&&stat.total>=10?`${stat.right} of ${st
 // The result of one finished battle from its timeline: {result, ending?, source, reason}, {source:'guess', rule,
 // value, p, reason} (uncertain: ask with this guess), {source:'unresolvable', reason} or null (undecided; ask).
 // ctx: next = start of the next battle (null if none), videoEnd = last second read.
-function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.events||[],f=b.fainted||{my:0,opponent:0},name={my:'your',opponent:'the opponent’s'};
+function inferResult(b,{next=null,videoEnd=null,evidence=null}={}){const R=RESULT_RULES,ev=b.events||[],f=b.fainted||{my:0,opponent:0},name={my:'your',opponent:'the opponent’s'};
  const guess=(rule,value,reason)=>({source:'guess',rule,value,p:RESULT_GUESS_P[rule],reason});
  if(ev.some(e=>e.kind==='surrender'&&b.end<=e.t+3))return {result:'Loss',ending:'you-forfeit',source:'surrender',reason:'Surrender dialog, then the battle ended'};
  const mid=(b.flags||[]).some(x=>x.startsWith('Recording starts mid-battle')),three=['my','opponent'].filter(s=>f[s]>=3);
@@ -466,6 +466,9 @@ function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.e
  const hp=lastHp(b),empty=x=>{const h=hp[x];return !!h&&h.v<=R.zero&&b.end-h.t<=R.lag;},standing=x=>{const h=hp[x];return !!h&&h.v>=R.alive;};
  const zeroed=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my';return f[x]>=2&&f[y]<2&&empty(x)&&standing(y);});
  if(zeroed.length===1){const x=zeroed[0];return {result:x==='opponent'?'Win':'Loss',source:'faints',reason:`Two of ${name[x]} Pokémon fainted on the Poké Ball counter and the last one's HP bar emptied at the end`};}
+ // The learned evidence table (fitResultEvidence) settles a state that held-out read screens show is ≥95% one way.
+ const ed=evidenceDecision(b,evidence);
+ if(ed?.confident)return {result:ed.value,source:'evidence',reason:`Battle evidence (${ed.key.replace(/\|/g,', ')}): ${Math.round(ed.precision*100)}% right on ${ed.n} battles with a read result screen, held out by video`};
  const lose=x=>x==='opponent'?'Win':'Loss';
  // The last knockout inside a cutscene: the defender's bar is centred there, not in either side's own HP series.
  const cut=lastCutscene(b,R.lag),ko=!!cut&&cut.v<=R.zero&&Math.abs(b.end-cut.t)<=R.lag,knocked=['my','opponent'].filter(x=>{const y=x==='my'?'opponent':'my';return ko&&f[x]>=2&&f[y]<2&&standing(y);});
@@ -480,6 +483,39 @@ function inferResult(b,{next=null,videoEnd=null}={}){const R=RESULT_RULES,ev=b.e
  const gap=next!=null?next-b.end:null,left=next==null&&videoEnd!=null?videoEnd-b.end:null;
  if(gap!==null&&gap<R.cut)return {source:'unresolvable',reason:gap<3?'The next battle’s HUD follows at once (a cut or a split battle): no result screen':`No result screen: the video cuts to the next battle ${gap.toFixed(1)} s later, no fade, and the timeline doesn’t decide`};
  if(left!==null&&left<R.cut)return {source:'unresolvable',reason:'The recording ends before a result screen, and the timeline doesn’t decide'};
+ // No rule decides: the evidence table's majority is shown as the question's guess, with its held-out precision.
+ if(ed)return {source:'guess',rule:'evidence-guess',value:ed.value,p:ed.precision,reason:`Battles with this evidence (${ed.key.replace(/\|/g,', ')}) were ${ed.value==='Win'?'won':'lost'} ${Math.round(ed.precision*100)}% of the time (${ed.n} read result screens, held out by video)`};
+ return null;}
+// ---- Result evidence model (learning-loop.cjs fits it on every refit; README "Results without a result screen") ----
+// Many uploads cut the result screen (the next battle, or another clip, follows at once). What the battle itself
+// shows still predicts the result: the Poké Ball counters at the end (usually one short of the finish, as the game
+// ends before the last faint registers), whose last HP bar emptied, and a fade with both sides standing. The table
+// counts read result screens per evidence state, the screen hidden; a state settles a battle only when, held out by
+// video, its majority was right ≥ EVIDENCE.precision of the time on ≥ EVIDENCE.minN battles from ≥ EVIDENCE.minVideos
+// videos. Coarser states back up sparse ones. Measured 2026-10-18 on 2,958 read screens: counters 1–2 → 95% Win
+// (680), 0–2 → 96% (195), 2–1 → 91% Loss (459), 2–2 → 58% (997; the HP bars decide those).
+const EVIDENCE={minN:30,minVideos:5,precision:.95,ownerFloor:.9,ownerMin:10};
+function resultEvidenceKey(b){const f=b.fainted||{},m=Math.min(f.my||0,2),o=Math.min(f.opponent||0,2),R=RESULT_RULES,hp=lastHp(b);
+ const empty=x=>{const h=hp[x];return !!h&&h.v<=R.zero&&b.end-h.t<=R.lag;},alive=x=>{const h=hp[x];return !!h&&h.v>=R.alive;};
+ const cut=lastCutscene(b,R.lag),cutEmpty=!!cut&&cut.v<=R.zero&&Math.abs(b.end-cut.t)<=R.lag;
+ const bars=empty('my')&&!empty('opponent')?'my-empty':empty('opponent')&&!empty('my')?'opp-empty':cutEmpty?'cutscene-empty':alive('my')&&alive('opponent')?'both-alive':'unknown';
+ const fade=b.fadeAt!=null&&b.fadeAt>=b.end&&b.fadeAt-b.end<=R.fade?'fade':'no-fade';
+ return [`${m}-${o}|${bars}|${fade}`,`${m}-${o}|${bars}`,`${m}-${o}`];}
+// examples: [{video, result: 'Win'|'Loss', keys: resultEvidenceKey(b)}]. Returns {states: {key: {n, win, videos, value,
+// p, heldOut: {right, total}, precision}}, ...EVIDENCE}.
+function fitResultEvidence(examples){const states={};
+ for(const e of examples){if(e.result!=='Win'&&e.result!=='Loss')continue;for(const k of e.keys){const s=states[k]||(states[k]={n:0,win:0,byVideo:{}});s.n++;if(e.result==='Win')s.win++;
+  const v=s.byVideo[e.video]||(s.byVideo[e.video]={n:0,win:0});v.n++;if(e.result==='Win')v.win++;}}
+ for(const s of Object.values(states)){let right=0,total=0;
+  // Leave one video out: the majority of the other videos' battles in this state, scored on the left-out video.
+  for(const v of Object.values(s.byVideo)){const n=s.n-v.n,w=s.win-v.win;if(!n||w*2===n)continue;const pick=w*2>n;total+=v.n;right+=pick?v.win:v.n-v.win;}
+  s.videos=Object.keys(s.byVideo).length;s.value=s.win*2>=s.n?'Win':'Loss';s.p=+((Math.max(s.win,s.n-s.win)+1)/(s.n+2)).toFixed(3);
+  s.heldOut={right,total};s.precision=total?+(right/total).toFixed(3):0;delete s.byVideo;}
+ return {...EVIDENCE,states,fitted:examples.length};}
+// The most specific state with enough data: {value, p, precision, n, videos, key, confident}.
+function evidenceDecision(b,model){if(!model?.states)return null;const t={...EVIDENCE,...model};
+ for(const k of resultEvidenceKey(b)){const s=model.states[k];if(!s||s.n<t.minN||s.videos<t.minVideos)continue;
+  return {value:s.value,p:s.p,precision:s.precision,n:s.n,videos:s.videos,key:k,confident:s.precision>=t.precision&&!model.ownerBlocked};}
  return null;}
 // Re-derives every battle result that didn't come from a result screen or a reviewer (idempotent; saved runs
 // get the current rules on every refit). promoted: rules the learning loop found ≥95% right on the owner's answers;
@@ -496,8 +532,8 @@ function stillBattle(b,{minReadings=20,share=.9}={}){let n=0;const values={my:[]
  return Object.values(values).every(v=>{if(!v.length)return true;const c=new Map();for(const x of v)c.set(x,(c.get(x)||0)+1);return Math.max(...c.values())>=share*v.length;});}
 // Drops still battles in place (run-node and the browser, once the matchups' HP series exist); returns their spans.
 function dropStillBattles(battles){const out=[];for(let i=battles.length-1;i>=0;i--)if(stillBattle(battles[i])){out.unshift({start:battles[i].start,end:battles[i].end});battles.splice(i,1);}return out;}
-function applyInferredResults(battles,{videoEnd=null,promoted=null}={}){(battles||[]).forEach((b,i)=>{if(!INFERRED_SOURCES.has(b.resultSource||''))return;
-  let r=inferResult(b,{next:battles[i+1]?.start??null,videoEnd});delete b.resultGuess;
+function applyInferredResults(battles,{videoEnd=null,promoted=null,evidence=null}={}){(battles||[]).forEach((b,i)=>{if(!INFERRED_SOURCES.has(b.resultSource||''))return;
+  let r=inferResult(b,{next:battles[i+1]?.start??null,videoEnd,evidence});delete b.resultGuess;
   if(r?.source==='guess'){if(promoted&&(promoted.has?promoted.has(r.rule):promoted.includes(r.rule))){const [res,ending]=r.value.split(':');r={result:res,ending,source:r.rule,reason:r.reason};}
    else{b.resultGuess={rule:r.rule,value:r.value,p:r.p,reason:r.reason};r=null;}}
   b.result=r?.result||'Unknown';b.resultSource=r?r.source:'';
@@ -674,5 +710,5 @@ function barDefender(series,t,until,out=null){const drop=side=>{const s=series[s
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={outcomeOf,sameOutcome,resultScale,stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene,wideBannerBox,bannerEvidence,bannerTeam,barDefender};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={outcomeOf,sameOutcome,resultScale,EVIDENCE,resultEvidenceKey,fitResultEvidence,evidenceDecision,stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene,wideBannerBox,bannerEvidence,bannerTeam,barDefender};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);

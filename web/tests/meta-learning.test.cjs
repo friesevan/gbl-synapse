@@ -51,7 +51,7 @@ test('result questions: the timeline settles or closes them by policy, re-derive
  const ans=[{qid:q(0).qid,kind:'result',battle:0,video:{id:'v'},value:'Win'},{qid:q(2).qid,kind:'result',battle:2,video:{id:'v'},value:'Loss'}],stats=L.ruleStats(ans,()=>raw);
  const m=L.resultMetrics(ans,new Map([['v',run]]),stats);
  // The owner's rule: a forfeit is a win or loss, so the surrender rule's "Loss:you-forfeit" matches the answer "Loss".
- assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:2,byRule:{faints:{right:1,total:1,videos:1,uncertain:false,promoted:false},surrender:{right:1,total:1,videos:1,uncertain:false,promoted:false}}});assert.deepEqual(m.sources,{read:0,inferred:0,human:2,unresolvable:1,open:1});
+ assert.deepEqual(m.calibration,{heldOut:2,heldOutRight:2,byRule:{faints:{right:1,total:1,videos:1,uncertain:false,promoted:false},surrender:{right:1,total:1,videos:1,uncertain:false,promoted:false}}});const {byLanguage,byChannel,...totals}=m.sources;assert.deepEqual(totals,{read:0,inferred:0,human:2,unresolvable:1,open:1});assert.deepEqual(byLanguage.en,{read:0,inferred:0,human:2,unresolvable:1,open:1,evidence:0});assert.ok(byChannel.unknown);
  assert.equal(Cc.inferResult(run.full[3],{next:null,videoEnd:500}),null);});
 
 test('result accuracy compares outcomes: a forfeit counts as the win or loss it is',()=>{const Cc=require('../includes/meta/core.js');
@@ -84,3 +84,22 @@ test('result rules: uncertain inferences are asked with the measured guess, and 
  const pr=L.resultPrediction(q,run,L.ruleStats(answers.slice(0,25),vid=>raws[vid]));assert.deepEqual([pr.modelTop,pr.resultRule],['Win:opponent-forfeit','fade']);assert.equal(pr.modelP,1);assert.match(pr.detail,/25 of 25|agreed/);
  const run2=refitRun(raws.v0,{gm,promotedRules:['fade']});assert.deepEqual([run2.full[0].result,run2.full[0].ending,run2.full[0].resultSource],['Win','opponent-forfeit','fade']);
  const r=L.resultResolution(q,run2,1);assert.deepEqual([r.value,r.source,r.rule],['Win:opponent-forfeit','timeline','fade']);});
+
+test('result evidence: read result screens, held out by video, settle a state only when it is ≥95% one way',()=>{const C=require('../includes/meta/core.js');
+ // A battle that ended with these counters and no HP readings: its evidence keys are the counters alone.
+ const battle=(my,opponent,extra={})=>({start:0,end:100,fainted:{my,opponent},matchups:[],events:[],flags:[],...extra});
+ const ex=[];for(let v=0;v<10;v++)for(let i=0;i<5;i++){ex.push({video:'v'+v,result:i<5?'Win':'Loss',keys:C.resultEvidenceKey(battle(1,2))});ex.push({video:'v'+v,result:i<3?'Win':'Loss',keys:C.resultEvidenceKey(battle(2,2))});}
+ const m=C.fitResultEvidence(ex),one=m.states['1-2'],tie=m.states['2-2'];
+ assert.deepEqual([one.n,one.videos,one.value,one.precision],[50,10,'Win',1]);assert.deepEqual([tie.n,tie.value],[50,'Win']);assert.equal(tie.precision,.6);
+ const d=C.evidenceDecision(battle(1,2),m);assert.deepEqual([d.value,d.confident,d.key],['Win',true,'1-2|unknown|no-fade'],'the most specific state with enough battles');
+ assert.equal(C.evidenceDecision(battle(2,2),m).confident,false,'a 60% state guesses, never settles');
+ assert.equal(C.evidenceDecision(battle(0,0),m),null,'no state with enough battles');
+ // Settled through inferResult (source "evidence"); the 2–2 state only adds a guess to an otherwise guessless question.
+ assert.deepEqual([C.inferResult(battle(1,2),{evidence:m}).result,C.inferResult(battle(1,2),{evidence:m}).source],['Win','evidence']);
+ const g=C.inferResult(battle(2,2),{evidence:m});assert.deepEqual([g.source,g.rule,g.value,g.p],['guess','evidence-guess','Win',.6]);
+ assert.equal(C.inferResult(battle(1,2),{evidence:{...m,ownerBlocked:true}}).source,'guess','blocked by the owner’s answers: guesses only');
+ // Fewer than 5 videos or 30 battles: no decision.
+ assert.equal(C.evidenceDecision(battle(1,2),C.fitResultEvidence(ex.filter(e=>['v0','v1','v2','v3'].includes(e.video)))),null);
+ // A battle settled this way resolves its Validate question like any timeline rule.
+ const L=require('./meta-benchmark/learning-loop.cjs'),opts=require('../includes/meta/questions.js').RESULT_OPTIONS;const b=battle(1,2);C.applyInferredResults([b],{evidence:m});
+ const r=L.resultResolution({qid:'x',kind:'result',battle:0,recording:'v.mp4',video:{id:'v'},clip:[98,114],options:opts},{full:[b]},3);assert.deepEqual([r.value,r.rule,r.source],['Win','evidence','timeline']);});
