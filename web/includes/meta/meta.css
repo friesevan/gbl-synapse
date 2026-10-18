@@ -180,7 +180,7 @@
 .ra-form{display:grid;gap:8px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--sunken)}.ra-form textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;resize:vertical}
 .ra-form .meta-actions{flex-wrap:wrap;align-items:center}.ra-hint{margin:0}
 .ra-jobs li,.ra-done li{display:grid;gap:3px}.ra-job-head{display:flex;gap:6px;align-items:center;min-width:0}.ra-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.ra-done li{grid-template-columns:auto 1fr;column-gap:6px}.ra-done li small{grid-column:2}.ra-mark{font-weight:700}.ra-ok{color:var(--good,#2e7d32)}.ra-failed{color:var(--bad,#c62828)}
+.ra-done li{grid-template-columns:auto 1fr;column-gap:6px}.ra-done li small{grid-column:2}.ra-mark{font-weight:700}.ra-ok{color:var(--good-text)}.ra-failed{color:var(--bad-text)}
 .ra-queue ul{max-height:320px;overflow:auto}.ra-queue li{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}.ra-why p{margin:6px 0}
 .hl-signin-dialog{max-width:520px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);padding:18px}
 .hl-signin-dialog::backdrop{background:rgba(0,0,0,.45)}.hl-signin-dialog h3{margin-top:0}.hl-signin-dialog .meta-actions{flex-wrap:wrap}

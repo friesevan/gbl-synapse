@@ -42,7 +42,7 @@ class QueueTest(unittest.TestCase):
             self.assertEqual((row["dl_status"], row["deleted_date"], row["allowed"], row["attempts"], row["x_status"]), (None, None, 1, 0, "done"),
                              "a missing video is downloaded again; its earlier result stays")
             reasons = {r["id"]: (r["reason"], r["scope"], r["source"]) for r in st.q("SELECT * FROM reprocess")}
-            self.assertEqual(reasons[A], ("code-fix", "auto", "owner"))
+            self.assertEqual(reasons[A], ("code-fix", "full", "owner"))
             snap = RQ.snapshot(d)
             self.assertEqual((snap["total"], snap["ready"], snap["waitingDownload"]), (2, 1, 1))
             self.assertEqual(RQ.remove(d, [A])["removed"], 1)
@@ -97,23 +97,9 @@ class QueueTest(unittest.TestCase):
             st.db.close()
 
 
-class PlanTest(unittest.TestCase):
+class CompareTest(unittest.TestCase):
     RESULT = {"videoSeconds": 900, "crop": [10, 0, 288, 640], "media": {"crop": "auto"}, "nameLanguage": "ko",
               "battles": [{"start": 100, "end": 200}, {"start": 240, "end": 330}, {"start": 700, "end": 880}]}
-
-    def test_ranges_are_padded_and_merged(self):
-        self.assertEqual(R.battle_ranges(self.RESULT, 900), [[70.0, 360.0], [670.0, 900.0]])
-        self.assertIsNone(R.battle_ranges({"battles": []}))
-
-    def test_fast_plan_reuses_battles_screen_and_language(self):
-        plan = R.fast_plan(self.RESULT, "code-fix", "auto", 900)
-        self.assertEqual(plan, {"RANGES": "70-360,670-900", "CROP": "10,0,288,640", "NAME_LANGUAGE": "ko"})
-        self.assertEqual(R.planned_seconds([[70, 360], [670, 900]], 900), 520)
-        for reason in ("battles-missing", "wrong-screen"):
-            self.assertEqual(R.fast_plan(self.RESULT, reason, "auto"), {}, reason)
-        self.assertEqual(R.fast_plan(self.RESULT, "code-fix", "full"), {})
-        self.assertEqual(R.fast_plan({"battles": []}, "code-fix", "auto"), {}, "no battles found: the whole video")
-        self.assertEqual(R.fast_plan({**self.RESULT, "media": {"crop": "1,2,3,4"}}, "code-fix", "auto")["CROP"], "1,2,3,4")
 
     def test_compare_reports_species_battles_and_results(self):
         before = {"battles": [{"start": 1, "my": ["Mewtwo (Mega Y)", "Corvisquire"], "opponent": ["Dialga"], "result": "win"}]}
@@ -145,14 +131,14 @@ class RunnerTest(unittest.TestCase):
         r.apply_retention = lambda *a, **kw: None
         return r
 
-    def test_fast_reanalysis_replaces_result_and_reports_the_change(self):
+    def test_reanalysis_replaces_result_and_reports_the_change(self):
         with tempfile.TemporaryDirectory() as d:
             r = self.fake(d)
             video = Path(d) / (A + ".mp4")
             video.write_bytes(b"x")
             (Path(d) / "results").mkdir()
             res = Path(d) / "results" / (A + ".json")
-            res.write_text(json.dumps({**PlanTest.RESULT, "battles": [{"start": 100, "end": 200, "my": ["Corvisquire"], "opponent": []}]}))
+            res.write_text(json.dumps({**CompareTest.RESULT, "battles": [{"start": 100, "end": 200, "my": ["Corvisquire"], "opponent": []}]}))
             r.state.x("INSERT INTO videos(id,dl_status,dl_path,x_status,duration,title,league,upload_date,meta) "
                       "VALUES(?,'done',?,'done',900,'Korean GBL','{}','20261001','{}')", (A, str(video)))
             RQ.queue(d, [A], reason="code-fix", db=r.state.db)
@@ -172,14 +158,15 @@ class RunnerTest(unittest.TestCase):
             with patch("harvest.subprocess.Popen", Process), patch("harvest.gamemaster_for", return_value=""), \
                     patch("harvest.write_league_refinement", return_value=None):
                 r.extract_one(claimed)
-            self.assertEqual((seen["RANGES"], seen["CROP"], seen["NAME_LANGUAGE"]), ("70-230", "10,0,288,640", "ko"))
-            self.assertNotIn("FORCE_FULL", seen)
+            self.assertEqual(seen.get("FORCE_FULL"), "1", "every re-analysis decodes the whole video")
+            self.assertNotIn("RANGES", seen)
+            self.assertNotIn("NAME_LANGUAGE", seen)
             self.assertTrue(seen["PROGRESS_FILE"].endswith(A + ".json"))
             self.assertFalse(r.state.q("SELECT * FROM reprocess"))
             self.assertEqual(json.loads(res.read_text())["battles"][0]["my"], ["Zekrom"])
             entry = r.recent[0]
             self.assertEqual((entry["outcome"], entry["mode"], entry["change"]["gained"], entry["change"]["lost"]),
-                             ("ok", "battles only", ["Zekrom"], ["Corvisquire"]))
+                             ("ok", "whole video", ["Zekrom"], ["Corvisquire"]))
             summary = r.report()
             self.assertEqual(summary["finished"]["ok"], 1)
             self.assertEqual(summary["queue"]["total"], 0)
@@ -232,15 +219,14 @@ class RunnerTest(unittest.TestCase):
             self.assertTrue(r.state.q("SELECT * FROM reprocess"))
             r.state.db.close()
 
-    def test_progress_follows_the_decoded_ranges(self):
+    def test_progress_follows_the_video_time(self):
         with tempfile.TemporaryDirectory() as d:
             r = self.fake(d)
             os.makedirs(os.path.join(d, "reanalyze", "progress"))
-            Path(d, "reanalyze", "progress", A + ".json").write_text('{"t": 700}')
-            job = {"id": A, "ranges": [[70, 360], [670, 900]], "plannedSeconds": 520, "videoSeconds": 900}
-            p = r._job_progress(job)
-            self.assertEqual((p["doneSeconds"], p["fraction"]), (320.0, 0.615))
-            self.assertEqual(p["etaSeconds"], round(200 / R.DEFAULT_REALTIME))
+            Path(d, "reanalyze", "progress", A + ".json").write_text('{"t": 300}')
+            p = r._job_progress({"id": A, "plannedSeconds": 900, "videoSeconds": 900})
+            self.assertEqual((p["doneSeconds"], p["fraction"]), (300.0, 0.333))
+            self.assertEqual(p["etaSeconds"], round(600 / R.DEFAULT_REALTIME))
             r.state.db.close()
 
 

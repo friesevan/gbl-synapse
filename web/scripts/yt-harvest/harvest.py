@@ -307,7 +307,7 @@ def consume_requeue_files(work_dir, state, inflight=()):
             # Do not reset state underneath an active worker; try again at the next tick.
             if vid in inflight:
                 continue
-            out = RQ.queue(work_dir, [vid], reason=requeue_reason(request.get("reason")), scope="auto", source="validate",
+            out = RQ.queue(work_dir, [vid], reason=requeue_reason(request.get("reason")), source="validate",
                            db=state.db)
         if out["unknown"]:
             log.warning("requeue %s: not in harvest database", vid)
@@ -1168,19 +1168,15 @@ class Harvester:
         t = time.time()
         probe, plan = None, {}
         if not ok:
-            # A requested re-analysis decodes the whole video, unless reanalysis_plan() may reuse what the earlier
-            # analysis established (reanalyze.py: battle ranges, screen box and nameplate language).
+            # A requested re-analysis (reanalyze.py) always decodes the whole video: reusing the earlier battle times or
+            # nameplate language changed answers when measured (README § 8 "Re-analysis").
             reprocess = bool(self.state.q("SELECT 1 FROM reprocess WHERE id=?", (vid,)))
-            fast = self.reanalysis_plan(vid, dict(r), res) if reprocess else {}
             if reprocess:
                 for restriction in ("RANGES", "START", "END"):
                     env.pop(restriction, None)
-                if not fast:
-                    env["FORCE_FULL"] = "1"
+                env["FORCE_FULL"] = "1"
             labels = read_json(os.path.join(self.a.work_dir, "labels", vid + ".json"), {})
-            if fast:
-                plan = dict(fast)
-            elif not getattr(self.a, "no_probe", False) and not reprocess:
+            if not getattr(self.a, "no_probe", False) and not reprocess:
                 probe = self.run_probe(vid, path, r["duration"], source_sha=source_sha)
                 plan = probe_plan(probe)
             elif reprocess and not getattr(self.a, "no_probe", False):
@@ -1302,9 +1298,6 @@ class Harvester:
             self.apply_retention("after extraction")
 
     # Hooks for reanalyze.Reanalyzer (the harvester itself only analyses each video once).
-    def reanalysis_plan(self, vid, row, result_path):
-        return {}
-
     def job_env(self, vid, plan):
         return {}
 

@@ -504,7 +504,7 @@ class HarvestService:
             'running': bool(live or pending), 'phase': phase, 'pid': (live or pending or {}).get('pid'), 'run': record,
             'stopRequested': bool((live or pending) and stop), 'abortRequested': bool((live or pending) and abort),
             'summary': summary, 'queue': reanalysis_queue.snapshot(self.work_dir, limit=300),
-            'reasons': reanalysis_queue.REASONS, 'fullReasons': sorted(reanalysis_queue.FULL_REASONS),
+            'reasons': reanalysis_queue.REASONS,
             'harvesterRunning': bool(self._runs(rows)), 'tornado': self._tornado(rows),
             'defaultJobs': max(1, min(16, (os.cpu_count() or 4) * 2 // 3)),
             'log': self._tail_file(self.work_dir / 'reanalyze.log', 30000, 60)}}
@@ -513,7 +513,7 @@ class HarvestService:
         ids = body.get('ids')
         if not isinstance(ids, (str, list)):
             raise ValueError('ids must be text or a list of video ids or URLs.')
-        result = reanalysis_queue.queue(self.work_dir, ids, body.get('reason') or 'code-fix', body.get('scope') or 'auto', 'owner')
+        result = reanalysis_queue.queue(self.work_dir, ids, body.get('reason') or 'code-fix', 'full', 'owner')
         return {**self.reanalyze_status(), 'queued': {k: v for k, v in result.items() if k != 'ids'}, 'queuedIds': result['ids']}
 
     def reanalyze_remove(self, body):

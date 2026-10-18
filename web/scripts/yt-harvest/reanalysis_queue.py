@@ -5,7 +5,7 @@ and the learning loop never lose it. Only standard-library imports: the local ap
 
 Table reprocess(id PRIMARY KEY, requested REAL, reason TEXT, scope TEXT, source TEXT):
   reason  why the video is analysed again (REASONS); it decides what the fast path may reuse
-  scope   'auto' (reuse what the earlier analysis established when the reason allows it) or 'full'
+  scope   'full' (the whole video is decoded); kept for a future verified partial mode
   source  who queued it: 'owner' (the Re-analysis card), 'validate' (a Validate answer), 'cli', 'harvester'
 """
 import fcntl
@@ -18,8 +18,7 @@ import time
 VIDEO_ID = re.compile(r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])")
 URL_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/live/|/embed/)([A-Za-z0-9_-]{11})")
 
-# Why a video is analysed again. FULL_REASONS change where battles are or which screen is read, so nothing the earlier
-# analysis found may be reused; the others change only how the frames inside known battles are read.
+# Why a video is analysed again (shown in the card; Validate's own requests map to battles-missing / wrong-screen).
 REASONS = {
     "code-fix": "The Meta Extractor changed (for example, better name reading)",
     "battles-missing": "Battles were missed or cut short",
@@ -27,8 +26,7 @@ REASONS = {
     "wrong-result": "A battle's details are wrong",
     "other": "Other",
 }
-FULL_REASONS = {"battles-missing", "wrong-screen"}
-SCOPES = ("auto", "full")
+SCOPES = ("full",)
 SOURCES = ("owner", "validate", "cli", "harvester")
 MAX_IDS = 5000
 
@@ -85,13 +83,13 @@ def _obscured(work_dir, vid):
         return False
 
 
-def queue(work_dir, ids, reason="code-fix", scope="auto", source="owner", db=None, busy=()):
+def queue(work_dir, ids, reason="code-fix", scope="full", source="owner", db=None, busy=()):
     """Queue videos for re-analysis. A video on disk goes straight to the analysis queue; one that is not is marked
     for download (by the harvester, or Tornado when the re-analysis run is told to fetch). Returns counts and lists."""
     if reason not in REASONS:
         raise ValueError("reason must be one of: " + ", ".join(REASONS))
     if scope not in SCOPES:
-        raise ValueError("scope must be auto or full")
+        raise ValueError("scope must be full")
     if source not in SOURCES:
         raise ValueError("source must be one of: " + ", ".join(SOURCES))
     ids = parse_ids(ids)
@@ -175,6 +173,6 @@ def snapshot(work_dir, limit=200):
         reasons[r["reason"] or "other"] = reasons.get(r["reason"] or "other", 0) + 1
         if len(items) < limit:
             items.append({"id": r["id"], "title": r["title"], "channel": r["channel"], "duration": r["duration"],
-                          "state": state, "reason": r["reason"] or "other", "scope": r["scope"] or "auto",
+                          "state": state, "reason": r["reason"] or "other", "scope": r["scope"] or "full",
                           "source": r["source"], "requested": r["requested"], "error": r["err"]})
     return {"total": len(rows), **counts, "reasons": reasons, "items": items}

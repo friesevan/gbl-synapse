@@ -6,15 +6,15 @@ the current Meta Extractor, in its own process, so a re-analysis never waits beh
 harvester's downloads never wait behind a long re-analysis. Both share the harvester's state database; each resets only
 its own work in progress (harvest.State reset="all" / "reprocess"), and the harvester no longer claims queued videos.
 
-    python3 -I reanalyze.py queue --ids ID,ID… [--reason code-fix] [--scope auto|full]
+    python3 -I reanalyze.py queue --ids ID,ID… [--reason code-fix]
     python3 -I reanalyze.py run [--jobs N] [--fetch-missing tornado] [--keep-running]
     python3 -I reanalyze.py status
     python3 -I reanalyze.py stop [--now]
 
-Speed (scope "auto"): when the reason doesn't question where the battles are (reanalysis_queue.FULL_REASONS), the earlier
-result's battles (padded by PAD_BEFORE_S / PAD_AFTER_S) are the only stretches decoded, its screen box is reused (no
-screen search) and its nameplate language is preset (no second pass for a late language decision). Scope "full", or a
-video whose earlier result has no battles, decodes the whole video as before.
+Every re-analysis decodes the whole video, as the first analysis did. Reusing what the earlier analysis found (its
+battle times, screen box or nameplate language) was measured on three queued videos on 2026-10-18 and changed the
+answers on two of them (a battle in the first seconds was lost; presetting the nameplate language dropped species
+reads), so it is not done; see includes/meta/README.md § 8 "Re-analysis".
 
 A queued video that is not on disk waits for the harvester to download it again (first in its download queue), or,
 with --fetch-missing tornado (the card's checkbox), is fetched through tornado_fetch.py within its 100 GB allowance.
@@ -47,56 +47,8 @@ SUMMARY = "reanalyze-summary.json"
 RUN = "reanalyze-run.json"
 STOP = "reanalyze.STOP"
 ABORT = "reanalyze.ABORT"
-PAD_BEFORE_S = 30     # a battle's HUD appears a few seconds after the VS screen; the tracker needs that lead-in
-PAD_AFTER_S = 30      # result screen, surrender dialog and fade to black follow the last bar
-MERGE_GAP_S = 45      # stretches closer than this are decoded as one
 DEFAULT_REALTIME = 3.0    # seconds of video per second per worker until this run has measured its own
 TORNADO_HEIGHT = "720"
-
-
-# ---------------------------------------------------------------------------------------------- planning
-def battle_ranges(result, duration=None):
-    """Padded, merged [start, end] stretches around the earlier result's battles, or None (decode everything)."""
-    spans = []
-    for b in (result or {}).get("battles") or []:
-        a, e = b.get("start"), b.get("end")
-        if isinstance(a, (int, float)) and isinstance(e, (int, float)) and e >= a:
-            spans.append([max(0.0, a - PAD_BEFORE_S), e + PAD_AFTER_S])
-    if not spans:
-        return None
-    spans.sort()
-    merged = [spans[0]]
-    for a, e in spans[1:]:
-        if a - merged[-1][1] <= MERGE_GAP_S:
-            merged[-1][1] = max(merged[-1][1], e)
-        else:
-            merged.append([a, e])
-    if duration:
-        merged = [[a, min(e, float(duration))] for a, e in merged if a < duration]
-    return [[round(a, 1), round(e, 1)] for a, e in merged] or None
-
-
-def planned_seconds(ranges, duration):
-    return sum(e - a for a, e in ranges) if ranges else float(duration or 0)
-
-
-def fast_plan(result, reason, scope, duration=None):
-    """Environment for run-node.cjs that reuses what the earlier analysis established, or {} for a full analysis."""
-    if scope == "full" or reason in RQ.FULL_REASONS or not result:
-        return {}
-    ranges = battle_ranges(result, duration or result.get("videoSeconds"))
-    if not ranges:
-        return {}
-    plan = {"RANGES": ",".join(f"{a:g}-{e:g}" for a, e in ranges)}
-    crop = (result.get("media") or {}).get("crop")
-    if not crop or crop == "auto":
-        box = result.get("crop")
-        crop = ",".join(str(int(v)) for v in box) if isinstance(box, list) and len(box) == 4 else ""
-    if crop:
-        plan["CROP"] = crop
-    if result.get("nameLanguage"):
-        plan["NAME_LANGUAGE"] = result["nameLanguage"]
-    return plan
 
 
 # ---------------------------------------------------------------------------------------------- before / after
@@ -141,7 +93,6 @@ class Reanalyzer(H.Harvester):
         self.jobs = {}                      # vid -> live job record for the card
         self.recent = collections.deque(maxlen=60)
         self.done = {"ok": 0, "failed": 0, "interrupted": 0, "needsDownload": 0, "videoSeconds": 0.0, "busySeconds": 0.0}
-        self.plans = {}                     # vid -> (planned seconds, mode) for queued videos (cached)
         self.started_at = dt.datetime.now(dt.timezone.utc).isoformat()
         self.fetch_proc = None
         self.fetch_tried = set()
@@ -174,17 +125,6 @@ class Reanalyzer(H.Harvester):
     def _prior(self, vid):
         return read_json(os.path.join(self.a.work_dir, "results", vid + ".json"), {})
 
-    def reanalysis_plan(self, vid, row, result_path):
-        plan = fast_plan(read_json(result_path, {}), row.get("reason") or "other", row.get("scope") or "auto", row.get("duration"))
-        with self.jobs_lock:
-            job = self.jobs.get(vid)
-            if job is not None:
-                ranges = [[float(x) for x in s.split("-")] for s in plan["RANGES"].split(",")] if plan.get("RANGES") else None
-                job.update(mode="battles only" if ranges else "whole video", ranges=ranges,
-                           plannedSeconds=round(planned_seconds(ranges, row.get("duration")), 1),
-                           language=plan.get("NAME_LANGUAGE"))
-        return plan
-
     def job_env(self, vid, plan):
         path = os.path.join(self.a.work_dir, "reanalyze", "progress", vid + ".json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -204,8 +144,8 @@ class Reanalyzer(H.Harvester):
         before = self._prior(vid)
         with self.jobs_lock:
             self.jobs[vid] = {"id": vid, "title": r.get("title") or "", "videoSeconds": r.get("duration") or 0,
-                              "reason": r.get("reason") or "other", "scope": r.get("scope") or "auto",
-                              "startedAt": time.time(), "mode": "whole video", "ranges": None,
+                              "reason": r.get("reason") or "other",
+                              "startedAt": time.time(), "mode": "whole video",
                               "plannedSeconds": r.get("duration") or 0}
         t = time.time()
         try:
@@ -237,7 +177,6 @@ class Reanalyzer(H.Harvester):
             self.done["busySeconds"] += seconds
         self.done[outcome] += 1
         self.recent.appendleft(entry)
-        self.plans.pop(vid, None)
         log.info("re-analysis %s: %s in %.0f s (%s)%s", vid, outcome, seconds, job.get("mode"),
                  " · " + entry["change"]["summary"] if outcome == "ok" else "")
 
@@ -269,13 +208,11 @@ class Reanalyzer(H.Harvester):
         planned = job.get("plannedSeconds") or job.get("videoSeconds") or 0
         if t is None:
             done = 0.0
-        elif job.get("ranges"):
-            done = sum(max(0.0, min(e, t) - a) for a, e in job["ranges"])
         else:
             done = float(t)
         rt = self.realtime()
         left = max(0.0, planned - done) / rt if planned else None
-        return {**{k: v for k, v in job.items() if k != "ranges"}, "doneSeconds": round(min(done, planned or done), 1),
+        return {**job, "doneSeconds": round(min(done, planned or done), 1),
                 "fraction": round(min(1.0, done / planned), 3) if planned else None,
                 "etaSeconds": round(left) if left is not None else None}
 
@@ -285,13 +222,6 @@ class Reanalyzer(H.Harvester):
             return max(0.3, self.done["videoSeconds"] / self.done["busySeconds"])
         return DEFAULT_REALTIME
 
-    def _planned(self, vid, duration, reason, scope):
-        if vid not in self.plans:
-            plan = fast_plan(self._prior(vid), reason or "other", scope or "auto", duration)
-            ranges = [[float(x) for x in s.split("-")] for s in plan["RANGES"].split(",")] if plan.get("RANGES") else None
-            self.plans[vid] = (planned_seconds(ranges, duration), "battles only" if ranges else "whole video")
-        return self.plans[vid]
-
     def report(self):
         snap = RQ.snapshot(self.a.work_dir, limit=0)
         with self.jobs_lock:
@@ -299,7 +229,7 @@ class Reanalyzer(H.Harvester):
         ready = self.state.q("SELECT v.id, v.duration, r.reason, r.scope FROM reprocess r JOIN videos v ON v.id=r.id "
                              "WHERE v.dl_status='done' AND v.deleted_date IS NULL AND COALESCE(v.x_status,'') NOT IN "
                              "('working','reworking')")
-        waiting_s = sum(self._planned(r["id"], r["duration"], r["reason"], r["scope"])[0] for r in ready)
+        waiting_s = sum(float(r["duration"] or 0) for r in ready)
         active_s = sum(max(0.0, (j.get("plannedSeconds") or 0) - (j.get("doneSeconds") or 0)) for j in active)
         workers = max(1, min(self.extract_jobs, len(ready) + len(active)))
         eta = (waiting_s + active_s) / (self.realtime() * workers) if (ready or active) else 0
@@ -387,7 +317,7 @@ def parse(argv=None):
     ap.add_argument("--download-dir", default=os.environ.get("YT_HARVEST_DL", H.DEFAULT_DL))
     ap.add_argument("--ids", default="", help="queue/remove: ids or YouTube URLs, comma or newline separated ('-' = stdin)")
     ap.add_argument("--reason", default="code-fix", choices=sorted(RQ.REASONS))
-    ap.add_argument("--scope", default="auto", choices=RQ.SCOPES)
+    ap.add_argument("--scope", default="full", choices=RQ.SCOPES, help=argparse.SUPPRESS)
     ap.add_argument("--jobs", type=int, default=0, help="run: parallel analyses (default 2/3 of the cores)")
     ap.add_argument("--fetch-missing", default="none", choices=["none", "tornado"],
                     help="run: download queued videos that are not on disk through Tornado (requested downloads only)")

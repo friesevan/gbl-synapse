@@ -15,7 +15,7 @@ const WHY=[
  ['When Validate shows a video was read wrongly.','“Battles are shown” on a video with none found, a different championship screen, or a crop that missed the phone: those requests are queued here automatically.'],
  ['When an analysis was interrupted or failed.','A stopped analysis stays queued. A failed one keeps the earlier result.'],
 ];
-const SPEED='Auto (fastest safe): when the reason doesn’t question where the battles are, only the stretches around the battles found last time are decoded, with the same phone screen and nameplate language. That skips the screen search and the second pass for late language detection, often half the time or less. “Whole video” decodes everything, as the first analysis did.';
+const SPEED='Each video is analysed in full, as the first time. Most of the time goes to reading text on the screen (about 2,000 OCR reads per video), not to decoding; reusing the earlier battle times or nameplate language was tried and changed answers, so it is not used. More workers help until the cores are busy.';
 
 function mount(host,ctx){
  const v={ctx,host,data:null,busy:false,timer:null};
@@ -33,11 +33,9 @@ function mount(host,ctx){
  const form=el('form',null,'ra-form');form.hidden=true;
  const ids=el('textarea');ids.rows=4;ids.placeholder='Video ids or YouTube links, one per line or separated by commas';ids.setAttribute('aria-label','Videos to analyse again');
  const reason=el('select');reason.setAttribute('aria-label','Why these videos need re-analysis');
- const scope=el('select');scope.setAttribute('aria-label','How much of each video to analyse');
- for(const [val,label] of [['auto','Auto: battles found last time (fastest)'],['full','Whole video']]){const o=el('option',label);o.value=val;scope.append(o);}
- const rl=el('label','Reason ');rl.append(reason);const sl=el('label','Analyse ');sl.append(scope);
+ const rl=el('label','Reason ');rl.append(reason);
  const add=el('button','Add to queue'),cancel=el('button','Cancel','secondary');add.type='submit';cancel.type='button';
- const formActions=el('div',null,'meta-actions');formActions.append(rl,sl,add,cancel);
+ const formActions=el('div',null,'meta-actions');formActions.append(rl,add,cancel);
  const formResult=el('p',null,'hint');formResult.setAttribute('role','status');
  form.append(ids,formActions,el('p',SPEED,'hint'),formResult);
  const hint=el('p',null,'hint ra-hint');
@@ -48,12 +46,12 @@ function mount(host,ctx){
  const why=el('details',null,'meta-advanced ra-why');why.append(el('summary','When and why videos need re-analysis'));for(const [t,d] of WHY){const p=el('p');p.append(el('strong',t+' '),document.createTextNode(d));why.append(p);}why.append(el('p',SPEED,'hint'));
  const logBox=el('details',null,'meta-harvest-log');const logPre=el('pre');logBox.append(el('summary','Re-analysis log'),logPre);
  host.classList.add('ra');host.replaceChildren(head,intro,banner,counts,controls,form,hint,overall,grid,queued,why,logBox);
- Object.assign(v,{banner,counts,queueBtn,startBtn,stopBtn,abortBtn,jobs,fetch,fetchText,form,ids,reason,scope,formResult,hint,overall,active,recent,queued,qsum,qlist,clear,logPre});
+ Object.assign(v,{banner,counts,queueBtn,startBtn,stopBtn,abortBtn,jobs,fetch,fetchText,form,ids,reason,formResult,hint,overall,active,recent,queued,qsum,qlist,clear,logPre});
  queueBtn.onclick=()=>{form.hidden=!form.hidden;if(!form.hidden)ids.focus();};
  cancel.onclick=()=>{form.hidden=true;};
  form.onsubmit=async e=>{e.preventDefault();if(!ids.value.trim()){formResult.textContent='Paste at least one video id or link.';return;}
   add.disabled=true;formResult.textContent='Queuing…';
-  try{const d=await ctx.api('/api/reanalyze/queue',{ids:ids.value,reason:reason.value,scope:scope.value});const q=d.queued||{};
+  try{const d=await ctx.api('/api/reanalyze/queue',{ids:ids.value,reason:reason.value});const q=d.queued||{};
    const parts=[num(q.queued)+' queued'];if(q.onDisk)parts.push(num(q.onDisk)+' on disk');if(q.needDownload)parts.push(num(q.needDownload)+' need a download');if(q.busy)parts.push(num(q.busy)+' busy right now (queued anyway)');
    if(q.unknown)parts.push(num(q.unknown)+' not in the harvest ('+(d.queuedIds?.unknown||[]).slice(0,5).join(', ')+((q.unknown||0)>5?'…':'')+')');if(q.obscured)parts.push(num(q.obscured)+' skipped: marked obscured in Validate');
    formResult.textContent=parts.join(' · ')+'.';if(q.queued)ids.value='';render(v,d.reanalyze);}
@@ -100,20 +98,20 @@ function render(v,d){
  // Active videos
  const act=s.active||[];v.active.replaceChildren(el('h4','Analysing now · '+act.length));
  if(act.length){const ul=el('ul',null,'hl-jobs ra-jobs');for(const j of act){const li=el('li');const top=el('div',null,'ra-job-head');
-   top.append(el('span',j.mode==='battles only'?'battles':'whole','hl-tag hl-tag-analysis'),el('span',j.title||j.id,'ra-title'));
+   top.append(el('span','analysing','hl-tag hl-tag-analysis'),el('span',j.title||j.id,'ra-title'));
    const planned=j.plannedSeconds||j.videoSeconds||0;
-   li.append(top,bar(j.fraction),el('small',(j.doneSeconds!=null?span(j.doneSeconds)+' of '+span(planned)+' of video':span(planned)+' of video')+(j.etaSeconds!=null?' · about '+span(j.etaSeconds)+' left':'')+(j.language?' · nameplates '+j.language:'')+' · started '+clock(j.startedAt)));ul.append(li);}
+   li.append(top,bar(j.fraction),el('small',(j.doneSeconds!=null?span(j.doneSeconds)+' of '+span(planned)+' of video':span(planned)+' of video')+(j.etaSeconds!=null?' · about '+span(j.etaSeconds)+' left':'')+' · started '+clock(j.startedAt)));ul.append(li);}
   v.active.append(ul);}else v.active.append(el('p',running?'Waiting for videos on disk.':'Not running.','hint'));
  // Recent outcomes
  const rec=s.recent||[];v.recent.replaceChildren(el('h4','Finished · '+num((fin.ok||0)+(fin.failed||0))));
  if(rec.length){const ul=el('ul',null,'hl-jobs ra-done');for(const r of rec.slice(0,12)){const [mark,label]=OUTCOME[r.outcome]||['•',r.outcome];const li=el('li');
-   li.append(el('span',mark,'ra-mark ra-'+r.outcome),el('span',r.title||r.id,'ra-title'),el('small',(r.outcome==='ok'?(r.change?.summary||'no change'):label+(r.error?': '+r.error:''))+' · '+span(r.seconds)+(r.mode?' · '+r.mode:'')));
+   li.append(el('span',mark,'ra-mark ra-'+r.outcome),el('span',r.title||r.id,'ra-title'),el('small',(r.outcome==='ok'?(r.change?.summary||'no change'):label+(r.error?': '+r.error:''))+' · '+span(r.seconds)));
    li.title=label;ul.append(li);}v.recent.append(ul);}else v.recent.append(el('p','Nothing finished in this run yet.','hint'));
  // Queue list
  const items=q.items||[];v.qsum.textContent='Queued videos · '+num(q.total)+(q.total>items.length?' (first '+num(items.length)+' shown)':'');
  v.qlist.replaceChildren(...items.map(i=>{const li=el('li');const [tag,tip]=STATE[i.state]||[i.state,''];const t=el('span',tag,'hl-tag '+(i.state==='waitingDownload'?'hl-tag-download':i.state==='running'?'hl-tag-analysis':''));t.title=tip;
   const a=el('a',i.title||i.id);a.href='https://www.youtube.com/watch?v='+encodeURIComponent(i.id);a.target='_blank';a.rel='noopener';
-  li.append(t,a,el('small',' '+((d.reasons||{})[i.reason]||i.reason)+(i.scope==='full'?' · whole video':'')+(i.duration?' · '+span(i.duration):'')));return li;}));
+  li.append(t,a,el('small',' '+((d.reasons||{})[i.reason]||i.reason)+(i.duration?' · '+span(i.duration):'')));return li;}));
  v.queued.hidden=!q.total;v.clear.hidden=!items.some(i=>i.state==='ready'||i.state==='waitingDownload');
  v.logPre.textContent=(d.log||[]).slice(-40).join('\n')||'No re-analysis runs yet.';
  sync(v);
