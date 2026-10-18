@@ -14,6 +14,7 @@
 //   START=s END=s     analyse part of the file (run-batch.cjs splits long files this way)
 //   RANGES=s-e,s-e    analyse only these stretches (probe.cjs battle ranges), one tracker throughout
 //   FFMPEG_THREADS=n  decoder and filter threads (default: ffmpeg's auto)
+//   PROGRESS_FILE=p   write {t: current video seconds} to p every 10 s of video
 //   FPS=10 HUD_EVERY=5
 //   DECODE_ROWS=full  also decode the rows below the last one the analysis reads (default: cropped)
 //   LEARNED_PATH=path   frozen reviewer-only learned priors for this video
@@ -34,6 +35,9 @@ const SPECIES_ONLY=process.env.SPECIES_ONLY==='1',FPS=Number(process.env.FPS||(S
 const rangePlan=Range.planWindow({ranges:Range.parseRanges(process.env.RANGES,{forceFull:process.env.FORCE_FULL==='1'}),start:START,end:END??Infinity,forceFull:process.env.FORCE_FULL==='1'}),RANGES=rangePlan.ranges;
 if(rangePlan.mode==='empty')throw Error('No planned ranges intersect START/END; use run-batch for empty tasks');
 // FFMPEG_THREADS also caps the filter graph's threads: with 1, ffmpeg spends ~7% less CPU on the same bytes.
+// PROGRESS_FILE=path: the current video time is written there every 10 s of video (reanalyze.py's progress bars).
+const PROGRESS=process.env.PROGRESS_FILE||'',PROGRESS_EVERY=100;let progressTries=0;
+function progress(t){if(progressTries>20)return;try{fs.writeFileSync(PROGRESS+'.tmp',JSON.stringify({t:+t.toFixed(1),at:Date.now()}));fs.renameSync(PROGRESS+'.tmp',PROGRESS);}catch{progressTries++;}}
 const THREADS=process.env.FFMPEG_THREADS?['-threads',String(process.env.FFMPEG_THREADS),'-filter_threads',String(process.env.FFMPEG_THREADS)]:[];
 const dict=C.dictionary(gm.pokemon),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'meta-bench-'));
 // Other UI languages (core.js LOCALES): Latin-script names come from the English OCR text; Japanese, Korean and
@@ -105,7 +109,7 @@ const diffShare=(a,b)=>{if(!b)return 1;let n=0;for(let i=0;i<a.length;i++)n+=a[i
  const ff=spawn('ffmpeg',args,{stdio:['ignore','pipe','inherit']}),finishedDecode=new Promise(resolve=>{ff.on('error',error=>resolve({error}));ff.on('close',code=>resolve({code}));});
  for await(const chunk of ff.stdout){let off=0;
   while(off<chunk.length){const n=Math.min(chunk.length-off,frameBytes-filled);chunk.copy(frame,filled,off,off+n);filled+=n;off+=n;if(filled<frameBytes)break;filled=0;
-   metrics.ms.decodeWait+=now()-waitFrom;const t=base+(k-k0)/FPS,isHud=k%HUD_EVERY===0;k++;lastT=t;metrics.frames++;const img={data:frame,width:W,height:H};
+   metrics.ms.decodeWait+=now()-waitFrom;const t=base+(k-k0)/FPS,isHud=k%HUD_EVERY===0;k++;lastT=t;metrics.frames++;if(PROGRESS&&k%PROGRESS_EVERY===0)progress(t);const img={data:frame,width:W,height:H};
    if(isHud){const t0=now();metrics.hudFrames++;
     if(dy===null){dy=calibrationCache.run(img,()=>C.calibrate(img));hudOffset.dy=dy;}
     let hud=dy===null?null:C.readHud(img,dy);

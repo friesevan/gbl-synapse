@@ -13,6 +13,7 @@ import subprocess
 import threading
 import time
 
+import reanalysis_queue
 import youtube_auth
 
 HERE = Path(__file__).resolve().parent
@@ -476,6 +477,91 @@ class HarvestService:
             if self._runs() or self._pending():
                 (self.work_dir / 'STOP').touch()
             return self.status()
+
+    # ---- Re-analysis (reanalyze.py, its own process; Meta Extractor › Analyze & review › Re-analysis)
+    def _reanalyzer(self, rows):
+        record = read_json(self.work_dir / 'reanalyze-run.json', {})
+        live = next((r for r in rows if r['pid'] == record.get('pid') and r['identity'] == record.get('identity')
+                     and 'reanalyze.py' in r['command'] and not re.match(r'^\S*caffeinate(?:\s|$)', r['command'])), None) \
+            if record.get('phase') == 'running' else None
+        launch = read_json(self.work_dir / 'reanalyze-launch.json', {})
+        pending = None if live else next((r for r in rows if r['pid'] == launch.get('pid') and r['identity'] == launch.get('identity')
+                                          and 'reanalyze.py' in r['command']), None)
+        return live, pending, record
+
+    def reanalyze_status(self):
+        try:
+            rows = self.processes()
+        except (OSError, subprocess.SubprocessError):
+            rows = []
+        live, pending, record = self._reanalyzer(rows)
+        stop, abort = (self.work_dir / 'reanalyze.STOP').exists(), (self.work_dir / 'reanalyze.ABORT').exists()
+        phase = ('stopping' if stop else 'running') if live else 'starting' if pending else record.get('phase') or 'idle'
+        if not live and not pending and phase == 'running':
+            phase = 'interrupted'
+        summary = read_json(self.work_dir / 'reanalyze-summary.json', {})
+        return {'available': True, 'reanalyze': {
+            'running': bool(live or pending), 'phase': phase, 'pid': (live or pending or {}).get('pid'), 'run': record,
+            'stopRequested': bool((live or pending) and stop), 'abortRequested': bool((live or pending) and abort),
+            'summary': summary, 'queue': reanalysis_queue.snapshot(self.work_dir, limit=300),
+            'reasons': reanalysis_queue.REASONS, 'fullReasons': sorted(reanalysis_queue.FULL_REASONS),
+            'harvesterRunning': bool(self._runs(rows)), 'tornado': self._tornado(rows),
+            'defaultJobs': max(1, min(16, (os.cpu_count() or 4) * 2 // 3)),
+            'log': self._tail_file(self.work_dir / 'reanalyze.log', 30000, 60)}}
+
+    def reanalyze_queue(self, body):
+        ids = body.get('ids')
+        if not isinstance(ids, (str, list)):
+            raise ValueError('ids must be text or a list of video ids or URLs.')
+        result = reanalysis_queue.queue(self.work_dir, ids, body.get('reason') or 'code-fix', body.get('scope') or 'auto', 'owner')
+        return {**self.reanalyze_status(), 'queued': {k: v for k, v in result.items() if k != 'ids'}, 'queuedIds': result['ids']}
+
+    def reanalyze_remove(self, body):
+        ids = body.get('ids')
+        if not isinstance(ids, (str, list)):
+            raise ValueError('ids must be text or a list of video ids.')
+        return {**self.reanalyze_status(), 'removed': reanalysis_queue.remove(self.work_dir, ids)['removed']}
+
+    def reanalyze_start(self, body):
+        jobs = body.get('jobs', max(1, min(16, (os.cpu_count() or 4) * 2 // 3)))
+        if isinstance(jobs, bool) or not isinstance(jobs, int) or not 1 <= jobs <= min(16, os.cpu_count() or 4):
+            raise ValueError('jobs must be an integer between 1 and %s.' % min(16, os.cpu_count() or 4))
+        fetch = body.get('fetchMissing') is True
+        with self.lock, file_lock(self.work_dir / 'start.lock'):
+            live, pending, _ = self._reanalyzer(self.processes())
+            if live or pending or reanalysis_queue.reanalyzer_running(str(self.work_dir)):
+                return self.reanalyze_status()
+            deps = self.dependency_probe()
+            if not deps['ready']:
+                raise RuntimeError('Cannot start: ' + ', '.join(deps['missing']) + '. ' + deps.get('message', ''))
+            for name in ('reanalyze.STOP', 'reanalyze.ABORT'):
+                (self.work_dir / name).unlink(missing_ok=True)
+            env = dict(os.environ, PATH='/opt/homebrew/bin:' + os.environ.get('PATH', ''), YT_HARVEST_WORK=str(self.work_dir), YT_HARVEST_QUIET='1')
+            command = [deps['python'], '-I', str(self.web_root / 'scripts/yt-harvest/reanalyze.py'), 'run', '--work-dir',
+                       str(self.work_dir), '--jobs', str(jobs)] + (['--fetch-missing', 'tornado'] if fetch else [])
+            caffeinate = shutil.which('caffeinate')
+            if caffeinate:
+                command = [caffeinate, '-i'] + command
+            with (self.work_dir / 'reanalyze-launcher.log').open('ab') as stream:
+                child = self.popen(command, cwd=str(self.web_root), env=env, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
+            self.children.append(child)
+            current = next((row for row in self.processes() if row['pid'] == child.pid), {})
+            atomic_json(self.work_dir / 'reanalyze-launch.json', {'pid': child.pid, 'identity': current.get('identity'),
+                        'jobs': jobs, 'fetchMissing': fetch, 'startedAt': time.time()})
+            result = self.reanalyze_status()
+            exit_code = child.poll()
+            if exit_code is not None and exit_code != 0:
+                tail = self._tail_file(self.work_dir / 'reanalyze-launcher.log')
+                raise RuntimeError('Re-analysis failed to start: ' + (tail[-1] if tail else 'exit %s' % exit_code))
+            if not result['reanalyze']['running'] and exit_code is None:
+                result['reanalyze'].update(running=True, phase='starting', pid=child.pid)
+            return result
+
+    def reanalyze_stop(self, body):
+        (self.work_dir / 'reanalyze.STOP').touch()
+        if body.get('now') is True:
+            (self.work_dir / 'reanalyze.ABORT').touch()
+        return self.reanalyze_status()
 
     def feedback(self):
         with self.lock:

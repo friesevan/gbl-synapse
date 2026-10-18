@@ -947,6 +947,7 @@ class FocusCupTest(unittest.TestCase):
         db.execute("CREATE TABLE videos(id TEXT, title TEXT, channel_id TEXT, duration REAL, meta TEXT, meta_status TEXT, "
                    "dl_status TEXT, attempts INTEGER DEFAULT 0, allowed INTEGER, rel_label TEXT, upload_date TEXT, "
                    "approx_ts INTEGER, rel_score REAL, league TEXT)")
+        db.execute("CREATE TABLE reprocess(id TEXT PRIMARY KEY, requested REAL)")
         rows = [("new-gl", "Great League set", '{"leagueId": "great"}', "20261014"),
                 ("old-lc", "LITTLE CUP team", '{"leagueId": "little"}', "20250101"),
                 ("new-lc", "Pokemon go set", '{"leagueId": "little"}', "20261013"),

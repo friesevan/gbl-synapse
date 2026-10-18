@@ -205,7 +205,9 @@ class Pipeline(unittest.TestCase):
             row=h.state.q('SELECT * FROM videos')[0];self.assertIsNone(row['dl_status']);self.assertEqual(row['x_status'],'done')
             # Once downloaded, the extraction queue takes it although x_status is 'done'.
             path.write_bytes(b'fake');h.state.x("UPDATE videos SET dl_status='done',deleted_date=NULL")
-            claimed=h._claim(H.X_CLAIM,(),'x_status',lambda r:'reworking' if r['x_status']=='done' else 'working')
+            # The harvester analyses each video once; requested re-analyses go to reanalyze.py's queue.
+            self.assertIsNone(h._claim(H.X_CLAIM,(),'x_status','working'))
+            claimed=h._claim(H.X_REPROCESS_CLAIM,(),'x_status',lambda r:'reworking' if r['x_status']=='done' else 'working')
             self.assertEqual(claimed['id'],vid);self.assertEqual(h.state.q('SELECT x_status FROM videos')[0][0],'reworking')
             h.export_validation=lambda *a,**kw:0
             seen=[]

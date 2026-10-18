@@ -73,6 +73,8 @@ class LocalHandler(SimpleHTTPRequestHandler):
         try:
             if path == '/api/harvest/status':
                 self._json(200, self.service.status())
+            elif path == '/api/reanalyze/status':
+                self._json(200, self.service.reanalyze_status())
             elif path == '/api/harvest/auth':
                 # YouTube sign-in for the harvester (scripts/yt-harvest/youtube_auth.py): the browser it reads, never cookie values.
                 self._json(200, self.service.auth_state())
@@ -125,6 +127,15 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 result = self.service.save_auth(body)
             elif path == '/api/harvest/auth/test':
                 result = self.service.test_auth(body)
+            elif path == '/api/reanalyze/queue':
+                # Meta Extractor › Re-analysis (scripts/yt-harvest/reanalyze.py): queue, start, stop.
+                result = self.service.reanalyze_queue(body)
+            elif path == '/api/reanalyze/remove':
+                result = self.service.reanalyze_remove(body)
+            elif path == '/api/reanalyze/start':
+                result = self.service.reanalyze_start(body)
+            elif path == '/api/reanalyze/stop':
+                result = self.service.reanalyze_stop(body)
             elif path == '/api/validation/answers':
                 answers = body.get('answers')
                 if not isinstance(answers, list) or len(answers) > 1000:

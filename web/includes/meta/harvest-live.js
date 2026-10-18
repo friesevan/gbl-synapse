@@ -125,6 +125,44 @@ function update(view,h){
  card(view.errors,'Recent problems',errs.length?[(()=>{const ul=el('ul',null,'hl-jobs hl-problems');for(const e of errs.slice(0,8)){const li=el('li');li.append(el('span',kindLabel[e.kind]||'error','hl-tag hl-tag-'+(e.kind||'other')),el('span',(e.title||e.id||'')+(e.error?' — '+e.error.replace(/^\w+: /,'').replace(/ERROR: \[youtube\] [\w-]+: /,'').slice(0,160):'')));ul.append(li);}return ul;})(),el('p',num(total.downloadErrors)+' download and '+num(total.metaErrors)+' metadata failures in total. Unavailable videos (private, members-only, removed) are expected and skipped.','hint')]:[el('p','No recent problems.','hint')]);
  view.lines=h.log||[];renderLog(view);
  if(view.authEl.open&&!view.authBusy&&!view.auth)loadAuth(view);
+ watchBlocks(view,h);view.firstUpdateDone=true;
 }
-root.HarvestLive={mount,update,parseHelpers:{span,ago}};
+// Sign-in prompt: shown every time downloads start (the owner's rule: YouTube's bot check is what stops downloads),
+// and once per new bot-check block while a run is going. Tests the saved sign-in before the harvester starts.
+function promptSignIn(view,{blocked=false}={}){
+ return new Promise(resolve=>{
+  const d=view.signInDialog||(view.signInDialog=buildDialog(view));d.resolve=resolve;
+  d.title.textContent=blocked?'YouTube is blocking downloads':'Sign in to YouTube before downloading';
+  d.lead.textContent=blocked?'YouTube asked the harvester to sign in (“confirm you’re not a bot”). Downloads pause until a working sign-in is saved.':'Downloads go through your YouTube sign-in, which keeps YouTube’s bot check from blocking them. Make sure you are signed in to YouTube in the browser chosen below, then test it.';
+  d.go.textContent=blocked?'Test sign-in':'Test sign-in and start';d.anyway.hidden=true;d.anyway.textContent=blocked?'Dismiss':'Start without a working sign-in';
+  d.msg.textContent='';d.msg.className='hl-auth-result';d.state.textContent='Loading the saved sign-in…';d.blocked=blocked;
+  loadAuth(view,true).then(()=>{const c=view.auth?.config||{};d.state.textContent='Saved sign-in: '+(c.label||'none')+(c.mode&&c.mode!=='none'?'':'. Choose a browser in “YouTube sign-in” below.');d.state.className='hl-auth-state '+(c.mode&&c.mode!=='none'?'hl-good':'hl-bad');});
+  if(typeof d.el.showModal==='function')d.el.showModal();else d.el.setAttribute('open','');
+ });
+}
+function buildDialog(view){
+ const dlg=el('dialog',null,'hl-signin-dialog'),title=el('h3'),lead=el('p'),state=el('p',null,'hl-auth-state'),msg=el('p',null,'hl-auth-result');
+ const open=el('a','Open YouTube sign-in ↗');open.href=SIGN_IN;open.target='_blank';open.rel='noopener';
+ const go=el('button'),change=el('button','Change sign-in…','secondary'),anyway=el('button','','secondary'),cancel=el('button','Cancel','secondary');for(const b of [go,change,anyway,cancel])b.type='button';
+ const actions=el('div',null,'meta-actions');actions.append(go,change,anyway,cancel);
+ dlg.append(title,lead,open,state,actions,msg,el('p','Cookies stay in the browser on this Mac; yt-dlp reads them when it contacts YouTube.','hint'));
+ const d={el:dlg,title,lead,state,msg,go,anyway,resolve:null,blocked:false};
+ const finish=ok=>{if(dlg.open)dlg.close();else dlg.removeAttribute('open');const r=d.resolve;d.resolve=null;r?.(ok);};
+ go.onclick=async()=>{const c=view.auth?.config||{};if(!c.mode||c.mode==='none'){msg.className='hl-auth-result hl-bad';msg.textContent='No sign-in is saved yet. Choose “Change sign-in…”, pick the browser you are signed in with, and use “Test and use for harvesting”.';d.anyway.hidden=false;return;}
+  go.disabled=true;msg.className='hl-auth-result';msg.textContent='Testing with YouTube… macOS may ask for keychain access to the browser’s cookies: choose Always Allow.';
+  try{const t=await view.ctx.api('/api/harvest/auth/test',{config:c});const ok=t.ok&&!/no YouTube cookies/.test(t.message||'');
+   msg.className='hl-auth-result '+(ok?'hl-good':'hl-bad');msg.textContent=(ok?'✓ ':'✗ ')+(t.message||'')+(ok?'':' Sign in to YouTube in that browser profile, then test again.');
+   if(ok){setTimeout(()=>finish(true),d.blocked?1200:400);}else d.anyway.hidden=false;}
+  catch(e){msg.className='hl-auth-result hl-bad';msg.textContent=e.message;d.anyway.hidden=false;}
+  go.disabled=false;};
+ change.onclick=()=>{finish(false);view.authEl.open=true;loadAuth(view);view.authEl.scrollIntoView({behavior:'smooth',block:'start'});};
+ anyway.onclick=()=>finish(!d.blocked);cancel.onclick=()=>finish(false);
+ dlg.addEventListener('cancel',e=>{e.preventDefault();finish(false);});
+ view.host.append(dlg);return d;
+}
+// While a run is going: a new bot-check block opens the prompt once (not again for the same block).
+function watchBlocks(view,h){const yt=h.youtube||{},blk=yt.lastBlock;if(!h.running||!blk||blk.kind!=='bot-check'||(h.health||{}).action!=='signin')return;
+ const key=String(blk.at);if(view.promptedBlock===key||view.signInDialog?.el.open)return;view.promptedBlock=key;
+ if(view.promptedBlock&&view.firstUpdateDone)promptSignIn(view,{blocked:true});}
+root.HarvestLive={mount,update,promptSignIn,parseHelpers:{span,ago}};
 })(typeof window==='undefined'?globalThis:window);
