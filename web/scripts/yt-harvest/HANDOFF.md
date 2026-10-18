@@ -520,3 +520,11 @@ Details: `includes/meta/README.md` §6 *At harvest scale, and the language searc
   Corvisquire's 푸크로우, 3 from Zekrom's 제크로무). The fix is the owner-request branch "WIP nameplate checks"
   (worktree-agent-acc132cc82ce829aa, another session). After it merges, requeue the CJK videos with suggestion-quality
   members.
+
+## Status 2026-10-17 (live status for any run, YouTube sign-in)
+
+- **Terminal runs are live in the card.** A run started as `python3 -I scripts/yt-harvest/harvest.py overnight …` (relative path) was not matched by `is_harvester()` and showed as "interrupted". `HarvestService._runs()` now also accepts the process whose PID and start time match `run.json`. Stop safely works on it.
+- **Why downloads failed.** Every direct download in the 2026-10-17 run hit YouTube's bot check (`Sign in to confirm you’re not a bot. Use --cookies`), and the shared pause grew to 58 minutes. Only `tornado_fetch.py` (paid API, 32 of 100 GB used) delivered videos.
+- **Sign-in.** Meta Extractor › Analyze & review › harvester card › **YouTube sign-in**: choose the browser and profile signed in to YouTube (or a cookies.txt file), **Test**, then **Test and use for harvesting**. This writes `WORK/youtube-auth.json` (`youtube_auth.py`); `Harvester.ydl()` passes it to yt-dlp as `cookiesfrombrowser` / `cookiefile`. Command line: `python3 -I web/scripts/yt-harvest/youtube_auth.py test --config '{"mode":"browser","browser":"chrome"}'`. A harvester started before this change does not read the file: stop it and start it again.
+- **Live report.** `summary.json` gains `youtube` (blocks, bot checks, pause, last block and download, last hour's outcomes, current rates, sign-in) and `run` (settings and deadline). For older running harvesters `service.py` derives the same from `harvest.log`. API: `GET /api/harvest/auth`, `POST /api/harvest/auth`, `POST /api/harvest/auth/test`. Tests: `python3 -m unittest test_harvest_live` (in this folder).
+

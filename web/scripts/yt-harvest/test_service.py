@@ -110,7 +110,7 @@ class Services(unittest.TestCase):
         self.assertEqual(len(status['activeJobs']),32)
         self.assertEqual(len(status['errors']),10)
         self.assertLessEqual(len(status['errors'][0]['error']),500)
-        self.assertLessEqual(len(status['log']),35)
+        self.assertLessEqual(len(status['log']),120)  # the panel's 'Problems only' filter reads the last 120 lines
         self.assertEqual(status['log'][-1],'end')
         state.db.close()
 

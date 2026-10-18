@@ -40,6 +40,7 @@ import league as L  # noqa: E402
 import policy as P  # noqa: E402
 import validate as V  # noqa: E402
 import ytapi  # noqa: E402
+import youtube_auth  # noqa: E402
 import probe_cache as PC  # noqa: E402
 import media_cache as MC  # noqa: E402
 from media_cache import retained_file  # noqa: E402
@@ -286,12 +287,19 @@ class Backoff:
                 self.k -= 1          # 20 clean minutes undo one doubling
                 self.last_ok = now
 
-    def wait(self, stop):
+    def wait(self, stop, check=None):
+        """check() runs every 15 s while paused (a new YouTube sign-in clears the pause)."""
         while not stop.is_set():
+            if check:
+                check()
             left = self.until - time.time()
             if left <= 0:
                 return
-            stop.wait(min(left, 30))
+            stop.wait(min(left, 15))
+
+    def clear(self):
+        with self.lock:
+            self.until, self.k = 0.0, 0
 
 class Limiter:
     """Global request-rate cap shared by threads (requests/min). Halves after each rate-limit event
@@ -362,6 +370,13 @@ class Harvester:
             log.info("focus: cup %s since %s%s · %d queries", a.focus_cup, a.focus_since or "any date",
                      " (only)" if a.focus_only else "", len(self.queries))
         self.ytdlp = None
+        # Live YouTube access for the Validate tab (summary.json "youtube"): blocks, pauses and outcomes.
+        self.yt_lock = threading.Lock()
+        self.yt = {"lastBlock": None, "blocks": 0, "botChecks": 0, "lastSuccess": None, "lastDownload": None,
+                   "downloads": [], "authError": None}
+        self._auth_stamp, self._auth = youtube_auth.stamp(a.work_dir), youtube_auth.load(a.work_dir)
+        if self._auth["mode"] != "none":
+            log.info("YouTube sign-in: %s", youtube_auth.label(self._auth))
         self.api_key = None if a.no_api else ytapi.api_key()
         self.api_off_until = 0.0
         self.draining = False
@@ -372,6 +387,68 @@ class Harvester:
         self.retention = {}
         self.validation_lock = threading.RLock()
         self.validation_count = len((read_json(a.inbox, {}) or {}).get("questions", [])) if a.inbox else 0
+
+    # ---- YouTube access (sign-in and live state)
+    def auth(self):
+        """The YouTube sign-in in WORK/youtube-auth.json, re-read when the file changes. A changed sign-in ends a
+        rate-limit pause and restores the request rates, so workers retry at once with it."""
+        current = youtube_auth.stamp(self.a.work_dir)
+        if current != self._auth_stamp:
+            self._auth_stamp, self._auth = current, youtube_auth.load(self.a.work_dir)
+            with self.yt_lock:
+                self.yt["authError"] = None
+            self.backoff.clear()
+            for limiter in (self.meta_rate, self.dl_rate):
+                with limiter.lock:
+                    limiter.rate = limiter.max
+            log.info("YouTube sign-in changed: %s; pause cleared, rates restored", youtube_auth.label(self._auth))
+        return self._auth
+
+    def yt_event(self, kind, what, message="", pause=None):
+        now = time.time()
+        with self.yt_lock:
+            if kind == "success":
+                self.yt["lastSuccess"] = {"at": now, "what": what}
+            elif kind == "block":
+                block = youtube_auth.block_kind(message)
+                self.yt["blocks"] += 1
+                self.yt["botChecks"] += block == "bot-check"
+                self.yt["lastBlock"] = {"at": now, "kind": block, "what": what, "message": message[:300],
+                                        "pauseSeconds": round(pause) if pause else None}
+            elif kind == "authError":
+                self.yt["authError"] = {"at": now, "message": message[:300]}
+            if what.startswith("download ") and kind in ("success", "block", "failed", "unavailable"):
+                self.yt["downloads"] = [d for d in self.yt["downloads"] if now - d[0] < 3600][-200:] + [(now, kind)]
+
+    def youtube_summary(self):
+        iso = lambda t: dt.datetime.fromtimestamp(t).isoformat(timespec="seconds") if t else None  # noqa: E731
+        now = time.time()
+        with self.yt_lock:
+            y = {k: (dict(v) if isinstance(v, dict) else v) for k, v in self.yt.items()}
+        hour = {}
+        for t, kind in y.pop("downloads"):
+            if now - t < 3600:
+                hour[kind] = hour.get(kind, 0) + 1
+        for key in ("lastBlock", "lastSuccess", "lastDownload", "authError"):
+            if y.get(key):
+                y[key]["at"] = iso(y[key]["at"])
+        paused = self.backoff.until > now
+        return {**y, "downloadsLastHour": hour, "pausedUntil": iso(self.backoff.until) if paused else None,
+                "pauseLeftSeconds": round(self.backoff.until - now) if paused else 0,
+                "metadataPerMin": round(self.meta_rate.rate, 2), "downloadsPerMin": round(self.dl_rate.rate, 2),
+                "metadataSource": "api" if self.api_key and now >= self.api_off_until else "web",
+                "auth": {**self._auth, "label": youtube_auth.label(self._auth)}}
+
+    def run_summary(self):
+        a = self.a
+        return {"pid": os.getpid(), "startedAt": dt.datetime.fromtimestamp(self.t0).isoformat(timespec="seconds"),
+                "deadline": dt.datetime.fromtimestamp(self.deadline).isoformat(timespec="seconds"), "hours": a.hours,
+                "extractJobs": getattr(a, "extract_jobs", None), "downloadWorkers": getattr(a, "download_workers", None),
+                "downloadsPerMinCap": getattr(a, "downloads_per_min", None), "metadataPerMinCap": getattr(a, "meta_per_min", None),
+                "maxBacklogHours": getattr(a, "max_backlog_hours", None), "focusCup": getattr(a, "focus_cup", None),
+                "focusSince": getattr(a, "focus_since", None), "focusOnly": bool(getattr(a, "focus_only", False)),
+                "extract": not getattr(a, "no_extract", False), "diskBudgetGB": getattr(a, "disk_budget_gb", None),
+                "downloadDir": a.download_dir}
 
     # ---- helpers
     def inc(self, k, n=1):
@@ -404,6 +481,7 @@ class Harvester:
         elif shutil.which("node"):
             o["js_runtimes"] = {"node": {"path": shutil.which("node")}}
         o["logger"] = _YtLogger()
+        o.update(youtube_auth.ydl_options(self.auth()))
         ff = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
         if os.path.exists(ff):
             o["ffmpeg_location"] = ff
@@ -413,7 +491,7 @@ class Harvester:
     def _yt_call(self, fn, what, limiter=None):
         """Run fn() with polite backoff. Returns (result, error_kind)."""
         for attempt in range(6):
-            self.backoff.wait(self.stop)
+            self.backoff.wait(self.stop, self.auth)
             if limiter:
                 limiter.acquire(self.stop)
             if not self.alive():
@@ -421,13 +499,21 @@ class Harvester:
             try:
                 r = fn()
                 self.backoff.ok()
+                self.yt_event("success", what)
                 return r, None
             except Exception as ex:  # yt_dlp.utils.DownloadError and network errors
                 kind = classify_error(ex)
+                if youtube_auth.is_cookie_error(ex) and self._auth["mode"] != "none":
+                    # The sign-in itself failed (keychain refused, profile moved): report it, fall back to anonymous.
+                    self.yt_event("authError", what, str(ex))
+                    log.warning("YouTube sign-in failed (%s): %s; continuing without it", youtube_auth.label(self._auth), str(ex)[:200])
+                    self._auth = {"mode": "none"}
+                    continue
                 if kind == "ratelimit":
                     fresh = time.time() >= self.backoff.until
                     d = self.backoff.hit()
                     self.inc("rateLimits")
+                    self.yt_event("block", what, str(ex), d if fresh else None)
                     if fresh:
                         r1, r2 = self.meta_rate.slow_down(), self.dl_rate.slow_down()
                         log.warning("rate limited (%s: %s); all workers pause %.0f s; metadata now %.0f/min, "
@@ -858,6 +944,7 @@ class Harvester:
                 return
             self.state.x("UPDATE videos SET dl_status=?, attempts=attempts+1, err=? WHERE id=?",
                          ("error" if (err or "").startswith("unavailable") else None, err or "no file", vid))
+            self.yt_event("unavailable" if (err or "").startswith("unavailable") else "failed", f"download {vid}", err or "no file")
             log.warning("download %s failed: %s", vid, (err or "no file")[:200])
             self.remove_video_files(vid, "failed download")
             return
@@ -876,6 +963,8 @@ class Harvester:
         self.inc("downloaded")
         self.inc("dlBytes", size)
         self.inc("dlSeconds", secs)
+        with self.yt_lock:
+            self.yt["lastDownload"] = {"at": time.time(), "id": vid, "title": (row["title"] or "")[:120], "mb": round(size / 1e6)}
         log.info("downloaded %s (%.0f MB in %.0f s, %.1f MB/s)", vid, size / 1e6, secs, size / 1e6 / max(secs, 0.1))
 
     # ---- extraction (Meta Extractor, one process per video)
@@ -1160,6 +1249,8 @@ class Harvester:
             "relevantByYear": dict(sorted(by_year.items())),
             "relevantLicense": cc,
             "rateLimitPauses": self.backoff.events,
+            "youtube": self.youtube_summary(),
+            "run": self.run_summary(),
         }
 
     def consume_requeues(self):

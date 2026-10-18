@@ -42,6 +42,7 @@ includes/meta/ui.js
 includes/meta/validation-metrics.js
 includes/meta/validation-policy.js
 includes/meta/validation.js
+includes/meta/harvest-live.js
 includes/meta/vendor/CORE-LICENSE
 includes/meta/vendor/LANGUAGE-LICENSE
 includes/meta/vendor/TESSERACT-LICENSE.md
