@@ -244,10 +244,16 @@ class HudOffset{constructor(dy=null){this.dy=dy;this.trusted=false;this.misses=0
  trust(){if(!this.trusted){this.trusted=true;if(!this.known.includes(this.dy))this.known.push(this.dy);}}}
 // Middle-of-screen statistics for result detection. img covers the band only.
 // whiteRun: tallest run of rows containing large white text, in reference (886-wide) pixels.
-function bandStats(img){const s=img.width/REF_W;let white=0,black=0,n=0,run=0,tallest=0;for(let y=0;y<img.height;y++){let w=0,c=0;for(let x=0;x<img.width;x+=6){const i=(y*img.width+x)*4,lo=Math.min(img.data[i],img.data[i+1],img.data[i+2]),hi=Math.max(img.data[i],img.data[i+1],img.data[i+2]);c++;if(lo>215)w++;if(hi<28)black++;}n+=c;white+=w;run=w/c>.02?run+1:0;tallest=Math.max(tallest,run);}return {white:white/n,black:black/n,whiteRun:tallest/s};}
+function bandStats(img,{scale}={}){const s=scale||img.width/REF_W;let white=0,black=0,n=0,run=0,tallest=0;for(let y=0;y<img.height;y++){let w=0,c=0;for(let x=0;x<img.width;x+=6){const i=(y*img.width+x)*4,lo=Math.min(img.data[i],img.data[i+1],img.data[i+2]),hi=Math.max(img.data[i],img.data[i+1],img.data[i+2]);c++;if(lo>215)w++;if(hi<28)black++;}n+=c;white+=w;run=w/c>.02?run+1:0;tallest=Math.max(tallest,run);}return {white:white/n,black:black/n,whiteRun:tallest/s};}
 // YOU WIN / GOOD EFFORT letters are ~85–95 reference pixels tall; matchmaking text is ~25–30 and
-// bright battle effects fill far taller bands. Only text in this range is worth an OCR read.
-const resultCandidate=st=>st.white>=.01&&st.whiteRun>=70&&st.whiteRun<=115;
+// bright battle effects fill far taller bands. Only text in this range is worth an OCR read. A result that wraps to
+// two lines ("DU HAST / GEWONNEN!") runs up to about twice as tall; a band that tall is only text if most of it isn't
+// white (a white flash fills it). Measured 2026-10-18: 32 of 132 unknown battles had a readable result screen that
+// the old 70–115 range (judged by width, read twice a second) missed.
+const resultCandidate=st=>st.white>=.01&&((st.whiteRun>=60&&st.whiteRun<=115)||(st.whiteRun>115&&st.whiteRun<=230&&st.white<=.3));
+// The game scales its UI to fit the screen's shorter side: on a squarer screen (3:4 tablets, cropped uploads) text
+// is smaller relative to the width. Reference: 886 × 1575 (a 1080 × 1920 phone scaled to 886 wide).
+const resultScale=(w,h)=>Math.min(w/REF_W,h/(REF_W*1920/1080));
 // The "Surrender and exit?" dialog is a white card filling the middle band; its dark text is read only then.
 const surrenderCandidate=st=>st.white>=.5;
 // combat_surrender in every UI language (CJK dialogs are read with that language's model).
@@ -668,5 +674,5 @@ function barDefender(series,t,until,out=null){const drop=side=>{const s=series[s
 // Team-training export in the trainer's usage-file format (training/team-search/meta.cjs loadUsage).
 // Rows are split by recording date so the trainer's half-life weighting uses when battles were played.
 function trainingExport(battles,{cp,cup,rank=''}){const byDate=new Map();for(const b of battles.filter(b=>!b.context?.example&&eligible(b))){const d=String(b.context?.collectedAt||'').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(b);}const dates=[...byDate.keys()].filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(),teams=[...byDate].flatMap(([d,bs])=>aggregate(bs).teams.map(t=>/^\d{4}-\d{2}-\d{2}$/.test(d)?{...t,collectedAt:d}:t));return {source:'Meta Extractor: human-reviewed video observations',cp,cup,collectedAt:dates.at(-1)||null,rank,teams:teams.sort((a,b)=>b.count-a.count)};}
-const api={outcomeOf,sameOutcome,stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene,wideBannerBox,bannerEvidence,bannerTeam,barDefender};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
+const api={outcomeOf,sameOutcome,resultScale,stillBattle,farCells,NAME_FAR,plateCover,COVER,plateHit,iconReliability,typesContradict,CP_SANE,dropStillBattles,normalize,dictionary,match,LOCALES,nameKey,localeDictionary,matchLocale,NameLanguage,readName,outcome,Tracker,eligible,aggregate,trainingExport,usageEstimates,rankingPrior,HUD,hudBand,readHud,calibrate,HudOffset,NameCache,HudTracker,bandStats,bannerBox,bannerRead,bannerEdges,parseBanner,parseLocalBanner,localBanner,moveDictionary,isMatchmaking,resultCandidate,surrenderCandidate,isSurrender,readTypes,TYPE_COLORS,resolveForm,inferResult,applyInferredResults,runEnd,RESULT_RULES,RESULT_GUESS_P,PROMOTABLE,INFERRED_SOURCES,guessDetail,lastCutscene,wideBannerBox,bannerEvidence,bannerTeam,barDefender};if(typeof module!=='undefined')module.exports=api;root.MetaExtractorCore=api;
 })(typeof window==='undefined'?globalThis:window);
