@@ -43,7 +43,7 @@ If the phone screen is only part of the video, as in most YouTube uploads, the e
 | Where does one battle end and the next begin? | Poké Balls and shields resetting, a result screen, or a fade to black |
 | Which Pokémon? | the name on the nameplate, read as text and matched to the real list; a name that is only nearly right must also fit the CP and type icons shown next to it, and a plate half-hidden by a stream overlay is skipped; if the upload cut the names off, the banners that send each Pokémon out or name its attack (marked for checking) |
 | Who led? | the first opponent Pokémon seen |
-| Who won? | the result screen if there is one; otherwise three fainted balls, or two plus an empty last bar, or the surrender dialog |
+| Who won? | the result screen if there is one (checked ten times a second, since edited videos often show it for half a second); otherwise three fainted balls, two plus an empty last bar, the surrender dialog, or how battles that ended the same way turned out (below). A forfeit counts as a win for the other side |
 | Which charged attacks? | the "X used Y!" banners |
 | Which fast move? | the size and timing of the HP-bar steps, the energy it must have earned to fire its charged attacks, the SUPER EFFECTIVE text, and what players usually run |
 | Shadow or not? | the purple flames, the damage steps, and how often that species is Shadow in answered questions, combined by a small learned model |
@@ -86,6 +86,14 @@ Re-analysis needs the video, so finished videos are kept, up to a size budget, n
 ## How accurate is it
 
 On nine labelled recordings (three from a phone, six from YouTube), it found every battle without inventing any, read every opponent's name correctly (233 of 233), and got every result right except one battle where the recorder left the app. On questions where the answer is not written on screen, tested on recordings the model was not fitted on: fast moves are right 166 of 197 times, regional forms 25 of 31, and Shadow status 323 of 410. Those are also exactly the cases it asks about when unsure, so the recorded data is better than those raw numbers once answers come in.
+
+### Battle results
+
+About a third of harvested battles had no result. Two things caused most of that, and neither was the language. Many uploads cut the result screen away, jumping straight from the last attack to the next battle. Others show it for only half a second, which the extractor used to miss because it looked only twice a second; it now looks on every frame while a result is expected, and on squarer screens it no longer mistakes the result text for something too small. A test on 132 battles without a result found a readable result screen in 32 of them.
+
+When the result screen is gone, the battle usually still tells. If the counters at the end show one of the creator's Pokémon and two of the opponent's fainted, the creator won 95 times in 100, among the 680 battles where the screen was readable. The extractor keeps a table of such situations, learned from every readable result screen and checked on videos it wasn't learned from, and settles a result only where that check was right at least 95% of the time. That settles 518 of the 1,815 battles that had no result, and it was right on all 18 of your answered questions it would have settled. Endings where both sides had two Pokémon down are close to a coin toss, so those are still asked, with the table's guess shown.
+
+The accuracy figure for results used to count a correct "you won" as wrong when you had answered "opponent forfeited". Both are wins, so it now compares the outcome only: on the same answers, the guesses were right 35 of 39 times, not 19 of 41.
 
 ## How fast is it
 
