@@ -35,7 +35,7 @@ function play(teamA,teamB,policyA=defaults,policyB=defaults,{seed=1,cp=1500,look
  var battle=new Battle();battle.simulationOptimizations=input.simulationOptimizations;battle.headless=input.simulationOptimizations&&!input.trace;battle.setCP(input.cp);
  var players=[new Player(0,3,battle),new Player(1,3,battle)];
  for(var i=0;i<2;i++){
-   var team=input.teams[i].map(row=>{var p=new Pokemon(row.speciesId,i,battle);p.initialize(input.cp);p.selectMove('fast',row.moveset[0]);p.selectMove('charged',row.moveset[1],0);p.selectMove('charged',row.moveset[2]||'none',1);if(row.moveset[3]&&p.hasThirdChargedMove())p.selectMove('extra-charged',row.moveset[3],2);return p;});
+   var team=input.teams[i].map(row=>{var p=new Pokemon(row.speciesId,i,battle);p.initialize(input.cp);if(row.ivBuild){p.isCustom=true;p.ivs.atk=row.ivBuild.atk;p.ivs.def=row.ivBuild.def;p.ivs.hp=row.ivBuild.hp;p.setLevel(row.ivBuild.level,false);p.initialize(false);}p.selectMove('fast',row.moveset[0]);p.selectMove('charged',row.moveset[1],0);p.selectMove('charged',row.moveset[2]||'none',1);if(row.moveset[3]&&p.hasThirdChargedMove())p.selectMove('extra-charged',row.moveset[3],2);return p;});
    players[i].setRoster(team);players[i].setTeam(team);
    var ai=players[i].getAI();
 
