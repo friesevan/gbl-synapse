@@ -544,3 +544,9 @@ Details: `includes/meta/README.md` §5 (*Answers follow their battle…*) and th
 - **Found:** 36 answers on 17 other videos already point at a battle without their Pokémon (results replaced by
   re-analyses after they were answered, e.g. uYt7eHxdT8I, rLA_EvTrtYg). `--new` with copies of their saved results
   realigns 34 by their clips (dry run; not applied). Not remapped: `validation-withdrawn-*` archives.
+- **Applied 2026-10-17 19:55 (owner approved; app stopped, then restarted):** 15 labelled videos (tPEBKgLqMuA left out:
+  its re-extraction loses 9 of 65 Pokémon) → backup `remap-backup-20261017-195547/`; 17 re-analysed videos realigned
+  (34 answers) → `remap-backup-20261017-195554/`. Inputs kept in `src/remap-new-2026-10-17/` and
+  `src/remap-realign-2026-10-17/`. Undo: `remap_battles.py WORK --restore <backup>` with the app stopped. Refit queued.
+- Restarting the app from zsh: start it through `/bin/bash -c 'nohup … &'`. zsh's BG_NICE runs `&` jobs at nice 5, and
+  under a 12-worker harvest the app then took minutes per Validate request.
