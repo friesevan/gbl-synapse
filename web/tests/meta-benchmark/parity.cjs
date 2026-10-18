@@ -19,8 +19,8 @@ const tar=execFileSync('git',['-C',web,'archive',ref,'--','includes/meta','tests
 fs.symlinkSync(path.join(web,'includes/pro'),path.join(base,'includes/pro'));
 const kv=list=>Object.fromEntries(list.map(s=>[s.slice(0,s.indexOf('=')),s.slice(s.indexOf('=')+1)]));
 function run(root,[id,start,end],extra,tag){const file=id.includes('.')?path.join(SRC,id):path.join(VIDEOS,id+'.mp4'),saved=path.join(WORK,'results',id+'.json'),old=!id.includes('.')&&fs.existsSync(saved)?JSON.parse(fs.readFileSync(saved,'utf8')):{};
- const env={...process.env,FFMPEG_THREADS:'1',START:String(start),END:String(end),LEAGUE:String(old.learningContext?.league||1500),...extra};delete env.CROP;delete env.RANGES;
- if(old.crop)env.CROP=old.crop.join(',');const gm=old.learningContext?.gamemaster;if(gm&&fs.existsSync(gm))env.GAMEMASTER=gm;else delete env.GAMEMASTER;
+ const env={...process.env,FFMPEG_THREADS:'1',START:String(start),END:String(end),LEAGUE:String(old.learningContext?.league||1500),...extra};delete env.CROP;delete env.CROPS;delete env.RANGES;
+ if(old.crop)env.CROP=old.crop.join(',');if(old.placements)env.CROPS=require('./placement-plan.cjs').formatCrops(old.placements);const gm=old.learningContext?.gamemaster;if(gm&&fs.existsSync(gm))env.GAMEMASTER=gm;else delete env.GAMEMASTER;
  const out=path.join(tmp,`${tag}-${id}-${start}.json`),r=spawnSync('nice',['-n','10','node',path.join(root,'tests/meta-benchmark/run-node.cjs'),file,out],{env,encoding:'utf8'});
  if(r.status!==0)throw Error(`${tag} ${id}: ${r.stderr.slice(-400)}`);return JSON.parse(fs.readFileSync(out,'utf8'));}
 // Battle ids are random UUIDs, generated per run.

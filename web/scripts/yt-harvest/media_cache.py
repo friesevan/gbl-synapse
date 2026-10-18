@@ -126,6 +126,8 @@ def inventory(download_dir, work_dir, verify_sha=False, video_ids=None):
         crop = ",".join(str(v) for v in box) if isinstance(box, list) and len(box) == 4 else "auto"
         if isinstance(media.get("crop"), str):
             crop = media["crop"]
+        # The screen placed differently per clip (run-node CROPS); only with the crop it was planned for.
+        crops = media["crops"] if isinstance(media.get("crops"), str) and isinstance(media.get("crop"), str) else ""
         cp = context.get("league") or league.get("cp") or league.get("cpCap")
         cp = cp if cp in (500, 1500, 2500, 10000) else None
         recorded_sha = str(row["sha256"]) if row.get("sha256") else None
@@ -143,7 +145,7 @@ def inventory(download_dir, work_dir, verify_sha=False, video_ids=None):
                 "duration": row.get("duration"), "sizeBytes": size,
                 "recordedSha256": recorded_sha, "recordedHashScope": "sha256-prefix-16" if recorded_sha and len(recorded_sha) == 16 else "sha256" if recorded_sha and len(recorded_sha) == 64 else "unknown",
                 "sha256": None, "hashVerified": None, "league": league, "cp": cp,
-                "gamemaster": context.get("gamemaster") or "", "crop": crop,
+                "gamemaster": context.get("gamemaster") or "", "crop": crop, **({"crops": crops} if crops else {}),
                 "ranges": media.get("ranges") if "ranges" in media else probe.get("ranges") or [],
                 "rangeSourceSha256": media.get("sha256"),
                 "timestampBasis": "original-source-seconds", "extractionStatus": row.get("x_status"),
@@ -219,6 +221,8 @@ def batch_jobs(report, default_cp=None, gamemaster=None, use_saved_ranges=False)
                 except (ValueError, TypeError):
                     pass
             fields.append(json.dumps(ranges, separators=(',', ':')) if ranges else '')
+        if item.get("crops") and fields[3] != "auto":
+            fields += [""] * (5 - len(fields)) + [item["crops"]]   # sixth column: run-batch.cjs CROPS
         if any(any(c in str(value) for c in ("|", "\n", "\r")) for value in fields):
             skipped.append({"videoId": item["videoId"], "reason": "job field contains a delimiter"})
             continue

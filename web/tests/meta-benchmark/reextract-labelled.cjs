@@ -20,10 +20,10 @@ function envFor(id,old){const lc=old.learningContext||{},ctx=D.runContext(id),en
  const top=Math.max(0,...(old.full||[]).flatMap(b=>[...b.my,...b.opponent].map(p=>Number(p.cp)).filter(c=>c>0&&c<9000)));
  env.LEAGUE=String(lc.league||ctx?.league||(top<=500?500:top<=1500?1500:top<=2500?2500:10000));
  const gm=lc.gamemaster||ctx?.gamemaster;if(gm&&fs.existsSync(gm))env.GAMEMASTER=gm;
- if(old.crop)env.CROP=old.crop.join(',');if(old.ranges)env.RANGES=old.ranges.map(r=>r.join('-')).join(',');
+ if(old.crop)env.CROP=old.crop.join(',');if(old.placements)env.CROPS=require('./placement-plan.cjs').formatCrops(old.placements);if(old.ranges)env.RANGES=old.ranges.map(r=>r.join('-')).join(',');
  if(old.start)env.START=String(old.start);if(old.end!=null&&!old.chunks)env.END=String(old.end);return env;}
 function run(id){return new Promise(done=>{const file=path.join(results,id+'.json'),old=JSON.parse(fs.readFileSync(fs.existsSync(path.join(backup,id+'.json'))?path.join(backup,id+'.json'):file,'utf8')),video=path.join(VIDEOS,id+'.mp4'),env=envFor(id,old),t=Date.now();
- let cmd,out;if(old.chunks){const jobs=path.join(tmp,id+'.jobs.txt'),dir=path.join(tmp,id+'-batch');fs.writeFileSync(jobs,[video,env.LEAGUE,env.GAMEMASTER||'',old.crop?old.crop.join(','):''].join('|')+'\n');cmd=[path.join(__dirname,'run-batch.cjs'),jobs,dir];out=path.join(dir,id+'.json');env.JOBS='4';}
+ let cmd,out;if(old.chunks){const jobs=path.join(tmp,id+'.jobs.txt'),dir=path.join(tmp,id+'-batch');fs.writeFileSync(jobs,[video,env.LEAGUE,env.GAMEMASTER||'',old.crop?old.crop.join(','):'',...(env.CROPS?[env.RANGES||'',env.CROPS]:[])].join('|')+'\n');cmd=[path.join(__dirname,'run-batch.cjs'),jobs,dir];out=path.join(dir,id+'.json');env.JOBS='4';}
  else{out=path.join(tmp,id+'.json');cmd=[path.join(__dirname,'run-node.cjs'),video,out];}
  const p=spawn('node',cmd,{env,stdio:['ignore','ignore','pipe']});let err='';p.stderr.on('data',d=>{err=(err+d).slice(-400);});
  p.on('close',code=>{const s=((Date.now()-t)/1000).toFixed(0);if(code!==0||!fs.existsSync(out)){console.log(`${id}: failed after ${s} s ${err.trim()}`);return done();}
