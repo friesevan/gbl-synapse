@@ -176,3 +176,62 @@ def snapshot(work_dir, limit=200):
                           "state": state, "reason": r["reason"] or "other", "scope": r["scope"] or "full",
                           "source": r["source"], "requested": r["requested"], "error": r["err"]})
     return {"total": len(rows), **counts, "reasons": reasons, "items": items}
+
+
+def requeue_reason(text):
+    """A request file's free-text reason -> a queue reason."""
+    text = (text or "").lower()
+    if "perspective" in text or "screen" in text or "crop" in text:
+        return "wrong-screen"
+    if "battle" in text and ("miss" in text or "footage" in text or "shown" in text):
+        return "battles-missing"
+    return "code-fix" if ("fix" in text or "nameplate" in text or "banner" in text or "placement" in text) else "other"
+
+
+def pending_requests(work_dir):
+    directory = os.path.join(work_dir, "requeue")
+    try:
+        return sum(1 for name in os.listdir(directory) if name.endswith(".json"))
+    except OSError:
+        return 0
+
+
+def consume_requests(work_dir, db=None, inflight=(), log=None):
+    """Request files in WORK/requeue (Validate answers, other tools and sessions) join the queue; each file is removed
+    once queued, or renamed .unknown / .obscured / .invalid. Immutable files avoid racing live feedback writes."""
+    directory = os.path.join(work_dir, "requeue")
+    if not os.path.isdir(directory):
+        return 0
+    own = db is None
+    db = db or connect(work_dir)
+    n = 0
+    try:
+        for name in sorted(os.listdir(directory))[:500]:
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(directory, name)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    request = json.load(f) or {}
+            except (OSError, ValueError):
+                request = {}
+            vid = request.get("videoId", "") if isinstance(request, dict) else ""
+            if not re.fullmatch(r"[A-Za-z0-9_-]{11}", vid or ""):
+                os.replace(path, path + ".invalid")
+                continue
+            if vid in inflight:
+                continue      # an active worker owns it; try again at the next tick
+            out = queue(work_dir, [vid], reason=requeue_reason(request.get("reason")), source="validate", db=db)
+            if out["unknown"]:
+                os.replace(path, path + ".unknown")
+            elif out["obscured"]:
+                os.replace(path, path + ".obscured")
+            else:
+                os.remove(path)
+                n += 1
+                if log:
+                    log.info("requeued %s (%s)", vid, "local video" if out["onDisk"] else "being processed" if out["busy"] else "redownload required")
+    finally:
+        if own:
+            db.close()
+    return n

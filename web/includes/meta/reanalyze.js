@@ -15,7 +15,7 @@ const WHY=[
  ['When Validate shows a video was read wrongly.','“Battles are shown” on a video with none found, a different championship screen, or a crop that missed the phone: those requests are queued here automatically.'],
  ['When an analysis was interrupted or failed.','A stopped analysis stays queued. A failed one keeps the earlier result.'],
 ];
-const SPEED='Each video is analysed in full, as the first time. Most of the time goes to reading text on the screen (about 2,000 OCR reads per video), not to decoding; reusing the earlier battle times or nameplate language was tried and changed answers, so it is not used. More workers help until the cores are busy.';
+const SPEED='Each video is analysed in full, as the first time. Most of the time goes to turning the video into frames (64%) and reading text on screen (25%). Reusing the earlier battle times or nameplate language was tried and changed answers, and hardware decoding is slower with several workers, so neither is used. More workers help until the cores are busy.';
 
 function mount(host,ctx){
  const v={ctx,host,data:null,busy:false,timer:null};
@@ -67,7 +67,7 @@ function mount(host,ctx){
 }
 async function act(v,path,body){v.busy=true;sync(v);try{const d=await v.ctx.api(path,body);render(v,d.reanalyze);}catch(e){v.banner.textContent=e.message;v.banner.className='ra-status hl-bad';}v.busy=false;sync(v);}
 async function poll(v){clearTimeout(v.timer);if(!v.host.isConnected&&v.data)return;
- if(!document.hidden){try{const d=await v.ctx.api('/api/reanalyze/status');render(v,d.reanalyze);}catch(e){v.data=null;v.banner.textContent='Re-analysis needs the local app (python3 web/run_app.py).';v.banner.className='ra-status';sync(v);}}
+ if(!document.hidden||!v.data){try{const d=await v.ctx.api('/api/reanalyze/status');render(v,d.reanalyze);}catch(e){v.data=null;v.banner.textContent='Re-analysis needs the local app (python3 web/run_app.py).';v.banner.className='ra-status';sync(v);}}
  v.timer=setTimeout(()=>poll(v),v.data?.running?3000:8000);}
 function sync(v){const d=v.data,on=!!d,running=!!d?.running;
  v.startBtn.disabled=!on||running||v.busy||!(d?.queue?.total);v.stopBtn.disabled=!on||!running||v.busy||d?.stopRequested;v.abortBtn.disabled=!on||!running||v.busy||d?.abortRequested;

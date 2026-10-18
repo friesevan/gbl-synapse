@@ -500,6 +500,12 @@ class HarvestService:
         if not live and not pending and phase == 'running':
             phase = 'interrupted'
         summary = read_json(self.work_dir / 'reanalyze-summary.json', {})
+        if reanalysis_queue.pending_requests(self.work_dir):
+            # Requests written by Validate or other tools join the queue now, so the card shows them before a run.
+            try:
+                reanalysis_queue.consume_requests(self.work_dir)
+            except sqlite3.Error:
+                pass
         return {'available': True, 'reanalyze': {
             'running': bool(live or pending), 'phase': phase, 'pid': (live or pending or {}).get('pid'), 'run': record,
             'stopRequested': bool((live or pending) and stop), 'abortRequested': bool((live or pending) and abort),

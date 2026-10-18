@@ -7,6 +7,16 @@
 
 The local UI now controls the resumable harvester and the review/learning loop.
 
+
+## Status 2026-10-18 (re-analysis split from the harvester; sign-in prompt; members-only)
+
+- **Re-analysis is its own tool.** `reanalyze.py` (card: Meta Extractor › Analyze & review › Re-analysis; API `/api/reanalyze/status|queue|remove|start|stop`). The harvester now analyses each video once and never claims queued videos (`X_CLAIM` excludes `reprocess`); it still downloads queued videos first. Queue: `reanalysis_queue.py` (`reprocess` gains `reason`, `scope`, `source`). Validate's `requeue/*.json` files are read by the harvester, the re-analysis tool and the app's status call.
+- **Whole videos only.** Reusing the earlier battle ranges / screen box / nameplate language was measured on 3 queued videos and changed answers on 2 (README § 8 "Re-analysis"); not used.
+- **Sign-in prompt.** Start harvester always opens the YouTube sign-in dialog and tests the saved sign-in first (`HarvestLive.promptSignIn`); a new bot-check block during a run opens it once.
+- **Members-only.** Listing badges (yt-dlp `availability`: subscriber_only, premium_only, needs_auth) and titles (`MEMBERS_TITLE_RE`) mark a video unavailable before any request; at start, queued titles are swept and each channel that served a members-only video has its `UUMO…` playlist read once a week (`members_checked`). The Data API does not mark members-only videos (checked 2026-10-18: same `status` as public ones).
+- **Stop no longer hangs.** Network threads get 120 s after a stop (`NETWORK_GRACE_S`); a stuck YouTube request kept the 2026-10-17 run alive for 5 hours after STOP.
+- **Tornado temp files** are hidden (`.tornado-<id>.mp4.dl`), so retention no longer deletes them mid-download.
+
 ## Start and review
 
 From the GBL Synapse project root, run `python3 web/run_app.py`. Open **Meta Extractor → Analyze & review** for harvesting and **Validate** for review.

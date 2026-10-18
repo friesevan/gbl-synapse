@@ -71,6 +71,18 @@ Your answers do three things:
 
 The **Model performance** view in Validate shows these numbers after every refit.
 
+## When it analyses a video again
+
+The harvester finds, downloads and analyses each video once. **Re-analysis** (below the harvester in Analyze & review) analyses videos again, on its own, so it never waits for YouTube. A video needs it when the way frames are read has improved (for example, better reading of Korean names), when you tell Validate a video was read wrongly, or when an analysis was stopped. Improvements to the learned models don't need it: those are applied to the measurements already saved.
+
+Queue videos by pasting their ids or links, then start. Each video keeps its old result until the new one replaces it, and the card shows each video's progress and what changed ("species +Zekrom −Corvisquire"). Videos that are no longer on disk are downloaded again first: by the harvester, or through Tornado if you tick that box.
+
+Each video is analysed in full again. Analysing only the stretches around the battles found last time was tested and changed answers on two of three videos, so it isn't done.
+
+## Why whole videos are kept
+
+Re-analysis needs the video, so finished videos are kept, up to a size budget, newest first. Videos with no battles, and failed downloads, are deleted. Keeping only the battles would save little, because battles fill most of each video, and a later fix that finds battles the old code missed would have nothing to read. Cropping each video to the phone screen, or converting it to a more compact format, would save about a third. Both throw away some picture detail, though, so they would need a check that the smaller copy gives exactly the same answers before any original is deleted.
+
 ## How accurate is it
 
 On nine labelled recordings (three from a phone, six from YouTube), it found every battle without inventing any, read every opponent's name correctly (233 of 233), and got every result right except one battle where the recorder left the app. On questions where the answer is not written on screen, tested on recordings the model was not fitted on: fast moves are right 166 of 197 times, regional forms 25 of 31, and Shadow status 323 of 410. Those are also exactly the cases it asks about when unsure, so the recorded data is better than those raw numbers once answers come in.

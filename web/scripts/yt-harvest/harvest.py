@@ -278,48 +278,10 @@ def classify_error(msg):
     return "transient"
 
 
-def requeue_reason(text):
-    """Validate's free-text request reason -> a reanalysis_queue reason."""
-    text = (text or "").lower()
-    if "perspective" in text or "screen" in text or "crop" in text:
-        return "wrong-screen"
-    if "battle" in text and ("miss" in text or "footage" in text or "shown" in text):
-        return "battles-missing"
-    return "other"
-
-
 def consume_requeue_files(work_dir, state, inflight=()):
-    directory = os.path.join(work_dir, "requeue")
-    if not os.path.isdir(directory):
-        return 0
-    n = 0
-    for name in sorted(os.listdir(directory))[:100]:
-        if not name.endswith(".json"):
-            continue
-        path = os.path.join(directory, name)
-        request = read_json(path, {})
-        vid = request.get("videoId", "")
-        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", vid):
-            log.warning("invalid requeue request %s", name)
-            os.replace(path, path + ".invalid")
-            continue
-        with state.lock:
-            # Do not reset state underneath an active worker; try again at the next tick.
-            if vid in inflight:
-                continue
-            out = RQ.queue(work_dir, [vid], reason=requeue_reason(request.get("reason")), source="validate",
-                           db=state.db)
-        if out["unknown"]:
-            log.warning("requeue %s: not in harvest database", vid)
-            os.replace(path, path + ".unknown")
-        elif out["obscured"]:
-            log.info("requeue %s ignored: footage marked obscured", vid)
-            os.replace(path, path + ".obscured")
-        else:
-            os.remove(path)
-            n += 1
-            log.info("requeued %s (%s)", vid, "local video" if out["onDisk"] else "being processed" if out["busy"] else "redownload required")
-    return n
+    """Validate's re-analysis requests (WORK/requeue/*.json) into the re-analysis queue (reanalysis_queue.py)."""
+    with state.lock:
+        return RQ.consume_requests(work_dir, state.db, inflight, log)
 
 
 def restricted_reason(entry):
