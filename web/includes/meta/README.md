@@ -515,6 +515,14 @@ And the reported videos (7u31Xt6Fg4M is no longer on disk; its saved reads repla
 
 On the saved harvest results (1,721 videos), replaying each saved member's nameplate read and majority CP through the new matching changes the species of 77 videos (`affected` scan; it cannot replay the name cache, plate cover or icons, so CJK videos with similar short names can change too).
 
+**Recall repairs (2026-10-18).** The re-analysis of 74 videos with the checks above fixed the reported misreads (Zekrom 7 of 7 in 7qqbqf5Mb7E, no Mime Jr. in 6zhjUeOaERo, Stunfisk 3 → 1 in Mxwep4-3rVI) but set aside right reads too: opponent species 2,071 → 1,980 and complete opponent teams 571 → 526, with 137 opponent reads gone and nothing in their place, in 40 of the 74 videos. They were close matches the old code had accepted: Hoothoot read ホーボー (27, the voicing mark misread) and whole names with a stray kanji or bar after them (ルギア 科, レシ ラム | 目, ゼル ネ ア ス 較). Three repairs in `matchLocale` and `plateHit`, each giving a `suggestion` with no rivals, so the plate's CP must still fit:
+
+- **Voicing marks.** A read that equals exactly one species once every dakuten and handakuten is removed is that species (ホーボー → ホーホー, マッキョ → マッギョ, トゲビー → トゲピー). A devoiced form shared by two species decides nothing (ガラガラ Marowak / カラカラ Cubone).
+- **Stray tokens.** A whole name followed or preceded by up to two short separate tokens with none of the name's own script (kanji, bars, digits, Latin letters for Japanese; anything but Hangul for Korean) is that name. Kana fragments are never dropped: evolution lines share endings (サンド バン is Sandslash, not Sandshrew; オー シズクモ Araquanid, メカ ヤミラミ Mega Sableye), which the first version of this repair got wrong on the replay. Chinese gets no such leeway (a stray Han character can't be told from part of a name).
+- **Little Cup rivals.** In a Little Cup video (`LEAGUE=500`), a rival the league bans is no rival: パウロウ is Seel, not Ho-Oh, Cramorant or Cufant. Legal rivals stay (イワーケ: Onix or Rockruff, still asked).
+
+Checked without video on 3,110 distinct saved CJK reads (old and new matcher, same CP): 37 reads change, every one from nothing to the species the code before 2026-10-17 had saved; none switches species. Of the 197 reads the re-analysis lost, 110 come back; the rest are the intended removals (Corvisquire 24, Mime Jr. 9) and ambiguous one-letter misreads (カネズミ for Patrat with Tandemaus legal in Little Cup, メガミュウツー read 메가뮤츠누). Re-analysed with the repair (whole videos, the saved crop and league): _QXQnDvIVJo Hoothoot 0 → 2 and Seel 0 → 1, lWET8MFFDx0 Bidoof 5 → 8 and Togepi 0 → 1, Mxwep4-3rVI opponent species 12 → 13 with Stunfisk still 1 (a real one: its electric icon) and Jumpluff and Galvantula read through stray kanji, 7qqbqf5Mb7E Zekrom unchanged.
+
 ## 7. Accuracy: what has been measured
 
 ### Battle level, on the labelled benchmark
